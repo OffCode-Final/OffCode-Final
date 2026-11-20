@@ -6,7 +6,8 @@ export default function Sidebar({
   activeFile,
   onSelectFile,
   onCreateFile,
-  onDeleteFile
+  onDeleteFile,
+  users = []
 }) {
   const [isCreating, setIsCreating] = useState(false)
   const [newFileName, setNewFileName] = useState('')
@@ -149,6 +150,9 @@ export default function Sidebar({
           files.map((fileName) => {
             const badge = getFileBadgeInfo(fileName)
             const isActive = fileName === activeFile
+            const remoteUsersOnFile = users.filter(
+              (u) => !u.isYou && u.currentFile === fileName
+            )
 
             return (
               <div
@@ -165,6 +169,22 @@ export default function Sidebar({
                     {badge.label}
                   </span>
                   <span className="file-name">{fileName}</span>
+                  {remoteUsersOnFile.length > 0 && (
+                    <div
+                      className="file-peer-indicators"
+                      title={`${remoteUsersOnFile
+                        .map((u) => `${u.name} (Ln ${u.currentLine || 1})`)
+                        .join(', ')} currently viewing this file`}
+                    >
+                      {remoteUsersOnFile.map((u) => (
+                        <span
+                          key={u.clientId}
+                          className="file-peer-dot"
+                          style={{ backgroundColor: u.color }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <button

@@ -28,7 +28,10 @@ export default function Editor({
   activeFile,
   ytext,
   awareness,
-  remoteUsersViewingThisFile
+  remoteUsersViewingThisFile,
+  targetScrollLine,
+  onUserInteraction,
+  readOnly = false
 }) {
   const editorRef = useRef(null)
   const viewRef = useRef(null)
@@ -107,10 +110,23 @@ export default function Editor({
       indentUnit.of('    '),
       oneDark,
       getLanguageSupport(activeFile),
+      EditorState.readOnly.of(Boolean(readOnly)),
+      EditorView.editable.of(!readOnly),
       // Keymap for local undo/redo with Mod-z and Mod-Shift-z / Mod-y
       keymap.of([...yUndoManagerKeymap, ...defaultKeymap]),
       // Yjs collaboration plugin (Sync + Remote Cursors + Local UndoManager)
-      yCollab(ytext, awareness, { undoManager: fileUndoManager }),
+      yCollab(ytext, awareness, { undoManager: readOnly ? false : fileUndoManager }),
+      // Dom event handlers to unhook follow mode on user interaction
+      EditorView.domEventHandlers({
+        mousedown() {
+          if (onUserInteraction) onUserInteraction()
+          return false
+        },
+        keydown() {
+          if (onUserInteraction) onUserInteraction()
+          return false
+        }
+      }),
       // Update listener for cursor position and document stats
       EditorView.updateListener.of((update) => {
         if (update.selectionSet || update.docChanged) {
@@ -168,7 +184,23 @@ export default function Editor({
         viewRef.current = null
       }
     }
-  }, [activeFile, ytext, awareness])
+  }, [activeFile, ytext, awareness, readOnly])
+
+  // Scroll to line when jumped or following a peer
+  useEffect(() => {
+    if (viewRef.current && targetScrollLine != null && targetScrollLine > 0) {
+      const view = viewRef.current
+      try {
+        const lineCount = view.state.doc.lines
+        const lineNum = Math.min(Math.max(1, targetScrollLine), lineCount)
+        const line = view.state.doc.line(lineNum)
+        view.dispatch({
+          selection: { anchor: line.from },
+          scrollIntoView: true
+        })
+      } catch (_) {}
+    }
+  }, [targetScrollLine])
 
   if (!activeFile || !ytext) {
     return (

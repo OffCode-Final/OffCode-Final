@@ -1742,3 +1742,80 @@ body, #root {
 ::-webkit-scrollbar-thumb:hover {
   background: #3d455c;
 }
+
+/* ==========================================================================
+   PHASE C: UPGRADED LIVE CURSORS & COLLABORATOR PRESENCE
+   ========================================================================== */
+.host-pill {
+  font-size: 0.65rem;
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+.line-number-tag {
+  color: #38bdf8;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.person-item.clickable {
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.person-item.clickable:hover {
+  background: #181d2a;
+  border-color: #3b4252;
+}
+
+.person-item.following-active {
+  border-color: #6366f1;
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.btn-follow {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 4px;
+  background: #1e2433;
+  color: #94a3b8;
+  border: 1px solid #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-follow:hover {
+  background: #283046;
+  color: #f8fafc;
+  border-color: #475569;
+}
+
+.btn-follow.active {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
+}
+
+.file-peer-indicators {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 6px;
+}
+
+.file-peer-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
+}

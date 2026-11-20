@@ -39,6 +39,11 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false)
   const [htmlContent, setHtmlContent] = useState('')
 
+  // Phase C: Live Cursors & Follow State
+  const [followingUserId, setFollowingUserId] = useState(null)
+  const [targetScrollLine, setTargetScrollLine] = useState(null)
+  const [hostId, setHostId] = useState(null)
+
   const workspaceRef = useRef(null)
   const pythonWorkerRef = useRef(null)
   const jsWorkerRef = useRef(null)
@@ -150,6 +155,7 @@ export default function App() {
             clientId,
             name: state.user.name || 'Anonymous',
             color: state.user.color || '#6366f1',
+            userId: (state.user && state.user.id) || null,
             currentFile: state.currentFile || null,
             currentLine: state.currentLine || 1,
             isYou: clientId === ws.ydoc.clientID
@@ -163,6 +169,14 @@ export default function App() {
 
     ws.awareness.on('change', onAwarenessChange)
 
+    // Listen to meta changes (host election & review mode)
+    if (ws.getHost) {
+      setHostId(ws.getHost())
+    }
+    const unsubMeta = ws.onMetaChange ? ws.onMetaChange(() => {
+      if (ws.getHost) setHostId(ws.getHost())
+    }) : () => {}
+
     // Wait until workspace is ready, then set initial files and awareness
     ws.whenReady.then(() => {
       const initialFiles = ws.listFiles()
@@ -170,6 +184,7 @@ export default function App() {
       if (initialFiles.length > 0) {
         setActiveFile((prev) => prev || initialFiles[0])
       }
+      if (ws.getHost) setHostId(ws.getHost())
       onAwarenessChange()
       logEvent('sync', 'Workspace ready and synchronized with server')
     })
@@ -183,6 +198,7 @@ export default function App() {
       unsubStatus()
       unsubFiles()
       unsubUndoStack()
+      unsubMeta()
       ws.ydoc.off('update', onDocUpdate)
       ws.awareness.off('change', onAwarenessChange)
       ws.destroy()
@@ -203,8 +219,73 @@ export default function App() {
   // File operations
   const handleSelectFile = (fileName) => {
     setActiveFile(fileName)
+    if (followingUserId) {
+      setFollowingUserId(null)
+    }
     logEvent('editor', `Opened file "${fileName}"`)
   }
+
+  // Phase C: Jump to Person's File & Line
+  const handleJumpToUser = useCallback(
+    (targetUser) => {
+      if (!targetUser.currentFile) return
+      if (targetUser.currentFile !== activeFile) {
+        setActiveFile(targetUser.currentFile)
+      }
+      setTargetScrollLine(targetUser.currentLine || 1)
+      logEvent(
+        'editor',
+        `Jumped to ${targetUser.name}'s view in "${targetUser.currentFile}" (Ln ${targetUser.currentLine || 1})`
+      )
+    },
+    [activeFile, logEvent]
+  )
+
+  // Phase C: Toggle Follow Mode
+  const handleToggleFollow = useCallback(
+    (clientId) => {
+      setFollowingUserId((prev) => {
+        if (prev === clientId) {
+          logEvent('editor', 'Stopped following collaborator')
+          return null
+        }
+        const target = users.find((u) => u.clientId === clientId)
+        if (target) {
+          if (target.currentFile && target.currentFile !== activeFile) {
+            setActiveFile(target.currentFile)
+          }
+          setTargetScrollLine(target.currentLine || 1)
+          logEvent('editor', `Now following ${target.name}'s cursor & file`)
+        }
+        return clientId
+      })
+    },
+    [users, activeFile, logEvent]
+  )
+
+  // Phase C: User interaction in editor unhooks follow mode
+  const handleUserInteraction = useCallback(() => {
+    if (followingUserId) {
+      setFollowingUserId(null)
+      logEvent('editor', 'Follow mode stopped due to local interaction')
+    }
+  }, [followingUserId, logEvent])
+
+  // Phase C: Follow synchronization effect
+  useEffect(() => {
+    if (!followingUserId) return
+    const peer = users.find((u) => u.clientId === followingUserId)
+    if (!peer) {
+      setFollowingUserId(null)
+      return
+    }
+    if (peer.currentFile && peer.currentFile !== activeFile) {
+      setActiveFile(peer.currentFile)
+    }
+    if (peer.currentLine) {
+      setTargetScrollLine(peer.currentLine)
+    }
+  }, [followingUserId, users, activeFile])
 
   const handleCreateFile = (fileName) => {
     if (!workspace) return
@@ -484,6 +565,7 @@ export default function App() {
           onSelectFile={handleSelectFile}
           onCreateFile={handleCreateFile}
           onDeleteFile={handleDeleteFile}
+          users={users}
         />
 
         {/* Center: CodeMirror 6 Editor with Bottom Output Panel */}
@@ -493,6 +575,8 @@ export default function App() {
             ytext={activeYText}
             awareness={workspace.awareness}
             remoteUsersViewingThisFile={remoteUsersInSameFile}
+            targetScrollLine={targetScrollLine}
+            onUserInteraction={handleUserInteraction}
           />
 
           {/* Phase B: Bottom Output & Preview Panel */}
@@ -509,7 +593,14 @@ export default function App() {
         </div>
 
         {/* Right: People Panel */}
-        <PeoplePanel users={users} activeFile={activeFile} />
+        <PeoplePanel
+          users={users}
+          activeFile={activeFile}
+          onJumpToUser={handleJumpToUser}
+          followingUserId={followingUserId}
+          onToggleFollow={handleToggleFollow}
+          hostId={hostId}
+        />
       </div>
 
       {/* Hackathon Demo & Debug Panel Drawer */}
