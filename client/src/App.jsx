@@ -12,7 +12,8 @@ import {
   downloadAllAsZip,
   getInitialTemplate,
   getFileExtension,
-  getLanguageName
+  getLanguageName,
+  getDefaultServerUrl
 } from './utils/helpers'
 
 import JoinScreen from './components/JoinScreen'
@@ -148,7 +149,12 @@ export default function App() {
     if (!session) return
 
     const { roomId, userName, userColor } = session
-    const ws = createWorkspace({ roomId, userName, userColor })
+    const ws = createWorkspace({
+      roomId,
+      userName,
+      userColor,
+      serverUrl: getDefaultServerUrl()
+    })
     workspaceRef.current = ws
     setWorkspace(ws)
 
@@ -275,7 +281,15 @@ export default function App() {
       setUndoDepths({ ...depths })
     })
 
+    const handleBeforeUnload = () => {
+      try {
+        ws.awareness.setLocalState(null)
+      } catch (_) {}
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
     return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
       unsubStatus()
       unsubFiles()
       unsubUndoStack()
@@ -531,19 +545,19 @@ export default function App() {
       pythonWorkerRef.current = worker
 
       worker.onmessage = (e) => {
-        const { type, data, duration } = e.data
+        const { type, data, message, duration } = e.data
         if (type === 'stdout') {
           addOutput('stdout', data)
         } else if (type === 'stderr') {
           addOutput('stderr', data)
         } else if (type === 'status') {
-          addOutput('status', data)
+          addOutput('status', data || message)
         } else if (type === 'done') {
           setIsRunning(false)
           addOutput('status', `Finished in ${duration}s`)
         } else if (type === 'error') {
           setIsRunning(false)
-          addOutput('stderr', `Error: ${data}`)
+          addOutput('stderr', `Error: ${data || message}`)
         }
       }
 
@@ -552,7 +566,7 @@ export default function App() {
         addOutput('stderr', `Worker Error: ${err.message}`)
       }
 
-      worker.postMessage({ code })
+      worker.postMessage({ type: 'run', code })
       return
     }
 
@@ -725,6 +739,20 @@ export default function App() {
         onOpenReviewDrawer={() => setIsReviewDrawerOpen(true)}
         onOpenPushDraft={() => setIsPushDraftOpen(true)}
       />
+
+      {/* Offline Connection Error Banner */}
+      {status === 'offline' && (
+        <div className="offline-alert-banner">
+          <span>Cannot reach the server. Check the link and Wi-Fi. (Offline editing is enabled &mdash; your changes will automatically sync when reconnected)</span>
+          <button
+            type="button"
+            className="btn-flat btn-secondary btn-retry"
+            onClick={() => workspaceRef.current?.goOnline()}
+          >
+            Retry Connection
+          </button>
+        </div>
+      )}
 
       {/* Main Workspace Body */}
       <div className="workspace-body">

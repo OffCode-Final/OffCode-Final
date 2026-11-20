@@ -162,3 +162,56 @@ export async function downloadAllAsZip(workspace, roomId) {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * Universal clipboard copy helper with fallback for non-secure contexts (LAN http://)
+ */
+export function copyToClipboard(text) {
+  if (typeof window === 'undefined') return Promise.resolve(false)
+
+  // Try modern navigator.clipboard if available
+  if (navigator?.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text)
+      .then(() => true)
+      .catch(() => fallbackCopy(text))
+  }
+
+  return Promise.resolve(fallbackCopy(text))
+}
+
+function fallbackCopy(text) {
+  try {
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-9999px'
+    textArea.style.top = '0'
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    const successful = document.execCommand('copy')
+    document.body.removeChild(textArea)
+    return successful
+  } catch (err) {
+    console.warn('Fallback copy failed:', err)
+    return false
+  }
+}
+
+/**
+ * Determines the WebSocket sync server URL.
+ * Supports LAN IP resolution so devices on the same Wi-Fi connect to the host's server.
+ */
+export function getDefaultServerUrl() {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SYNC_SERVER_URL) {
+    return import.meta.env.VITE_SYNC_SERVER_URL
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    const loc = window.location
+    const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:'
+    const host = loc.hostname || 'localhost'
+    return `${proto}//${host}:1234`
+  }
+  return 'ws://localhost:1234'
+}
+
+

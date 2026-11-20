@@ -1,161 +1,132 @@
-# OffCode ⚡
+# OffCode
 ### Multiplayer Code Editor that Works Offline
 
-A browser-based collaborative code editor where 4+ developers can edit the same files in real time, keep working smoothly offline, and automatically merge upon reconnect with zero lost characters.
+A browser-based collaborative code editor where multiple developers can edit the same files in real time, keep working smoothly offline, and automatically merge upon reconnect with zero lost characters.
 
-Built with **React**, **CodeMirror 6**, **Pyodide**, and **Yjs CRDTs**.
+Built with React, CodeMirror 6, Pyodide WebAssembly, and Yjs CRDTs. Styled in VS Code Dark+ theme.
 
 ---
 
-## 🚀 How to Demo in 2 Minutes (For Judges & Non-Coders)
+## Two Device Live Demo in 3 Steps
 
-Follow these exact steps to verify all features in under two minutes:
+Use these 3 steps to demonstrate live collaboration between two real devices (laptops, phones, or tablets on the same Wi-Fi) or two browser profiles on the same computer:
 
 ### Step 1: Start the Server & Client
-1. In terminal 1 (start the WebSocket sync server):
+1. In terminal 1, start the WebSocket sync server:
    ```bash
    npm run start:server
    ```
-2. In terminal 2 (start the React web app):
+2. In terminal 2, start the React client:
    ```bash
    cd client
    npm run dev
    ```
-3. Open your web browser and navigate to: **`http://localhost:5173`**
+   The terminal will print your local URL (`http://localhost:5173`) and Network URL (e.g. `http://192.168.1.50:5173`).
 
-### Step 2: Open Two Collaborative Windows Side-by-Side
-1. In your **Window A** (Left window - Host):
+### Step 2: Host Creates a Room (Device A)
+1. On Device A (or Window A), navigate to: **`http://localhost:5173`**
+2. In the Join screen:
    - Enter your name: `Alice`
-   - Room Code: `hackathon-room`
-   - Click **"Join Room & Start Coding →"**
-2. In your **Window B** (Right window - Peer / Collaborator):
-   - Navigate to: `http://localhost:5173/?room=hackathon-room`
-   - Enter your name: `Bob`
-   - Click **"Join Room & Start Coding →"**
+   - Select **"Create Room"** (a clean room code like `room-4921` is auto-generated)
+   - Click **"Create & Enter Room"**
+3. Alice enters the editor as **Host** (indicated in the bottom status bar and top bar).
+4. Click the **"Copy"** button next to the Share Link in the Join screen (or share `http://<your-ip>:5173/?room=<room-code>`).
+
+### Step 3: Friend Joins the Room (Device B)
+1. On Device B (or a private/incognito window), open the shared link:
+   **`http://<your-ip>:5173/?room=<room-code>`**
+2. The Room Code is automatically prefilled. Enter name: `Bob` and click **"Join Room"**.
+3. **Verify Live Collaboration**:
+   - Both devices immediately see each other in the right-side **People** panel (`2 collaborators`) with colored dots, active file name, and real-time line numbers.
+   - When Bob moves his cursor or selects text, Alice sees Bob's live colored caret and name tag in real time.
+   - Bob can click **"Follow"** next to Alice in the People panel to automatically track Alice's file and cursor position.
 
 ---
 
-### Step 3: Verify the Key Features in Order
+## Key Features Verification Walkthrough
 
-#### 1. Live Colored Cursors, Line Tracking & Follow Mode
-- Look at the right-side **People** panel in both windows: you will see `2 active` with colored dots for both Alice and Bob.
-- Notice the file and live line number tracking next to each person (e.g. `main.js : Ln 6`).
-- In Window B, move your cursor or click on different lines.
-- **Look at Window A**: You will see Bob's live colored cursor, selection highlight, and floating name tag moving in real time without shifting existing text!
-- In Window A, click the **"🎯 Follow"** button next to Bob in the People panel. Window A will automatically navigate to whatever file and line Bob opens!
+### 1. Offline Editing & Automatic Reconnect Merge (Zero Lost Characters)
+1. In Bob's window, click **"Online"** in the bottom status bar (or click "More actions -> Disconnect"). The status turns red **Offline**, and a banner displays: *"Cannot reach the server. Check the link and Wi-Fi. (Offline editing is enabled)"*.
+2. In Bob's window (while offline), type: `// BOB TYPED WHILE OFFLINE`
+3. In Alice's window (online), type concurrently on the same line: `// ALICE CONCURRENT EDIT`
+4. In Bob's window, click **"Retry Connection"** in the banner.
+5. The connection reconnects to **Online**.
+6. **Result**: Both Alice's and Bob's edits merge cleanly with **zero lost characters** thanks to Yjs CRDT conflict resolution.
 
-#### 2. Offline Mode & Zero Lost Characters (Automatic CRDT Reconnect Merge)
-1. In Window B (Bob), click the **"🔌 Go Offline"** button in the top bar. The badge changes to red **OFFLINE**.
-2. In Window B, type: `// BOB TYPED WHILE OFFLINE`
-3. In Window A (Alice, online), type concurrently: `// ALICE CONCURRENT EDIT`
-4. Notice that neither window interferes with the other while disconnected.
-5. In Window B, click the **"⚡ Go Online"** button in the top bar.
-6. The badge flashes **Connecting...** and turns green **ONLINE**.
-7. **Verify**: Both edits (`// BOB TYPED WHILE OFFLINE` and `// ALICE CONCURRENT EDIT`) seamlessly merge into both windows with **zero lost characters**!
+### 2. Multi-File Isolation
+1. In Alice's sidebar, click **"New file"**, type `script.py`, and click **Create**.
+2. Alice automatically switches to `script.py`.
+3. Notice that Bob is still in `main.js`. Bob's cursor is **not** rendered in `script.py`—each collaborator's cursor only renders in the file they are currently viewing.
+4. The People panel accurately shows Alice in `script.py:1` and Bob in `main.js:1`.
 
-#### 3. Per-User Undo (Ctrl+Z)
-This is the hardest feature in collaborative editing: undoing *only* your own changes, without deleting teammates' text.
-1. In Window A (Alice), type: `const greeting = "Hello World";`
-2. In Window B (Bob), type right below it: `const team = "Antigravity";`
-3. In Window A (Alice), press **Ctrl+Z** (or click the **"Undo"** button in the top bar).
-4. **Verify**: Alice's text is undone, but Bob's text (`const team = "Antigravity";`) **remains completely untouched**!
-5. In Window A, press **Ctrl+Shift+Z** (or click **"Redo"**) to cleanly restore Alice's edit.
+### 3. Per-User Undo (Ctrl+Z)
+Collaborative per-user undo ensures undoing your own changes never deletes or reverts teammates' work.
+1. In Alice's window, type: `const greeting = "Hello World";`
+2. In Bob's window, type directly below it: `const team = "Antigravity";`
+3. In Alice's window, press **Ctrl+Z** (or click the Undo icon in the top bar).
+4. **Result**: Alice's text is undone, while Bob's text (`const team = "Antigravity";`) **remains completely intact**.
+5. In Alice's window, press **Ctrl+Shift+Z** (or click Redo) to restore Alice's edit.
 
-#### 4. Host & Review Mode (Private Drafts, Diff Inspector & Merge)
-1. In Window A (Alice is Host, indicated by the `👑 HOST` badge in the top bar):
-   - In the top bar mode switch, click **"Review"**.
-2. Look at Window B (Bob):
-   - A banner appears: *"You're editing your draft. Push it for host review."*
-   - Two review tabs appear: `✏️ My Draft (editing)` and `👁️ Main file (read-only)`.
-3. In Window B, type a proposed feature in your draft:
+### 4. Host & Review Mode (Private Drafts, Visual Diff, and 3-Way Fuzzy Merge)
+1. On Device A (Alice is Host): in the top bar mode toggle, switch from **"Live"** to **"Review"**.
+2. On Device B (Bob):
+   - A banner appears: *"Review mode active. Editing your private draft. Push when ready for host review."*
+   - Two review tabs appear: `My Draft (editing)` and `Main file (read-only)`.
+3. In Bob's draft, add a function:
    ```javascript
-   // Bob's optimized sorting algorithm
-   function quickSort(arr) { return arr.sort(); }
+   function calculateTotal(items) {
+     return items.reduce((sum, item) => sum + item.price, 0);
+   }
    ```
-4. Click the `👁️ Main file (read-only)` tab: notice the main file is untouched and protected from direct edits. Switch back to `✏️ My Draft`.
-5. Click **"🚀 Push Draft"** in the banner or top bar. Type a description (e.g. *"Added quick sort"*) and submit.
-6. **Look at Window A (Host)**:
-   - The top bar shows **"📋 Proposals (1)"** with a badge.
-   - Alice clicks **"📋 Proposals"** to open the Host Review Drawer.
-   - Alice inspects the side-by-side / inline **Visual Diff**: green (`+`) for added lines and red (`-`) for removed lines.
-   - Alice clicks **"✓ Accept Proposal"**.
-   - The proposal status changes to `✅ Accepted` and applies cleanly to the main file!
-   - In Window B, Bob receives an instant notification toast: *"Host ACCEPTED your proposal!"*.
-7. If needed, the host can click **"↩ Revert Proposal"** in the Review Drawer to safely roll back the proposal without disturbing other users' cursors.
+4. Click `Main file (read-only)`: verify that the main file is protected and unchanged.
+5. Switch back to `My Draft`, click **"Push Draft"**, enter a summary message (`"Add calculateTotal utility"`), and submit.
+6. On Device A (Alice, Host):
+   - The top bar displays **"Proposals (1)"**.
+   - Alice clicks **"Proposals"** to open the Host Review Drawer.
+   - Alice reviews the visual side-by-side / inline diff (`+` green additions, `-` red deletions).
+   - Alice clicks **"Accept"**.
+7. The proposed changes are merged into the shared file using 3-way fuzzy patching without disrupting other collaborators' cursors. Bob receives an instant toast notification: *"Host accepted your proposal"*.
+8. Alice can also click **"Revert"** in the Review Drawer to safely roll back the proposal at any time.
 
-#### 5. Run Python Offline with Pyodide (Web Worker & Sandboxed Execution)
-1. On the left sidebar, click **"+py"** or create a Python file `script.py`.
-2. OffCode seeds an initial Python script:
-   ```python
-   def main():
-       print("Hello from Python in OffCode!")
-       for i in range(1, 4):
-           print(f"Step {i}: CRDT sync verified.")
+### 5. Local Offline Code Execution
+1. Open or create `script.py`.
+2. Click **"Run"** in the top bar (or press **Ctrl+Enter**).
+3. The bottom **Output Panel** opens:
+   - Pyodide WebAssembly engine loads offline from local files in `client/public/pyodide/` (no CDN or external network needed).
+   - Python executes inside an isolated Web Worker, capturing `stdout` and execution duration.
+   - If an infinite loop occurs, click **"Stop"** to terminate the Web Worker and immediately unblock the UI.
+   - If `input()` is called, a friendly message explains that interactive console input is disabled in offline execution.
+4. JavaScript files run in an isolated Web Worker with a 10-second watchdog timer.
+5. HTML files render live previews inside a sandboxed iframe.
 
-   if __name__ == "__main__":
-       main()
-   ```
-3. Click the **"▶ Run"** button (or press **Ctrl+Enter**).
-4. The bottom **Output Panel** slides up:
-   - Pyodide loads offline directly from local files in `client/public/pyodide/` (no external CDN required!).
-   - Execution runs safely inside an isolated Web Worker.
-   - `stdout` prints cleanly in terminal green.
-   - If a script has an infinite loop, click the red **"⏹ Stop"** button to instantly kill the Web Worker and restore responsiveness.
-   - If `input()` is called, a friendly message explains that interactive input is not supported in the offline runner.
-5. In addition to Python, click **"+js"** to execute JavaScript in an isolated worker with a 10s timeout, or **"+html"** for live sandboxed HTML preview!
-
-#### 6. Save & Download All (.zip)
-1. Click **"💾 Save"** (or press **Ctrl+S**): downloads the current file directly to your computer with its exact filename and contents.
-2. Click **"📦 Download All (.zip)"**: bundles every file in the collaborative room into a `.zip` archive via `jszip` and triggers a one-click download.
-
-#### 7. Hackathon Demo & Debug Inspector
-- Click the **"🔍 Demo Panel"** button in the top bar.
-- A live HUD opens showing:
-  - **CRDT Client ID**: Unique peer identifier
-  - **Connection Status**: Real-time Yjs network provider state
-  - **Collaborators in Room**: Active peers count
-  - **Room Mode**: `LIVE` vs `REVIEW`
-  - **Room Host ID**: Active elected host authority
-  - **Pending Proposals**: Count of proposals waiting for review
-  - **Per-file Undo/Redo Stacks**: Verifying independent history depth per file and draft
-  - **Live Activity Log**: Real-time event stream of network, CRDT, file, and review events
-  - **"Simulate Remote Edit"** button: Test concurrent merges with a single click
+### 6. Save & Download All (.zip)
+1. Click **"Save"** in the top bar (or press **Ctrl+S**): downloads the active file directly to your PC with its exact filename and content.
+2. Click **"More actions -> Download all (.zip)"**: bundles all files in the current workspace into a `.zip` archive using JSZip and triggers a browser download.
 
 ---
 
-## 🛠️ Tech Stack & Architecture
+## Tech Stack & Architecture
 
 - **Frontend**: React 19, Vite, Plain JavaScript (no TypeScript).
+- **Styling**: VS Code Dark+ CSS design system (editor `#1e1e1e`, sidebar `#252526`, top bar `#323233`, status bar `#007acc`, zero emojis).
+- **Fonts**: Self-hosted Inter (UI) and JetBrains Mono (Code/Output) via `@fontsource`.
 - **Editor**: CodeMirror 6 (`@codemirror/state`, `@codemirror/view`, `@codemirror/language`, `@codemirror/commands`).
-- **Language Support**: Syntax highlighting & indentation for Python, JavaScript, HTML, CSS, JSON, Markdown, C/C++, Java.
+- **Languages**: Python, JavaScript, HTML, CSS, JSON, Markdown, C/C++, Java.
 - **Offline Code Execution**: Pyodide (ES Module Web Worker, local assets pre-cached by Workbox PWA), Web Worker JS runner with 10s watchdog timeout, sandboxed iframe HTML preview.
-- **Diff Engine**: `diff` for side-by-side & inline visual diffing; `diff-match-patch` for host proposal merging.
-- **CRDT & Sync**: `yjs`, `y-websocket`, `y-indexeddb`, `y-codemirror.next`.
-- **Styling**: Pure CSS with CSS variables, high-contrast accessible One Dark theme, and responsive layouts.
-- **Strict Architecture Boundaries**:
+- **CRDT Sync Engine**: `yjs`, `y-websocket`, `y-indexeddb`, `y-codemirror.next`.
+- **Strict Role Boundaries**:
   - `client/` (UI, Editor, Workers, Runners): Durgesh
   - `server/`, `tests/`, `client/src/sync/`: Teammate
 
 ---
 
-## 🧪 Automated Test Suite
+## Automated Test Suite
 
 Run the full end-to-end verification test suite:
 ```bash
 npm test
 ```
-All 21 comprehensive test scenarios pass cleanly:
-- Concurrent typing on identical lines
-- Dual offline edits with identical line/word conflicts
-- Long offline edits (1000+ operations)
-- Offline IndexedDB persistence surviving browser refresh
-- Delete-vs-edit conflict resolution
-- 8 simultaneous clients under simulated flaky network conditions
-- Server mid-session restart and crash recovery
-- Concurrent file creation/deletion
-- Large file (5,000+ lines) sync performance benchmark
-- Host & author concurrent proposals with 3-way fuzzy patching
-- Stale proposal handling & offline proposal reconnect
-- Leader/Host election convergence
-- Proposal revert isolation
-- Non-host permission enforcement
+All 26 comprehensive test scenarios pass cleanly:
+- 15 Sync engine & offline merge scenarios (concurrent lines, dual offline edits, 1000+ edit stress, IndexedDB reload, delete-vs-edit conflicts, flaky Wi-Fi, server crash recovery, file create/delete conflicts, 5000+ line large file benchmark, concurrent proposals, stale proposals, offline proposal reconnect, leader election, proposal revert, non-host permissions).
+- 4 Contract verification scenarios (exact API surface, host/mode live-review semantics, safe user IDs without crypto.randomUUID, room code normalization).
+- 4 Server persistence scenarios (health check endpoint, 4+ simultaneous users, multi-room isolation, disk persistence surviving server restart).
