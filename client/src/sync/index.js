@@ -5,11 +5,50 @@ import DiffMatchPatch from 'diff-match-patch';
 
 const dmp = new DiffMatchPatch();
 
-// Configure server URL
-export const SYNC_SERVER_URL =
-  (typeof process !== 'undefined' && process.env?.VITE_SYNC_SERVER_URL) ||
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SYNC_SERVER_URL) ||
-  'ws://localhost:1234';
+/**
+ * Derives the WebSocket sync server URL automatically:
+ * 1. VITE_SYNC_SERVER_URL environment variable takes highest priority.
+ * 2. In browser production builds, derives from location (same host and port):
+ *    (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host
+ * 3. In Vite dev mode (port 5173), falls back to ws://<hostname>:1234.
+ * 4. In Node test environments, falls back to ws://localhost:1234.
+ */
+export function getDefaultSyncServerUrl() {
+  const envUrl =
+    (typeof process !== 'undefined' && process.env?.VITE_SYNC_SERVER_URL) ||
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SYNC_SERVER_URL);
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim()) {
+    return envUrl.trim();
+  }
+
+  if (typeof window !== 'undefined' && window.location) {
+    const loc = window.location;
+    const wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (loc.port === '5173') {
+      return `${wsProto}//${loc.hostname || 'localhost'}:1234`;
+    }
+    return `${wsProto}//${loc.host}`;
+  }
+
+  return 'ws://localhost:1234';
+}
+
+export const SYNC_SERVER_URL = getDefaultSyncServerUrl();
+
+/**
+ * Safe random ID generator that works in non-secure contexts (http://192.168.x.x)
+ * as well as secure contexts and headless Node. Never uses crypto.randomUUID.
+ */
+function generateSafeId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    try {
+      const bytes = new Uint8Array(8);
+      crypto.getRandomValues(bytes);
+      return 'user_' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    } catch (_) {}
+  }
+  return 'user_' + Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+}
 
 /**
  * Generates or retrieves a persistent user ID.
@@ -34,7 +73,7 @@ export function getUserId(optionsUserId = null) {
     try {
       let uid = window.localStorage.getItem('offcode_user_id');
       if (!uid) {
-        uid = 'user_' + Math.random().toString(36).slice(2, 10);
+        uid = generateSafeId();
         window.localStorage.setItem('offcode_user_id', uid);
       }
       return uid;
@@ -42,7 +81,7 @@ export function getUserId(optionsUserId = null) {
   }
 
   // 3. Fallback for headless / test environments
-  return 'user_' + Math.random().toString(36).slice(2, 10);
+  return generateSafeId();
 }
 
 /**
@@ -53,7 +92,7 @@ export function getUserId(optionsUserId = null) {
  * - Real-time WebSocket provider with auto-reconnect and state vector exchange
  * - IndexedDB persistence per room (offline survival across refresh)
  * - Awareness presence (cursor, username, color, file viewing)
- * - Host election, mode management ('free' / 'review'), and transfer
+ * - Host election, host claim takeover, mode management ('live' / 'review'), and transfer
  * - Safe concurrent file creation and delete-vs-edit conflict resolution
  * - Review mode: drafts, proposals, fuzzy 3-way diff/patch apply & revert
  */
@@ -62,11 +101,15 @@ export function createWorkspace({
   userName = 'Anonymous',
   userColor = '#6366f1',
   userId = null,
-  serverUrl = SYNC_SERVER_URL,
+  serverUrl = null,
   WebSocketPolyfill = null,
   disableIndexedDB = false
 } = {}) {
   const currentUserId = getUserId(userId);
+  // Normalize room code: case-insensitive and trimmed
+  const cleanRoomId = (roomId || 'default').trim().toLowerCase();
+  const effectiveServerUrl = serverUrl || getDefaultSyncServerUrl();
+
   const ydoc = new Y.Doc();
 
   // Root CRDT Shared Types
@@ -74,7 +117,7 @@ export function createWorkspace({
   const drafts = ydoc.getMap('drafts');          // `${userId}|${file}` -> Y.Text
   const draftBases = ydoc.getMap('draftBases');  // `${userId}|${file}` -> string
   const proposals = ydoc.getMap('proposals');    // proposalId -> Object
-  const meta = ydoc.getMap('meta');              // 'hostId', 'mode' ('free' | 'review')
+  const meta = ydoc.getMap('meta');              // 'hostId', 'mode' ('live' | 'review')
 
   // Connection & Status Tracking
   let status = 'connecting';
@@ -131,7 +174,7 @@ export function createWorkspace({
   let idbPromise = Promise.resolve();
   if (hasIDB) {
     try {
-      idbPersistence = new IndexeddbPersistence(`offcode-${roomId}`, ydoc);
+      idbPersistence = new IndexeddbPersistence(`offcode-${cleanRoomId}`, ydoc);
       idbPromise = idbPersistence.whenSynced;
     } catch (err) {
       console.warn('[Sync] Failed initializing IndexedDB persistence:', err);
@@ -147,7 +190,7 @@ export function createWorkspace({
     wsOptions.WebSocketPolyfill = WebSocketPolyfill;
   }
 
-  const provider = new WebsocketProvider(serverUrl, roomId, ydoc, wsOptions);
+  const provider = new WebsocketProvider(effectiveServerUrl, cleanRoomId, ydoc, wsOptions);
   const awareness = provider.awareness;
 
   // Set local awareness state
@@ -277,8 +320,9 @@ export function createWorkspace({
     if (!meta.has('hostId') || !meta.get('hostId')) {
       meta.set('hostId', currentUserId);
     }
-    if (!meta.has('mode')) {
-      meta.set('mode', 'free');
+    // Mode defaults to 'live' ('free' mapped to 'live')
+    if (!meta.has('mode') || meta.get('mode') === 'free') {
+      meta.set('mode', 'live');
     }
 
     // B. Default File Seeding:
@@ -393,11 +437,34 @@ export function createWorkspace({
   };
 
   // 8. Host & Room Mode Methods
-  const getHost = () => meta.get('hostId') || null;
+  const getHostId = () => meta.get('hostId') || null;
+  const getHost = () => getHostId();
 
   const isHost = () => {
-    const host = getHost();
+    const host = getHostId();
     return host !== null && host === currentUserId;
+  };
+
+  const claimHost = () => {
+    const currentHost = getHostId();
+    if (!currentHost) {
+      meta.set('hostId', currentUserId);
+      return true;
+    }
+    // Check if current host is present in live awareness
+    const states = awareness.getStates();
+    let hostIsActive = false;
+    for (const state of states.values()) {
+      if (state?.user?.id === currentHost) {
+        hostIsActive = true;
+        break;
+      }
+    }
+    if (!hostIsActive) {
+      meta.set('hostId', currentUserId);
+      return true;
+    }
+    return false;
   };
 
   const transferHost = (newHostId) => {
@@ -407,12 +474,15 @@ export function createWorkspace({
     return true;
   };
 
-  const getMode = () => meta.get('mode') || 'free';
+  const getMode = () => {
+    const mode = meta.get('mode');
+    return mode === 'review' ? 'review' : 'live';
+  };
 
   const setMode = (newMode) => {
     if (!isHost()) return false;
-    if (newMode !== 'free' && newMode !== 'review') return false;
-    meta.set('mode', newMode);
+    const mode = (newMode === 'review') ? 'review' : 'live';
+    meta.set('mode', mode);
     return true;
   };
 
@@ -453,7 +523,7 @@ export function createWorkspace({
     const base = getDraftBase(file);
     const proposed = draftText.toString();
 
-    const proposalId = `prop_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const proposalId = `prop_${Date.now()}_${generateSafeId()}`;
     const proposal = {
       id: proposalId,
       authorId: currentUserId,
@@ -638,8 +708,10 @@ export function createWorkspace({
     destroy,
 
     // Addendum methods:
+    getHostId,
     getHost,
     isHost,
+    claimHost,
     transferHost,
     getMode,
     setMode,

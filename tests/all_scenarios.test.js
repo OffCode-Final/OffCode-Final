@@ -546,7 +546,7 @@ test('Comprehensive Offline & Multiplayer Sync Engine Test Suite (15 Scenarios)'
 
     const modeSuccess = nonHost.setMode('review');
     assert.strictEqual(modeSuccess, false, 'Non-host setMode must fail');
-    assert.strictEqual(host.getMode(), 'free', 'Mode must remain free');
+    assert.strictEqual(host.getMode(), 'live', 'Mode must remain live');
 
     const transferSuccess = nonHost.transferHost('nonhost_id');
     assert.strictEqual(transferSuccess, false, 'Non-host transferHost must fail');
