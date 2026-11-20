@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { EditorState } from '@codemirror/state'
 import {
   EditorView,
@@ -86,6 +87,10 @@ export default function Editor({
 }) {
   const editorRef = useRef(null)
   const viewRef = useRef(null)
+  const [scrollerNode, setScrollerNode] = useState(null)
+  const [remotePointers, setRemotePointers] = useState([])
+  const pointerTimestampsRef = useRef(new Map())
+  const lastKnownPosRef = useRef(new Map())
 
   // Language extension selector supporting all requested languages
   const getLanguageSupport = (fileName) => {
@@ -225,13 +230,152 @@ export default function Editor({
       // ignore
     }
 
+    const scroller = view.scrollDOM
+    setScrollerNode(scroller)
+
+    // Throttled mouse position broadcasting (~20 times/sec = 50ms)
+    let lastSendTime = 0
+    let pendingPointer = null
+    let throttleTimer = null
+
+    const flushPointer = () => {
+      if (!awareness || !pendingPointer) return
+      lastSendTime = Date.now()
+      awareness.setLocalStateField('pointer', pendingPointer)
+      pendingPointer = null
+    }
+
+    const handleMouseMove = (e) => {
+      if (!awareness || !activeFile) return
+      const rect = scroller.getBoundingClientRect()
+      const x = Math.round(e.clientX - rect.left + scroller.scrollLeft)
+      const y = Math.round(e.clientY - rect.top + scroller.scrollTop)
+      const pointerData = { file: activeFile, x, y }
+
+      const now = Date.now()
+      if (now - lastSendTime >= 50) {
+        lastSendTime = now
+        if (throttleTimer) {
+          clearTimeout(throttleTimer)
+          throttleTimer = null
+        }
+        pendingPointer = null
+        awareness.setLocalStateField('pointer', pointerData)
+      } else {
+        pendingPointer = pointerData
+        if (!throttleTimer) {
+          throttleTimer = setTimeout(() => {
+            throttleTimer = null
+            flushPointer()
+          }, 50 - (now - lastSendTime))
+        }
+      }
+    }
+
+    const clearPointer = () => {
+      if (throttleTimer) {
+        clearTimeout(throttleTimer)
+        throttleTimer = null
+      }
+      pendingPointer = null
+      if (awareness) {
+        awareness.setLocalStateField('pointer', null)
+      }
+    }
+
+    const handleMouseLeave = () => {
+      clearPointer()
+    }
+
+    const handleWindowBlur = () => {
+      clearPointer()
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        clearPointer()
+      }
+    }
+
+    scroller.addEventListener('mousemove', handleMouseMove, { passive: true })
+    scroller.addEventListener('mouseleave', handleMouseLeave)
+    window.addEventListener('blur', handleWindowBlur)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     return () => {
+      clearPointer()
+      scroller.removeEventListener('mousemove', handleMouseMove)
+      scroller.removeEventListener('mouseleave', handleMouseLeave)
+      window.removeEventListener('blur', handleWindowBlur)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      setScrollerNode(null)
       if (viewRef.current) {
         viewRef.current.destroy()
         viewRef.current = null
       }
     }
   }, [activeFile, ytext, awareness, readOnly])
+
+  // Track and filter remote mouse pointers in the same file
+  useEffect(() => {
+    if (!awareness || !activeFile) {
+      setRemotePointers([])
+      return
+    }
+
+    const updatePointers = () => {
+      const states = awareness.getStates()
+      const myClientId = awareness.clientID
+      const now = Date.now()
+      const list = []
+
+      states.forEach((state, clientId) => {
+        if (clientId === myClientId) return
+        const ptr = state?.pointer
+        if (
+          ptr &&
+          ptr.file === activeFile &&
+          typeof ptr.x === 'number' &&
+          typeof ptr.y === 'number'
+        ) {
+          const prevPos = lastKnownPosRef.current.get(clientId)
+          if (!prevPos || prevPos.x !== ptr.x || prevPos.y !== ptr.y) {
+            lastKnownPosRef.current.set(clientId, { x: ptr.x, y: ptr.y })
+            pointerTimestampsRef.current.set(clientId, now)
+          }
+
+          const lastMoved = pointerTimestampsRef.current.get(clientId) || now
+          const isFaded = now - lastMoved >= 5000
+
+          list.push({
+            clientId,
+            x: ptr.x,
+            y: ptr.y,
+            name: state?.user?.name || 'Anonymous',
+            color: state?.user?.color || '#3b82f6',
+            isFaded
+          })
+        } else {
+          lastKnownPosRef.current.delete(clientId)
+          pointerTimestampsRef.current.delete(clientId)
+        }
+      })
+
+      setRemotePointers(list)
+    }
+
+    awareness.on('change', updatePointers)
+    const interval = setInterval(updatePointers, 1000)
+    updatePointers()
+
+    return () => {
+      awareness.off('change', updatePointers)
+      clearInterval(interval)
+      if (awareness) {
+        awareness.setLocalStateField('pointer', null)
+      }
+    }
+  }, [awareness, activeFile])
 
   // Scroll to line when jumped or following a peer
   useEffect(() => {
@@ -327,7 +471,49 @@ export default function Editor({
           <p>No file open. Select a file from the sidebar to begin editing.</p>
         </div>
       ) : (
-        <div className="editor-canvas" ref={editorRef} />
+        <div className="editor-canvas" ref={editorRef}>
+          {scrollerNode &&
+            createPortal(
+              <div className="remote-pointers-container" aria-hidden="true">
+                {remotePointers.map((p) => (
+                  <div
+                    key={p.clientId}
+                    className={`remote-pointer ${p.isFaded ? 'faded' : ''}`}
+                    style={{
+                      transform: `translate3d(${p.x}px, ${p.y}px, 0)`,
+                      color: p.color
+                    }}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 16 16"
+                      fill="none"
+                      className="remote-pointer-arrow"
+                    >
+                      <path
+                        d="M0 0 L5 15 L8 9 L14 8 Z"
+                        fill={p.color}
+                        stroke="#1e1e1e"
+                        strokeWidth="1"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <div
+                      className="remote-pointer-badge"
+                      style={{
+                        backgroundColor: p.color,
+                        color: '#ffffff'
+                      }}
+                    >
+                      {p.name}
+                    </div>
+                  </div>
+                ))}
+              </div>,
+              scrollerNode
+            )}
+        </div>
       )}
     </main>
   )
