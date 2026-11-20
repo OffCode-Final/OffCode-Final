@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start:server": "node server/index.js",
+    "build": "cd client && npm run build",
     "test": "node --test tests/*.test.js",
     "chaos": "node tests/chaos_demo.js"
   },
