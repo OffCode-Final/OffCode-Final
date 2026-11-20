@@ -4,7 +4,9 @@ export default function PeoplePanel({
   onJumpToUser,
   followingUserId,
   onToggleFollow,
-  hostId
+  hostId,
+  isHost = false,
+  onTransferHost
 }) {
   return (
     <aside className="people-panel">
@@ -60,17 +62,34 @@ export default function PeoplePanel({
                 </div>
 
                 {!u.isYou && (
-                  <button
-                    type="button"
-                    className={`btn-flat btn-follow ${isFollowing ? 'active' : ''}`}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (onToggleFollow) onToggleFollow(u.clientId)
-                    }}
-                    title={isFollowing ? `Stop following ${u.name}` : `Follow ${u.name}`}
-                  >
-                    {isFollowing ? 'Following' : 'Follow'}
-                  </button>
+                  <div className="person-actions" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {isHost && (
+                      <button
+                        type="button"
+                        className="btn-flat btn-make-host"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (window.confirm(`Make ${u.name} the host?`)) {
+                            if (onTransferHost) onTransferHost(u.userId, u.name)
+                          }
+                        }}
+                        title={`Make ${u.name} the host`}
+                      >
+                        Make host
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className={`btn-flat btn-follow ${isFollowing ? 'active' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (onToggleFollow) onToggleFollow(u.clientId)
+                      }}
+                      title={isFollowing ? `Stop following ${u.name}` : `Follow ${u.name}`}
+                    >
+                      {isFollowing ? 'Following' : 'Follow'}
+                    </button>
+                  </div>
                 )}
               </div>
             )

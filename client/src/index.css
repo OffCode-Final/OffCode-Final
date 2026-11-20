@@ -764,6 +764,23 @@ button:disabled {
   color: var(--text-muted);
   flex-shrink: 0;
 }
+
+.btn-make-host {
+  padding: 1px 6px;
+  font-size: 10px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.btn-make-host:hover {
+  background-color: var(--bg-hover-row);
+  color: var(--text-bright);
+  border-color: var(--accent-button);
+}
 .btn-follow:hover {
   color: var(--text-main);
   background-color: var(--bg-hover-row);

@@ -100,8 +100,8 @@ export default function TopBar({
             <div className="mode-switch">
               <button
                 type="button"
-                className={`btn-mode-tab ${mode === 'free' ? 'active' : ''}`}
-                onClick={() => onSetMode && onSetMode('free')}
+                className={`btn-mode-tab ${mode === 'free' || mode === 'live' ? 'active' : ''}`}
+                onClick={() => onSetMode && onSetMode('live')}
                 title="Live Mode: Direct concurrent editing"
               >
                 Live

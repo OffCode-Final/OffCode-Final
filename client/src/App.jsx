@@ -63,6 +63,7 @@ export default function App() {
   const [unreadChatCount, setUnreadChatCount] = useState(0)
 
   const workspaceRef = useRef(null)
+  const prevHostRef = useRef(null)
   const pythonWorkerRef = useRef(null)
   const jsWorkerRef = useRef(null)
   const jsTimeoutRef = useRef(null)
@@ -161,6 +162,12 @@ export default function App() {
     workspaceRef.current = ws
     setWorkspace(ws)
 
+    // Put userId in awareness without overwriting other fields
+    const myId = ws.getUserId ? ws.getUserId() : null
+    if (ws.awareness && myId) {
+      ws.awareness.setLocalStateField('userId', myId)
+    }
+
     // Sync initial status
     setStatus(ws.getStatus())
 
@@ -203,9 +210,10 @@ export default function App() {
 
       states.forEach((state, clientId) => {
         if (state.user) {
+          const resolvedUserId = state.userId || state.user.userId || state.user.id || `client_${clientId}`
           list.push({
             clientId,
-            userId: state.user.userId || `client_${clientId}`,
+            userId: resolvedUserId,
             name: state.user.name || 'Anonymous',
             color: state.user.color || '#cccccc',
             currentFile: state.currentFile || null,
@@ -230,7 +238,29 @@ export default function App() {
               ? metaArg.get('mode')
               : metaArg?.mode ?? (ws.getMode ? ws.getMode() : 'free')
 
-          if (newHost !== undefined && newHost !== null) setHostId(newHost)
+          if (newHost !== undefined && newHost !== null) {
+            if (prevHostRef.current !== null && newHost !== prevHostRef.current) {
+              const myUid = ws.getUserId ? ws.getUserId() : null
+              if (newHost === myUid) {
+                showToast('You are now the room host.', 'success')
+                logEvent('host', 'You are now the room host')
+              } else {
+                const states = ws.awareness.getStates()
+                let hostName = 'A collaborator'
+                for (const st of states.values()) {
+                  const uId = st?.userId || st?.user?.userId || st?.user?.id
+                  if (uId === newHost) {
+                    hostName = st?.user?.name || hostName
+                    break
+                  }
+                }
+                showToast(`${hostName} is now the room host.`, 'info')
+                logEvent('host', `${hostName} is now the room host`)
+              }
+            }
+            prevHostRef.current = newHost
+            setHostId(newHost)
+          }
           if (newMode !== undefined && newMode !== null) {
             setMode(newMode)
             logEvent('mode', `Room mode switched to ${newMode.toUpperCase()}`)
@@ -272,7 +302,15 @@ export default function App() {
       if (initialFiles.length > 0) {
         setActiveFile((prev) => prev || initialFiles[0])
       }
-      if (ws.getHost) setHostId(ws.getHost())
+      // Claim host if no host is set or current host is inactive
+      if (ws.claimHost) {
+        ws.claimHost()
+      }
+      const initialHost = ws.getHost ? ws.getHost() : null
+      if (initialHost) {
+        prevHostRef.current = initialHost
+        setHostId(initialHost)
+      }
       if (ws.getMode) setMode(ws.getMode())
       if (ws.listProposals) setProposals(ws.listProposals())
       onAwarenessChange()
@@ -313,7 +351,8 @@ export default function App() {
   }, [workspace, activeFile])
 
   // Host & Review Mode Computation
-  const isHost = Boolean(workspace && workspace.isHost && workspace.isHost())
+  const myUserId = workspace?.getUserId ? workspace.getUserId() : null
+  const isHost = Boolean(workspace && (hostId && myUserId ? hostId === myUserId : (workspace.isHost && workspace.isHost())))
   const isReviewMode = mode === 'review'
   const isNonHostReview = isReviewMode && !isHost
 
@@ -414,6 +453,27 @@ export default function App() {
       workspace.revertProposal(id)
       showToast('Proposal reverted from main file.', 'info')
       logEvent('review', `Reverted proposal ${id}`)
+    },
+    [workspace, showToast, logEvent]
+  )
+
+  const handleTransferHost = useCallback(
+    (targetUserId, targetName) => {
+      if (!workspace || !workspace.transferHost) {
+        showToast('Host transfer is not supported by sync engine.', 'danger')
+        return
+      }
+      if (!targetUserId) {
+        showToast('Could not identify target user ID.', 'danger')
+        return
+      }
+      const ok = workspace.transferHost(targetUserId)
+      if (ok) {
+        setHostId(targetUserId)
+        logEvent('host', `Transferred host to ${targetName || targetUserId}`)
+      } else {
+        showToast('Failed to transfer host. You must be the active host.', 'danger')
+      }
     },
     [workspace, showToast, logEvent]
   )
@@ -849,6 +909,8 @@ export default function App() {
           followingUserId={followingUserId}
           onToggleFollow={handleToggleFollow}
           hostId={hostId}
+          isHost={isHost}
+          onTransferHost={handleTransferHost}
         />
 
         {/* Collapsible Chat Sidebar */}
