@@ -4,6 +4,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    host: '0.0.0.0',
+    port: 5173
+  },
   resolve: {
     dedupe: ['yjs', 'y-protocols', 'y-websocket', 'y-indexeddb']
   },

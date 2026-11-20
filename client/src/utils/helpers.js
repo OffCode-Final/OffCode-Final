@@ -135,6 +135,7 @@ export function downloadFile(filename, content) {
   URL.revokeObjectURL(url)
 }
 
+
 /**
  * Bundles all workspace files into a zip file and triggers download
  */
@@ -160,3 +161,4 @@ export async function downloadAllAsZip(workspace, roomId) {
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
+
