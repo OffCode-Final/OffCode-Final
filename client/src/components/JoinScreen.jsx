@@ -15,7 +15,6 @@ export default function JoinScreen({ onJoin }) {
     if (asParam && asParam.trim()) {
       setUserName(asParam.trim())
     } else {
-      // Load stored username or generate a friendly default
       const savedName = localStorage.getItem('offcode_user_name')
       if (savedName) {
         setUserName(savedName)
@@ -58,13 +57,9 @@ export default function JoinScreen({ onJoin }) {
     <div className="join-container">
       <div className="join-card">
         <div className="join-header">
-          <div className="brand-badge">
-            <span className="brand-logo-icon">⚡</span>
-            <span className="brand-title">OffCode</span>
-          </div>
-          <h2>Multiplayer Code Editor</h2>
+          <h2>OffCode</h2>
           <p className="join-subtitle">
-            Collaborative real-time editing with instant offline mode and CRDT auto-merge.
+            Collaborative real-time code editor with offline sync.
           </p>
         </div>
 
@@ -102,13 +97,10 @@ export default function JoinScreen({ onJoin }) {
               placeholder="e.g. hackathon-room"
               maxLength={32}
             />
-            <span className="form-hint">
-              Teammates entering the same room code will collaborate on the same files.
-            </span>
           </div>
 
           <div className="form-group">
-            <label>Your Cursor & Badge Color</label>
+            <label>Cursor & Presence Color</label>
             <div className="color-palette">
               {USER_COLORS.map((c) => (
                 <button
@@ -122,34 +114,18 @@ export default function JoinScreen({ onJoin }) {
               ))}
               <button
                 type="button"
-                className="random-color-btn"
+                className="btn-flat btn-secondary btn-xs"
                 onClick={() => setUserColor(getRandomColor().hex)}
-                title="Randomize Color"
               >
-                🎲 Random
+                Random
               </button>
             </div>
           </div>
 
-          <button type="submit" className="btn-primary-large">
-            Join Room & Start Coding →
+          <button type="submit" className="btn-flat btn-primary btn-join">
+            Join Room
           </button>
         </form>
-
-        <div className="join-features">
-          <div className="feature-pill">
-            <span className="pill-dot green"></span> Zero Lost Characters
-          </div>
-          <div className="feature-pill">
-            <span className="pill-dot blue"></span> Live Colored Cursors
-          </div>
-          <div className="feature-pill">
-            <span className="pill-dot purple"></span> Per-User Undo (Ctrl+Z)
-          </div>
-          <div className="feature-pill">
-            <span className="pill-dot amber"></span> Offline Reconnect Merge
-          </div>
-        </div>
       </div>
     </div>
   )

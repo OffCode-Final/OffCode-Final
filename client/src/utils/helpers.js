@@ -4,27 +4,28 @@
 import JSZip from 'jszip'
 
 // Curated palette of pleasant, accessible collaborator colors
+// (Used ONLY for remote cursors, selections, and presence indicator dot)
 export const USER_COLORS = [
-  { name: 'Sky Blue', hex: '#0284c7', light: '#0284c733' },
-  { name: 'Emerald', hex: '#059669', light: '#05966933' },
-  { name: 'Purple', hex: '#7c3aed', light: '#7c3aed33' },
-  { name: 'Rose', hex: '#e11d48', light: '#e11d4833' },
-  { name: 'Amber', hex: '#d97706', light: '#d9770633' },
-  { name: 'Indigo', hex: '#4f46e5', light: '#4f46e533' },
-  { name: 'Teal', hex: '#0d9488', light: '#0d948833' },
-  { name: 'Fuchsia', hex: '#c026d3', light: '#c026d333' }
+  { name: 'Sky Blue', hex: '#0284c7' },
+  { name: 'Emerald', hex: '#059669' },
+  { name: 'Purple', hex: '#7c3aed' },
+  { name: 'Rose', hex: '#e11d48' },
+  { name: 'Amber', hex: '#d97706' },
+  { name: 'Indigo', hex: '#4f46e5' },
+  { name: 'Teal', hex: '#0d9488' },
+  { name: 'Fuchsia', hex: '#c026d3' }
 ]
 
 export const SUPPORTED_EXTENSIONS = [
-  { ext: 'py', label: 'Python', defaultName: 'script.py' },
-  { ext: 'js', label: 'JavaScript', defaultName: 'app.js' },
-  { ext: 'html', label: 'HTML', defaultName: 'index.html' },
-  { ext: 'css', label: 'CSS', defaultName: 'style.css' },
-  { ext: 'json', label: 'JSON', defaultName: 'data.json' },
-  { ext: 'md', label: 'Markdown', defaultName: 'README.md' },
-  { ext: 'cpp', label: 'C++', defaultName: 'main.cpp' },
-  { ext: 'c', label: 'C', defaultName: 'main.c' },
-  { ext: 'java', label: 'Java', defaultName: 'Main.java' }
+  'py',
+  'js',
+  'html',
+  'css',
+  'json',
+  'md',
+  'c',
+  'cpp',
+  'java'
 ]
 
 export function getRandomColor() {
@@ -75,43 +76,6 @@ export function getLanguageName(filename) {
   }
 }
 
-export function getFileBadgeInfo(filename) {
-  const ext = getFileExtension(filename)
-  switch (ext) {
-    case 'py':
-      return { label: 'PY', color: '#10b981' }
-    case 'js':
-    case 'jsx':
-    case 'mjs':
-      return { label: 'JS', color: '#f59e0b' }
-    case 'ts':
-    case 'tsx':
-      return { label: 'TS', color: '#3b82f6' }
-    case 'html':
-    case 'htm':
-      return { label: 'HTML', color: '#ef4444' }
-    case 'css':
-      return { label: 'CSS', color: '#06b6d4' }
-    case 'json':
-      return { label: 'JSON', color: '#a855f7' }
-    case 'md':
-    case 'markdown':
-      return { label: 'MD', color: '#64748b' }
-    case 'cpp':
-    case 'cxx':
-    case 'cc':
-    case 'hpp':
-      return { label: 'C++', color: '#2563eb' }
-    case 'c':
-    case 'h':
-      return { label: 'C', color: '#1d4ed8' }
-    case 'java':
-      return { label: 'JAVA', color: '#ea580c' }
-    default:
-      return { label: 'TXT', color: '#94a3b8' }
-  }
-}
-
 export function getInitialTemplate(filename) {
   const ext = getFileExtension(filename)
   switch (ext) {
@@ -120,13 +84,13 @@ export function getInitialTemplate(filename) {
     case 'js':
       return `// JavaScript\nfunction hello() {\n  console.log("Hello from JavaScript in OffCode!");\n}\n\nhello();\n`
     case 'html':
-      return `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <style>\n    body { font-family: sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; }\n    h1 { color: #38bdf8; }\n  </style>\n</head>\n<body>\n  <h1>⚡ Live HTML Preview</h1>\n  <p>Edit this file to see live preview updates instantly!</p>\n</body>\n</html>\n`
+      return `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>Live Preview</title>\n  <style>\n    body { font-family: sans-serif; background: #1e1e1e; color: #cccccc; padding: 24px; }\n    h1 { color: #4fc1ff; font-size: 20px; }\n  </style>\n</head>\n<body>\n  <h1>Live HTML Preview</h1>\n  <p>Edit this file to see live preview updates instantly.</p>\n</body>\n</html>\n`
     case 'css':
-      return `/* Stylesheet */\nbody {\n  margin: 0;\n  padding: 0;\n  background-color: #0f172a;\n  color: #f8fafc;\n  font-family: system-ui, sans-serif;\n}\n`
+      return `/* Stylesheet */\nbody {\n  margin: 0;\n  padding: 0;\n  background-color: #1e1e1e;\n  color: #cccccc;\n  font-family: system-ui, sans-serif;\n}\n`
     case 'json':
       return `{\n  "name": "offcode-project",\n  "version": "1.0.0",\n  "description": "Collaborative offline code workspace",\n  "features": ["crdt", "offline", "per-user-undo"]\n}\n`
     case 'md':
-      return `# Project Notes\n\nWelcome to **OffCode**!\n- Real-time CRDT sync\n- Offline merge\n- Per-user undo (Ctrl+Z)\n`
+      return `# Project Notes\n\nWelcome to OffCode.\n- Real-time CRDT sync\n- Offline merge\n- Per-user undo (Ctrl+Z)\n`
     case 'cpp':
       return `#include <iostream>\n\nint main() {\n    std::cout << "Hello from C++ in OffCode!" << std::endl;\n    return 0;\n}\n`
     case 'c':

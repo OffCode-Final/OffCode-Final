@@ -1,4 +1,21 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import {
+  Play,
+  Square,
+  Save,
+  Undo2,
+  Redo2,
+  MoreVertical,
+  Download,
+  Terminal,
+  Wifi,
+  WifiOff,
+  LogOut,
+  Copy,
+  Check,
+  GitPullRequest,
+  Send
+} from 'lucide-react'
 import { getFileExtension } from '../utils/helpers'
 
 export default function TopBar({
@@ -30,7 +47,19 @@ export default function TopBar({
   onOpenPushDraft
 }) {
   const [copied, setCopied] = useState(false)
-  const [savedToast, setSavedToast] = useState(false)
+  const [isMoreOpen, setIsMoreOpen] = useState(false)
+  const moreRef = useRef(null)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (moreRef.current && !moreRef.current.contains(e.target)) {
+        setIsMoreOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   const handleCopyLink = () => {
     const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`
@@ -40,231 +69,227 @@ export default function TopBar({
     })
   }
 
-  const handleSaveClick = () => {
-    onSaveCurrentFile()
-    setSavedToast(true)
-    setTimeout(() => setSavedToast(false), 1800)
-  }
-
-  // Check if active file can be executed offline
   const ext = getFileExtension(activeFile)
   const canRun = ['py', 'js', 'jsx', 'mjs', 'html', 'htm'].includes(ext)
   const runTooltip = !activeFile
     ? 'No file open'
     : canRun
     ? `Run ${activeFile} (Ctrl+Enter)`
-    : "Running this language isn't supported offline"
-
-  const getStatusBadge = () => {
-    switch (status) {
-      case 'online':
-        return (
-          <div className="status-badge status-online" title="Connected and actively syncing">
-            <span className="status-dot"></span>
-            <span className="status-text">Online</span>
-          </div>
-        )
-      case 'offline':
-        return (
-          <div className="status-badge status-offline" title="Offline mode: changes saved locally">
-            <span className="status-dot"></span>
-            <span className="status-text">Offline</span>
-          </div>
-        )
-      case 'connecting':
-      default:
-        return (
-          <div className="status-badge status-connecting" title="Connecting to peers...">
-            <span className="status-dot pulsing"></span>
-            <span className="status-text">Connecting...</span>
-          </div>
-        )
-    }
-  }
+    : "Running this language is not supported offline"
 
   return (
     <header className="topbar">
+      {/* Left: Project title & Room identifier */}
       <div className="topbar-left">
         <div className="app-brand">
-          <span className="brand-logo">⚡</span>
           <span className="brand-name">OffCode</span>
-        </div>
-
-        <div className="room-info">
-          <span className="room-label">Room:</span>
-          <span className="room-name" title={`Room: ${roomId}`}>
+          <span className="brand-separator">/</span>
+          <span className="room-name" title={`Room code: ${roomId}`}>
             {roomId}
           </span>
-          <button
-            type="button"
-            className="btn-icon-subtle"
-            onClick={handleCopyLink}
-            title="Copy shareable room link to clipboard"
-          >
-            {copied ? '✓ Copied' : '🔗 Copy Link'}
-          </button>
         </div>
 
-        {/* Phase D: Host Mode Switch & Review Controls */}
+        {/* Host Mode Switch & Review Controls */}
         {isHost ? (
-          <div className="host-mode-controls">
-            <span className="host-pill-top">👑 HOST</span>
-            <div className="mode-toggle-pill">
+          <div className="topbar-mode-group">
+            <span className="host-tag">Host</span>
+            <div className="mode-switch">
               <button
                 type="button"
-                className={`btn-mode-toggle ${mode === 'free' ? 'active' : ''}`}
+                className={`btn-mode-tab ${mode === 'free' ? 'active' : ''}`}
                 onClick={() => onSetMode && onSetMode('free')}
-                title="Live Mode: Everyone edits main files directly"
+                title="Live Mode: Direct concurrent editing"
               >
                 Live
               </button>
               <button
                 type="button"
-                className={`btn-mode-toggle ${mode === 'review' ? 'active' : ''}`}
+                className={`btn-mode-tab ${mode === 'review' ? 'active' : ''}`}
                 onClick={() => onSetMode && onSetMode('review')}
-                title="Review Mode: Collaborators work in drafts and push proposals"
+                title="Review Mode: Collaborators work in drafts"
               >
                 Review
               </button>
             </div>
+
             <button
               type="button"
               className="btn-toolbar btn-proposals"
               onClick={onOpenReviewDrawer}
-              title="Open Proposals Review & Diff Inspector"
+              title="Open Proposals Review & Diff"
             >
-              📋 Proposals {pendingProposalsCount > 0 && <span className="counter-pill">{pendingProposalsCount}</span>}
+              <GitPullRequest size={14} />
+              <span>Proposals</span>
+              {pendingProposalsCount > 0 && (
+                <span className="badge-count">{pendingProposalsCount}</span>
+              )}
             </button>
           </div>
         ) : (
           mode === 'review' && (
-            <div className="non-host-review-controls">
-              <span className="badge-review-mode">⚠️ Review Mode</span>
+            <div className="topbar-mode-group">
+              <span className="review-mode-tag">Review Mode</span>
               <button
                 type="button"
                 className="btn-toolbar btn-push-draft-top"
                 onClick={onOpenPushDraft}
                 disabled={!activeFile}
-                title="Push your private draft for host review"
+                title="Push draft changes for host review"
               >
-                🚀 Push Draft
+                <Send size={13} />
+                <span>Push draft</span>
               </button>
             </div>
           )
         )}
-
-        {/* Run / Stop Code (Phase B) */}
-        <div className="run-actions-group">
-          {isRunning ? (
-            <button
-              type="button"
-              className="btn-toolbar btn-stop-top"
-              onClick={onStopCode}
-              title="Stop running code"
-            >
-              ⏹ Stop
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="btn-toolbar btn-run"
-              onClick={onRunCode}
-              disabled={!canRun}
-              title={runTooltip}
-            >
-              ▶ Run
-            </button>
-          )}
-        </div>
-
-        {/* Save Current File & Download All .zip (Phase A) */}
-        <div className="file-actions-group">
-          <button
-            type="button"
-            className="btn-toolbar btn-save"
-            onClick={handleSaveClick}
-            disabled={!activeFile}
-            title={`Download "${activeFile || 'current file'}" to your computer (Ctrl+S)`}
-          >
-            {savedToast ? '✓ Saved!' : '💾 Save'}
-          </button>
-          <button
-            type="button"
-            className="btn-toolbar btn-download-all"
-            onClick={onDownloadAllZip}
-            title="Download all workspace files as a .zip archive"
-          >
-            📦 Download All (.zip)
-          </button>
-        </div>
       </div>
 
-      <div className="topbar-center">
-        {/* Undo and Redo buttons for Per-User Undo */}
-        <div className="undo-redo-group">
+      {/* Right: Undo/Redo icon buttons, Run, Save, More dropdown */}
+      <div className="topbar-right">
+        {/* Undo / Redo icon buttons */}
+        <div className="icon-actions-group">
           <button
             type="button"
-            className="btn-toolbar"
+            className="btn-icon-bar"
             onClick={onUndo}
             disabled={!canUndo}
-            title="Undo ONLY your local changes (Ctrl+Z)"
+            title={canUndo ? `Undo your edits (Ctrl+Z) [${undoDepth}]` : 'Undo (Ctrl+Z)'}
           >
-            ↩ Undo {undoDepth > 0 ? `(${undoDepth})` : ''}
+            <Undo2 size={15} />
           </button>
           <button
             type="button"
-            className="btn-toolbar"
+            className="btn-icon-bar"
             onClick={onRedo}
             disabled={!canRedo}
-            title="Redo your local changes (Ctrl+Shift+Z / Ctrl+Y)"
+            title={canRedo ? `Redo your edits (Ctrl+Shift+Z / Ctrl+Y) [${redoDepth}]` : 'Redo (Ctrl+Shift+Z)'}
           >
-            ↪ Redo {redoDepth > 0 ? `(${redoDepth})` : ''}
+            <Redo2 size={15} />
           </button>
         </div>
 
-        {/* Connection status badge */}
-        {getStatusBadge()}
+        {/* Run / Stop Code */}
+        {isRunning ? (
+          <button
+            type="button"
+            className="btn-flat btn-danger btn-stop-top"
+            onClick={onStopCode}
+            title="Stop running execution"
+          >
+            <Square size={13} />
+            <span>Stop</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn-flat btn-primary btn-run"
+            onClick={onRunCode}
+            disabled={!canRun}
+            title={runTooltip}
+          >
+            <Play size={13} />
+            <span>Run</span>
+          </button>
+        )}
 
-        {/* Live offline/online demo toggle */}
+        {/* Save Current File */}
         <button
           type="button"
-          className={`btn-toggle-network ${status === 'offline' ? 'btn-reconnect' : 'btn-disconnect'}`}
-          onClick={onToggleOnline}
-          title={status === 'offline' ? 'Click to reconnect and auto-merge' : 'Click to simulate offline mode'}
+          className="btn-flat btn-secondary btn-save"
+          onClick={onSaveCurrentFile}
+          disabled={!activeFile}
+          title={`Save "${activeFile || 'current file'}" to computer (Ctrl+S)`}
         >
-          {status === 'offline' ? '⚡ Go Online' : '🔌 Go Offline'}
-        </button>
-      </div>
-
-      <div className="topbar-right">
-        {/* Toggle Debug / Demo Panel */}
-        <button
-          type="button"
-          className={`btn-toolbar btn-debug ${showDebug ? 'active' : ''}`}
-          onClick={onToggleDebug}
-          title="Toggle Hackathon Demo & Debug Inspector"
-        >
-          🔍 Demo Panel
+          <Save size={13} />
+          <span>Save</span>
         </button>
 
-        {/* Current user badge */}
-        <div className="user-profile-badge" title={`Signed in as ${userName}`}>
-          <span
-            className="user-avatar-dot"
-            style={{ backgroundColor: userColor }}
-          />
-          <span className="user-profile-name">{userName} {isHost && <span title="You are the room host">👑</span>}</span>
+        {/* More Actions Dropdown Menu */}
+        <div className="more-menu-wrapper" ref={moreRef}>
+          <button
+            type="button"
+            className={`btn-icon-bar btn-more ${isMoreOpen ? 'active' : ''}`}
+            onClick={() => setIsMoreOpen(!isMoreOpen)}
+            title="More actions"
+          >
+            <MoreVertical size={16} />
+          </button>
+
+          {isMoreOpen && (
+            <div className="more-dropdown-menu">
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => {
+                  onDownloadAllZip()
+                  setIsMoreOpen(false)
+                }}
+              >
+                <Download size={14} />
+                <span>Download all (.zip)</span>
+              </button>
+
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => {
+                  onToggleDebug()
+                  setIsMoreOpen(false)
+                }}
+              >
+                <Terminal size={14} />
+                <span>Debug panel</span>
+              </button>
+
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => {
+                  onToggleOnline()
+                  setIsMoreOpen(false)
+                }}
+              >
+                {status === 'offline' ? (
+                  <>
+                    <Wifi size={14} />
+                    <span>Go online</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff size={14} />
+                    <span>Go offline</span>
+                  </>
+                )}
+              </button>
+
+              <div className="dropdown-divider" />
+
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => {
+                  handleCopyLink()
+                  setIsMoreOpen(false)
+                }}
+              >
+                {copied ? <Check size={14} /> : <Copy size={14} />}
+                <span>{copied ? 'Link copied' : 'Copy room link'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="dropdown-item text-danger"
+                onClick={() => {
+                  setIsMoreOpen(false)
+                  onLeaveRoom()
+                }}
+              >
+                <LogOut size={14} />
+                <span>Exit room</span>
+              </button>
+            </div>
+          )}
         </div>
-
-        {/* Leave Room button */}
-        <button
-          type="button"
-          className="btn-toolbar btn-leave"
-          onClick={onLeaveRoom}
-          title="Leave this workspace and return to join screen"
-        >
-          Exit
-        </button>
       </div>
     </header>
   )

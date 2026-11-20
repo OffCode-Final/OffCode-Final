@@ -11,7 +11,8 @@ import {
   downloadFile,
   downloadAllAsZip,
   getInitialTemplate,
-  getFileExtension
+  getFileExtension,
+  getLanguageName
 } from './utils/helpers'
 
 import JoinScreen from './components/JoinScreen'
@@ -23,6 +24,7 @@ import DebugPanel from './components/DebugPanel'
 import OutputPanel from './components/OutputPanel'
 import ReviewDrawer from './components/ReviewDrawer'
 import PushDraftModal from './components/PushDraftModal'
+import StatusBar from './components/StatusBar'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -30,23 +32,25 @@ export default function App() {
   const [status, setStatus] = useState('online')
   const [files, setFiles] = useState([])
   const [activeFile, setActiveFile] = useState(null)
+  const [openFiles, setOpenFiles] = useState([])
+  const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 })
   const [users, setUsers] = useState([])
   const [showDebug, setShowDebug] = useState(false)
   const [undoDepths, setUndoDepths] = useState({})
   const [eventsLog, setEventsLog] = useState([])
 
-  // Phase B: Code Execution & Output State
+  // Code Execution & Output State
   const [outputs, setOutputs] = useState([])
   const [isOutputOpen, setIsOutputOpen] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const [htmlContent, setHtmlContent] = useState('')
 
-  // Phase C: Live Cursors & Follow State
+  // Live Cursors & Follow State
   const [followingUserId, setFollowingUserId] = useState(null)
   const [targetScrollLine, setTargetScrollLine] = useState(null)
   const [hostId, setHostId] = useState(null)
 
-  // Phase D: Host & Review Mode State
+  // Host & Review Mode State
   const [mode, setMode] = useState('free') // 'free' | 'review'
   const [proposals, setProposals] = useState([])
   const [isReviewDrawerOpen, setIsReviewDrawerOpen] = useState(false)
@@ -122,9 +126,22 @@ export default function App() {
     setSession(null)
     setFiles([])
     setActiveFile(null)
+    setOpenFiles([])
     setUsers([])
     updateUrlRoom('')
   }
+
+  // Auto-track opened tabs
+  useEffect(() => {
+    if (activeFile) {
+      setOpenFiles((prev) => {
+        if (!prev.includes(activeFile)) {
+          return [...prev, activeFile]
+        }
+        return prev
+      })
+    }
+  }, [activeFile])
 
   // Initialize workspace when session changes
   useEffect(() => {
@@ -147,6 +164,7 @@ export default function App() {
     // Subscribe to file list changes
     const unsubFiles = ws.onFilesChange((updatedFiles) => {
       setFiles(updatedFiles)
+      setOpenFiles((prev) => prev.filter((f) => updatedFiles.includes(f)))
       // If current active file was deleted, switch to first available
       setActiveFile((current) => {
         if (!current || !updatedFiles.includes(current)) {
@@ -168,35 +186,46 @@ export default function App() {
     const onAwarenessChange = () => {
       const states = ws.awareness.getStates()
       const list = []
+      const myClientId = ws.ydoc.clientID
+      const currentHost = ws.getHost ? ws.getHost() : null
+      if (currentHost) {
+        setHostId(currentHost)
+      }
+
       states.forEach((state, clientId) => {
-        if (state && state.user) {
+        if (state.user) {
           list.push({
             clientId,
+            userId: state.user.userId || `client_${clientId}`,
             name: state.user.name || 'Anonymous',
-            color: state.user.color || '#6366f1',
-            userId: (state.user && state.user.id) || null,
+            color: state.user.color || '#cccccc',
             currentFile: state.currentFile || null,
             currentLine: state.currentLine || 1,
-            isYou: clientId === ws.ydoc.clientID
+            isYou: clientId === myClientId
           })
         }
       })
-      // Put local user first
-      list.sort((a, b) => (a.isYou ? -1 : b.isYou ? 1 : 0))
       setUsers(list)
     }
-
     ws.awareness.on('change', onAwarenessChange)
 
-    // Listen to meta changes (host election & review mode)
-    if (ws.getHost) setHostId(ws.getHost())
-    if (ws.getMode) setMode(ws.getMode())
-    if (ws.listProposals) setProposals(ws.listProposals())
-
+    // Host & Mode listener
     const unsubMeta = ws.onMetaChange
-      ? ws.onMetaChange(() => {
-          if (ws.getHost) setHostId(ws.getHost())
-          if (ws.getMode) setMode(ws.getMode())
+      ? ws.onMetaChange((metaArg) => {
+          const newHost =
+            metaArg && typeof metaArg.get === 'function'
+              ? metaArg.get('hostId')
+              : metaArg?.hostId ?? (ws.getHost ? ws.getHost() : null)
+          const newMode =
+            metaArg && typeof metaArg.get === 'function'
+              ? metaArg.get('mode')
+              : metaArg?.mode ?? (ws.getMode ? ws.getMode() : 'free')
+
+          if (newHost !== undefined && newHost !== null) setHostId(newHost)
+          if (newMode !== undefined && newMode !== null) {
+            setMode(newMode)
+            logEvent('mode', `Room mode switched to ${newMode.toUpperCase()}`)
+          }
         })
       : () => {}
 
@@ -214,10 +243,10 @@ export default function App() {
               const old = prevProposals.find((o) => o.id === p.id)
               if (old && old.status === 'pending') {
                 if (p.status === 'accepted') {
-                  showToast(`🎉 Host ACCEPTED your proposal for "${p.file}"!`, 'success')
+                  showToast(`Host accepted your proposal for "${p.file}".`, 'success')
                   logEvent('review', `Your proposal for "${p.file}" was accepted by host`)
                 } else if (p.status === 'rejected') {
-                  showToast(`❌ Host REJECTED your proposal for "${p.file}".`, 'danger')
+                  showToast(`Host rejected your proposal for "${p.file}".`, 'danger')
                   logEvent('review', `Your proposal for "${p.file}" was rejected by host`)
                 }
               }
@@ -266,7 +295,7 @@ export default function App() {
     }
   }, [workspace, activeFile])
 
-  // Phase D: Host & Review Mode Computation
+  // Host & Review Mode Computation
   const isHost = Boolean(workspace && workspace.isHost && workspace.isHost())
   const isReviewMode = mode === 'review'
   const isNonHostReview = isReviewMode && !isHost
@@ -284,7 +313,7 @@ export default function App() {
     }
   }
 
-  // Phase D: Actions
+  // Review Mode Actions
   const handleSetMode = useCallback(
     (newMode) => {
       if (!workspace || !workspace.setMode) return
@@ -298,8 +327,8 @@ export default function App() {
   const handlePushDraft = useCallback(
     (message) => {
       if (!workspace || !workspace.pushDraft || !activeFile) return
-      const propId = workspace.pushDraft(activeFile, message)
-      showToast('Draft proposal submitted for host review!', 'success')
+      workspace.pushDraft(activeFile, message)
+      showToast('Draft proposal submitted for host review.', 'success')
       logEvent('review', `Pushed draft proposal for "${activeFile}"`)
       setIsPushDraftOpen(false)
     },
@@ -310,7 +339,7 @@ export default function App() {
     (id) => {
       if (!workspace || !workspace.acceptProposal) return
       workspace.acceptProposal(id)
-      showToast('Proposal accepted & applied to main file', 'success')
+      showToast('Proposal accepted and applied to main file.', 'success')
       logEvent('review', `Accepted proposal ${id}`)
     },
     [workspace, showToast, logEvent]
@@ -320,7 +349,7 @@ export default function App() {
     (id) => {
       if (!workspace || !workspace.rejectProposal) return
       workspace.rejectProposal(id)
-      showToast('Proposal rejected', 'danger')
+      showToast('Proposal rejected.', 'danger')
       logEvent('review', `Rejected proposal ${id}`)
     },
     [workspace, showToast, logEvent]
@@ -330,7 +359,7 @@ export default function App() {
     (id) => {
       if (!workspace || !workspace.revertProposal) return
       workspace.revertProposal(id)
-      showToast('Proposal reverted from main file', 'info')
+      showToast('Proposal reverted from main file.', 'info')
       logEvent('review', `Reverted proposal ${id}`)
     },
     [workspace, showToast, logEvent]
@@ -339,13 +368,28 @@ export default function App() {
   // File operations
   const handleSelectFile = (fileName) => {
     setActiveFile(fileName)
+    setOpenFiles((prev) => (prev.includes(fileName) ? prev : [...prev, fileName]))
     if (followingUserId) {
       setFollowingUserId(null)
     }
     logEvent('editor', `Opened file "${fileName}"`)
   }
 
-  // Phase C: Jump to Person's File & Line
+  const handleSelectTab = (fileName) => {
+    setActiveFile(fileName)
+  }
+
+  const handleCloseTab = (fileName) => {
+    setOpenFiles((prev) => {
+      const next = prev.filter((f) => f !== fileName)
+      if (activeFile === fileName) {
+        setActiveFile(next.length > 0 ? next[next.length - 1] : null)
+      }
+      return next
+    })
+  }
+
+  // Jump to Person's File & Line
   const handleJumpToUser = useCallback(
     (targetUser) => {
       if (!targetUser.currentFile) return
@@ -361,7 +405,7 @@ export default function App() {
     [activeFile, logEvent]
   )
 
-  // Phase C: Toggle Follow Mode
+  // Toggle Follow Mode
   const handleToggleFollow = useCallback(
     (clientId) => {
       setFollowingUserId((prev) => {
@@ -383,7 +427,7 @@ export default function App() {
     [users, activeFile, logEvent]
   )
 
-  // Phase C: User interaction in editor unhooks follow mode
+  // User interaction in editor unhooks follow mode
   const handleUserInteraction = useCallback(() => {
     if (followingUserId) {
       setFollowingUserId(null)
@@ -391,7 +435,7 @@ export default function App() {
     }
   }, [followingUserId, logEvent])
 
-  // Phase C: Follow synchronization effect
+  // Follow synchronization effect
   useEffect(() => {
     if (!followingUserId) return
     const peer = users.find((u) => u.clientId === followingUserId)
@@ -414,6 +458,7 @@ export default function App() {
     if (text) {
       setFiles(workspace.listFiles())
       setActiveFile(fileName)
+      setOpenFiles((prev) => (prev.includes(fileName) ? prev : [...prev, fileName]))
       logEvent('file', `Created new file "${fileName}"`)
     }
   }
@@ -423,24 +468,25 @@ export default function App() {
     workspace.deleteFile(fileName)
     removeUndoManager(fileName)
     setFiles(workspace.listFiles())
+    setOpenFiles((prev) => prev.filter((f) => f !== fileName))
     logEvent('file', `Deleted file "${fileName}"`)
   }
 
-  // Phase A: Save current file to disk
+  // Save current file to disk
   const handleSaveCurrentFile = useCallback(() => {
     if (!activeFile || !activeYText) return
     downloadFile(activeFile, activeYText.toString())
     logEvent('save', `Downloaded "${activeFile}" to computer`)
   }, [activeFile, activeYText, logEvent])
 
-  // Phase A: Download all files as a .zip
+  // Download all files as a .zip
   const handleDownloadAllZip = useCallback(() => {
     if (!workspace) return
     downloadAllAsZip(workspace, session?.roomId)
     logEvent('save', 'Exported full project as .zip archive')
   }, [workspace, session, logEvent])
 
-  // Phase B: Stop Code Execution
+  // Stop Code Execution
   const handleStopCode = useCallback(() => {
     if (jsTimeoutRef.current) {
       clearTimeout(jsTimeoutRef.current)
@@ -450,50 +496,51 @@ export default function App() {
     if (pythonWorkerRef.current) {
       pythonWorkerRef.current.terminate()
       pythonWorkerRef.current = null
+      setIsRunning(false)
+      addOutput('stderr', 'Execution terminated by user.')
+      logEvent('run', 'Python execution terminated by user')
     }
 
     if (jsWorkerRef.current) {
       jsWorkerRef.current.terminate()
       jsWorkerRef.current = null
+      setIsRunning(false)
+      addOutput('stderr', 'Execution terminated by user.')
+      logEvent('run', 'JavaScript execution terminated by user')
     }
-
-    setIsRunning(false)
-    addOutput('stderr', '[STOPPED] Execution killed by user.')
-    logEvent('run', 'Execution stopped by user')
   }, [addOutput, logEvent])
 
-  // Phase B: Run Code Execution
+  // Run Code
   const handleRunCode = useCallback(() => {
     if (!activeFile || !activeYText) return
+
     const ext = getFileExtension(activeFile)
     const code = activeYText.toString()
 
     setIsOutputOpen(true)
+    setIsRunning(true)
+    addOutput('status', `--- Running ${activeFile} ---`)
+    logEvent('run', `Executed "${activeFile}"`)
 
-    // 1. Python Execution via Web Worker + Pyodide
+    // 1. Python Execution via Pyodide Web Worker
     if (ext === 'py') {
-      setIsRunning(true)
-      addOutput('status', `=== Running Python: ${activeFile} ===`)
-      logEvent('run', `Executing Python file "${activeFile}"`)
-
-      // Create new or reuse module worker for Pyodide
-      if (!pythonWorkerRef.current) {
-        pythonWorkerRef.current = new Worker('/python-worker.js', { type: 'module' })
+      if (pythonWorkerRef.current) {
+        pythonWorkerRef.current.terminate()
       }
-
-      const worker = pythonWorkerRef.current
+      const worker = new Worker('/python-worker.js', { type: 'module' })
+      pythonWorkerRef.current = worker
 
       worker.onmessage = (e) => {
-        const { type, data, message, duration } = e.data
+        const { type, data, duration } = e.data
         if (type === 'stdout') {
           addOutput('stdout', data)
         } else if (type === 'stderr') {
           addOutput('stderr', data)
         } else if (type === 'status') {
-          addOutput('status', message)
+          addOutput('status', data)
         } else if (type === 'done') {
           setIsRunning(false)
-          addOutput('status', `=== Finished in ${duration}s ===`)
+          addOutput('status', `Finished in ${duration}s`)
         } else if (type === 'error') {
           setIsRunning(false)
           addOutput('stderr', `Error: ${data}`)
@@ -505,23 +552,18 @@ export default function App() {
         addOutput('stderr', `Worker Error: ${err.message}`)
       }
 
-      worker.postMessage({ type: 'run', code })
+      worker.postMessage({ code })
       return
     }
 
-    // 2. JavaScript Execution via Web Worker with 10s Timeout
+    // 2. JavaScript Execution via Sandboxed Web Worker
     if (['js', 'jsx', 'mjs'].includes(ext)) {
-      setIsRunning(true)
-      addOutput('status', `=== Running JavaScript: ${activeFile} ===`)
-      logEvent('run', `Executing JavaScript file "${activeFile}"`)
-
       if (jsWorkerRef.current) {
         jsWorkerRef.current.terminate()
       }
       const worker = new Worker('/js-worker.js')
       jsWorkerRef.current = worker
 
-      // 10-second safety timeout
       jsTimeoutRef.current = setTimeout(() => {
         worker.terminate()
         setIsRunning(false)
@@ -537,7 +579,7 @@ export default function App() {
         } else if (type === 'done') {
           clearTimeout(jsTimeoutRef.current)
           setIsRunning(false)
-          addOutput('status', `=== Finished in ${duration}s ===`)
+          addOutput('status', `Finished in ${duration}s`)
         } else if (type === 'error') {
           clearTimeout(jsTimeoutRef.current)
           setIsRunning(false)
@@ -558,24 +600,24 @@ export default function App() {
     // 3. HTML Live Preview in Sandboxed Iframe
     if (['html', 'htm'].includes(ext)) {
       setHtmlContent(code)
-      addOutput('status', `=== Live HTML Preview loaded for ${activeFile} ===`)
+      setIsRunning(false)
+      addOutput('status', `Live HTML preview loaded for ${activeFile}`)
       logEvent('run', `Opened HTML live preview for "${activeFile}"`)
       return
     }
 
     // 4. Other languages
+    setIsRunning(false)
     addOutput('stderr', `Running ${ext.toUpperCase()} is not supported offline.`)
   }, [activeFile, activeYText, addOutput, logEvent])
 
   // Global Keyboard Shortcuts (Ctrl+S for Save, Ctrl+Enter for Run)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ctrl+S / Cmd+S
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
         handleSaveCurrentFile()
       }
-      // Ctrl+Enter / Cmd+Enter
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault()
         handleRunCode()
@@ -700,11 +742,15 @@ export default function App() {
         <div className="editor-and-output-column">
           <Editor
             activeFile={activeFile}
+            openFiles={openFiles.length > 0 ? openFiles : (activeFile ? [activeFile] : [])}
+            onSelectTab={handleSelectTab}
+            onCloseTab={handleCloseTab}
             ytext={activeYText}
             awareness={workspace.awareness}
             remoteUsersViewingThisFile={remoteUsersInSameFile}
             targetScrollLine={targetScrollLine}
             onUserInteraction={handleUserInteraction}
+            onCursorChange={setCursorPos}
             readOnly={isMainReadOnly}
             isReviewMode={isNonHostReview}
             isDraft={isDraftEditing}
@@ -712,7 +758,7 @@ export default function App() {
             onPushDraft={() => setIsPushDraftOpen(true)}
           />
 
-          {/* Phase B: Bottom Output & Preview Panel */}
+          {/* Bottom Output & Preview Panel */}
           <OutputPanel
             isOpen={isOutputOpen}
             onClose={() => setIsOutputOpen(false)}
@@ -735,6 +781,17 @@ export default function App() {
           hostId={hostId}
         />
       </div>
+
+      {/* Bottom Status Bar */}
+      <StatusBar
+        status={status}
+        onToggleOnline={handleToggleOnline}
+        usersCount={users.length}
+        activeLanguage={getLanguageName(activeFile)}
+        cursorPos={cursorPos}
+        isHost={isHost}
+        mode={mode}
+      />
 
       {/* Host Review Proposals Drawer */}
       <ReviewDrawer
@@ -766,7 +823,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Hackathon Demo & Debug Panel Drawer */}
+      {/* Demo & Debug Panel Drawer */}
       <DebugPanel
         isOpen={showDebug}
         onClose={() => setShowDebug(false)}

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { getFileBadgeInfo, SUPPORTED_EXTENSIONS, getFileExtension } from '../utils/helpers'
+import { Plus, Trash2, FileCode, FileText, AlertCircle } from 'lucide-react'
+import { getFileExtension, SUPPORTED_EXTENSIONS } from '../utils/helpers'
 
 export default function Sidebar({
   files,
@@ -19,14 +20,13 @@ export default function Sidebar({
     const cleanName = newFileName.trim()
 
     if (!cleanName) {
-      setError('Please provide a file name.')
+      setError('Enter a file name.')
       return
     }
 
-    // Check if filename has an extension
     const ext = getFileExtension(cleanName)
-    if (!ext) {
-      setError('Please include an extension (e.g. .py, .js, .html, .css, .json, .md, .cpp, .java).')
+    if (!ext || !SUPPORTED_EXTENSIONS.includes(ext)) {
+      setError(`Supported extensions: ${SUPPORTED_EXTENSIONS.map((e) => `.${e}`).join(', ')}`)
       return
     }
 
@@ -41,21 +41,6 @@ export default function Sidebar({
     setError('')
   }
 
-  const handleQuickPreset = (preset) => {
-    // Generate a unique name for this extension
-    let base = preset.defaultName
-    let counter = 1
-    while (files.includes(base)) {
-      const ext = preset.ext
-      const raw = preset.defaultName.replace(`.${ext}`, '')
-      base = `${raw}${counter}.${ext}`
-      counter++
-    }
-    onCreateFile(base)
-    setIsCreating(false)
-    setError('')
-  }
-
   const confirmDelete = () => {
     if (fileToDelete) {
       onDeleteFile(fileToDelete)
@@ -63,26 +48,35 @@ export default function Sidebar({
     }
   }
 
+  const getFileIcon = (filename) => {
+    const ext = getFileExtension(filename)
+    if (['md', 'txt'].includes(ext)) {
+      return <FileText size={14} className="file-icon" />
+    }
+    return <FileCode size={14} className="file-icon" />
+  }
+
   return (
     <aside className="sidebar">
+      {/* Sidebar Header */}
       <div className="sidebar-header">
         <span className="sidebar-title">FILES</span>
         <button
           type="button"
-          className="btn-add-file"
+          className="btn-icon-subtle"
           onClick={() => {
             setIsCreating(true)
             setError('')
           }}
-          title="Create a new file with any supported extension"
+          title="New file"
         >
-          + New File
+          <Plus size={15} />
         </button>
       </div>
 
       {/* New file input form */}
       {isCreating && (
-        <form onSubmit={handleCreateSubmit} className="new-file-form">
+        <form onSubmit={handleCreateSubmit} className="new-file-box">
           <input
             type="text"
             className="text-input new-file-input"
@@ -91,36 +85,23 @@ export default function Sidebar({
               setNewFileName(e.target.value)
               setError('')
             }}
-            placeholder="e.g. main.py, app.js, index.html"
+            placeholder="e.g. script.py, app.js"
             autoFocus
           />
-          {error && <div className="input-error">{error}</div>}
-
-          {/* Quick 1-click language extension presets */}
-          <div className="preset-chips-container">
-            <span className="preset-label">Quick Presets:</span>
-            <div className="preset-chips">
-              {SUPPORTED_EXTENSIONS.map((p) => (
-                <button
-                  key={p.ext}
-                  type="button"
-                  className="btn-preset-chip"
-                  onClick={() => handleQuickPreset(p)}
-                  title={`Create new ${p.label} file`}
-                >
-                  +{p.ext}
-                </button>
-              ))}
+          {error && (
+            <div className="validation-msg">
+              <AlertCircle size={12} />
+              <span>{error}</span>
             </div>
-          </div>
+          )}
 
           <div className="new-file-actions">
-            <button type="submit" className="btn-small btn-primary">
-              Create File
+            <button type="submit" className="btn-flat btn-primary btn-xs">
+              Create
             </button>
             <button
               type="button"
-              className="btn-small btn-secondary"
+              className="btn-flat btn-secondary btn-xs"
               onClick={() => {
                 setIsCreating(false)
                 setNewFileName('')
@@ -133,54 +114,37 @@ export default function Sidebar({
         </form>
       )}
 
-      {/* Files list */}
+      {/* Compact File List */}
       <div className="file-list">
         {files.length === 0 ? (
-          <div className="sidebar-empty">
-            <p>No files in workspace.</p>
-            <button
-              type="button"
-              className="btn-small btn-primary"
-              onClick={() => setIsCreating(true)}
-            >
-              Create First File
-            </button>
-          </div>
+          <div className="file-list-empty">No files in workspace.</div>
         ) : (
           files.map((fileName) => {
-            const badge = getFileBadgeInfo(fileName)
             const isActive = fileName === activeFile
-            const remoteUsersOnFile = users.filter(
+            const remoteViewers = users.filter(
               (u) => !u.isYou && u.currentFile === fileName
             )
 
             return (
               <div
                 key={fileName}
-                className={`file-item ${isActive ? 'active' : ''}`}
+                className={`file-row ${isActive ? 'active' : ''}`}
                 onClick={() => onSelectFile(fileName)}
-                title={`Open ${fileName}`}
+                title={fileName}
               >
-                <div className="file-item-left">
-                  <span
-                    className="file-badge"
-                    style={{ backgroundColor: badge.color }}
-                  >
-                    {badge.label}
-                  </span>
-                  <span className="file-name">{fileName}</span>
-                  {remoteUsersOnFile.length > 0 && (
-                    <div
-                      className="file-peer-indicators"
-                      title={`${remoteUsersOnFile
-                        .map((u) => `${u.name} (Ln ${u.currentLine || 1})`)
-                        .join(', ')} currently viewing this file`}
-                    >
-                      {remoteUsersOnFile.map((u) => (
+                <div className="file-row-main">
+                  {getFileIcon(fileName)}
+                  <span className="file-row-name">{fileName}</span>
+
+                  {/* Presence indicator dot for remote collaborators */}
+                  {remoteViewers.length > 0 && (
+                    <div className="file-presence-dots">
+                      {remoteViewers.map((viewer) => (
                         <span
-                          key={u.clientId}
-                          className="file-peer-dot"
-                          style={{ backgroundColor: u.color }}
+                          key={viewer.clientId}
+                          className="file-presence-dot"
+                          style={{ backgroundColor: viewer.color }}
+                          title={`${viewer.name} is viewing this file`}
                         />
                       ))}
                     </div>
@@ -189,14 +153,14 @@ export default function Sidebar({
 
                 <button
                   type="button"
-                  className="btn-delete-file"
+                  className="btn-delete-row"
                   onClick={(e) => {
                     e.stopPropagation()
                     setFileToDelete(fileName)
                   }}
                   title={`Delete ${fileName}`}
                 >
-                  ✕
+                  <Trash2 size={13} />
                 </button>
               </div>
             )
@@ -206,24 +170,21 @@ export default function Sidebar({
 
       {/* Delete confirmation modal */}
       {fileToDelete && (
-        <div className="modal-backdrop">
-          <div className="modal-card">
-            <h3>Delete File</h3>
-            <p>
-              Are you sure you want to delete <strong>{fileToDelete}</strong>?
-              This will remove it for all collaborators in this room.
-            </p>
+        <div className="modal-backdrop" onClick={() => setFileToDelete(null)}>
+          <div className="modal-card modal-delete" onClick={(e) => e.stopPropagation()}>
+            <h4>Delete File</h4>
+            <p>Delete "{fileToDelete}"? This cannot be undone.</p>
             <div className="modal-actions">
               <button
                 type="button"
-                className="btn-small btn-danger"
+                className="btn-flat btn-danger btn-sm"
                 onClick={confirmDelete}
               >
-                Delete File
+                Delete
               </button>
               <button
                 type="button"
-                className="btn-small btn-secondary"
+                className="btn-flat btn-secondary btn-sm"
                 onClick={() => setFileToDelete(null)}
               >
                 Cancel

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { EditorState } from '@codemirror/state'
 import {
   EditorView,
@@ -11,6 +11,7 @@ import { defaultKeymap } from '@codemirror/commands'
 import { bracketMatching, foldGutter, indentOnInput, indentUnit } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
+import { X, Send } from 'lucide-react'
 
 import { python } from '@codemirror/lang-python'
 import { javascript } from '@codemirror/lang-javascript'
@@ -22,15 +23,61 @@ import { cpp } from '@codemirror/lang-cpp'
 import { java } from '@codemirror/lang-java'
 
 import { getUndoManager } from '../utils/undoCache'
-import { getFileExtension, getLanguageName, getFileBadgeInfo } from '../utils/helpers'
+import { getFileExtension } from '../utils/helpers'
+
+// VS Code Dark+ Editor Theme
+const vsCodeDarkTheme = EditorView.theme(
+  {
+    '&': {
+      backgroundColor: '#1e1e1e',
+      color: '#cccccc',
+      fontFamily: '"JetBrains Mono", Consolas, "Courier New", monospace',
+      fontSize: '13px',
+      lineHeight: '1.5'
+    },
+    '.cm-content': {
+      caretColor: '#aeafad'
+    },
+    '.cm-cursor, .cm-dropCursor': {
+      borderLeft: '2px solid #aeafad'
+    },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+      backgroundColor: '#264f78 !important'
+    },
+    '.cm-activeLine': {
+      backgroundColor: '#282828'
+    },
+    '.cm-gutters': {
+      backgroundColor: '#1e1e1e',
+      color: '#858585',
+      borderRight: '1px solid #3c3c3c'
+    },
+    '.cm-activeLineGutter': {
+      backgroundColor: '#282828',
+      color: '#cccccc'
+    },
+    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
+      backgroundColor: 'rgba(14, 99, 156, 0.3)',
+      outline: '1px solid #0e639c'
+    },
+    '.cm-line': {
+      paddingLeft: '4px'
+    }
+  },
+  { dark: true }
+)
 
 export default function Editor({
   activeFile,
+  openFiles = [],
+  onSelectTab,
+  onCloseTab,
   ytext,
   awareness,
   remoteUsersViewingThisFile,
   targetScrollLine,
   onUserInteraction,
+  onCursorChange,
   readOnly = false,
   isReviewMode = false,
   isDraft = false,
@@ -40,14 +87,7 @@ export default function Editor({
   const editorRef = useRef(null)
   const viewRef = useRef(null)
 
-  const [cursorPos, setCursorPos] = useState({
-    line: 1,
-    col: 1,
-    charCount: 0,
-    lineCount: 1
-  })
-
-  // Language extension selector supporting all Phase A languages
+  // Language extension selector supporting all requested languages
   const getLanguageSupport = (fileName) => {
     const ext = getFileExtension(fileName)
     switch (ext) {
@@ -114,6 +154,7 @@ export default function Editor({
       indentOnInput(),
       indentUnit.of('    '),
       oneDark,
+      vsCodeDarkTheme,
       getLanguageSupport(activeFile),
       EditorState.readOnly.of(Boolean(readOnly)),
       EditorView.editable.of(!readOnly),
@@ -137,12 +178,13 @@ export default function Editor({
         if (update.selectionSet || update.docChanged) {
           const head = update.state.selection.main.head
           const line = update.state.doc.lineAt(head)
-          setCursorPos({
+          const pos = {
             line: line.number,
             col: head - line.from + 1,
             charCount: update.state.doc.length,
             lineCount: update.state.doc.lines
-          })
+          }
+          if (onCursorChange) onCursorChange(pos)
 
           // Update awareness with current line number
           if (awareness) {
@@ -163,19 +205,19 @@ export default function Editor({
     })
 
     viewRef.current = view
-
-    // Focus editor
     view.focus()
 
     // Initialize cursor stats
     try {
       const line = state.doc.lineAt(0)
-      setCursorPos({
-        line: 1,
-        col: 1,
-        charCount: state.doc.length,
-        lineCount: state.doc.lines
-      })
+      if (onCursorChange) {
+        onCursorChange({
+          line: 1,
+          col: 1,
+          charCount: state.doc.length,
+          lineCount: state.doc.lines
+        })
+      }
       if (awareness) {
         awareness.setLocalStateField('currentLine', 1)
       }
@@ -207,120 +249,86 @@ export default function Editor({
     }
   }, [targetScrollLine])
 
-  if (!activeFile || !ytext) {
-    return (
-      <main className="editor-area editor-empty-state">
-        <div className="empty-message-box">
-          <span className="empty-icon">📁</span>
-          <h3>No File Open</h3>
-          <p>Select a file from the sidebar or click <strong>+ New File</strong> to begin editing.</p>
-        </div>
-      </main>
-    )
-  }
-
-  const badge = getFileBadgeInfo(activeFile)
-  const language = getLanguageName(activeFile)
-
   return (
     <main className="editor-area">
-      {/* Review Mode Banner for Non-Host Drafts */}
-      {isReviewMode && (
-        <div className="review-draft-banner">
-          <div className="banner-left">
-            <span className="banner-icon">⚠️</span>
-            <span className="banner-msg">You're editing your draft. Push it for host review.</span>
-          </div>
-          <button
-            type="button"
-            className="btn-small btn-primary btn-banner-push"
-            onClick={onPushDraft}
-            title="Submit your draft changes for host review"
-          >
-            🚀 Push Draft
-          </button>
-        </div>
-      )}
-
-      {/* File Header Tab Bar */}
+      {/* VS Code Style Editor Tabs Bar */}
       <div className="editor-tabs-bar">
-        <div className="editor-active-tab">
-          <span
-            className="tab-badge"
-            style={{ backgroundColor: badge.color }}
-          >
-            {badge.label}
-          </span>
-          <span className="tab-title">{activeFile}</span>
-          <span className="tab-live-indicator" title="Synced in real-time via CRDT">
-            ● {isReviewMode ? (isDraft ? 'draft' : 'read-only main') : 'live'}
-          </span>
+        <div className="editor-tabs-scroll">
+          {openFiles.map((fileName) => {
+            const isActive = fileName === activeFile
+            return (
+              <div
+                key={fileName}
+                className={`editor-tab ${isActive ? 'active' : ''}`}
+                onClick={() => onSelectTab && onSelectTab(fileName)}
+                title={fileName}
+              >
+                <span className="editor-tab-name">{fileName}</span>
+                {openFiles.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn-tab-close"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (onCloseTab) onCloseTab(fileName)
+                    }}
+                    title={`Close ${fileName}`}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
 
-        {/* Review Mode Draft vs Main File Tabs */}
+        {/* Review Mode Draft vs Main File Switcher */}
         {isReviewMode && onSwitchReviewTab && (
           <div className="review-tabs-switcher">
             <button
               type="button"
               className={`btn-review-tab ${isDraft ? 'active' : ''}`}
               onClick={() => onSwitchReviewTab('draft')}
-              title="Edit your personal draft"
+              title="Edit private draft"
             >
-              ✏️ My Draft (editing)
+              Draft (editing)
             </button>
             <button
               type="button"
               className={`btn-review-tab ${!isDraft ? 'active' : ''}`}
               onClick={() => onSwitchReviewTab('main')}
-              title="View the authoritative main file"
+              title="View authoritative main file"
             >
-              👁️ Main file (read-only)
+              Main file (read-only)
             </button>
-          </div>
-        )}
-
-        {remoteUsersViewingThisFile && remoteUsersViewingThisFile.length > 0 && (
-          <div className="file-collaborators-preview">
-            <span className="viewing-label">Also viewing:</span>
-            {remoteUsersViewingThisFile.map((u) => (
-              <span
-                key={u.clientId}
-                className="collaborator-avatar-chip"
-                style={{ backgroundColor: u.color }}
-                title={`${u.name} is in this file`}
-              >
-                {u.name.charAt(0).toUpperCase()}
-              </span>
-            ))}
           </div>
         )}
       </div>
 
-      {/* CodeMirror 6 Editor Container */}
-      <div className="codemirror-wrapper" ref={editorRef} />
-
-      {/* Editor Status Bar */}
-      <footer className="editor-status-bar">
-        <div className="status-bar-left">
-          <span className="status-item">
-            Ln {cursorPos.line}, Col {cursorPos.col}
-          </span>
-          <span className="status-separator">|</span>
-          <span className="status-item">
-            {cursorPos.lineCount} {cursorPos.lineCount === 1 ? 'line' : 'lines'}
-          </span>
-          <span className="status-separator">|</span>
-          <span className="status-item">{cursorPos.charCount} chars</span>
+      {/* Review Mode Banner for Non-Host Drafts */}
+      {isReviewMode && (
+        <div className="review-draft-banner">
+          <span className="banner-msg">You're editing your draft. Push it for host review.</span>
+          <button
+            type="button"
+            className="btn-flat btn-primary btn-xs btn-banner-push"
+            onClick={onPushDraft}
+            title="Submit draft for host review"
+          >
+            <Send size={12} />
+            <span>Push draft</span>
+          </button>
         </div>
+      )}
 
-        <div className="status-bar-right">
-          <span className="status-item language-pill">{language}</span>
-          <span className="status-separator">|</span>
-          <span className="status-item utf8-pill">UTF-8</span>
-          <span className="status-separator">|</span>
-          <span className="status-item">CRDT: Yjs</span>
+      {/* Editor Content Canvas */}
+      {!activeFile || !ytext ? (
+        <div className="editor-empty-state">
+          <p>No file open. Select a file from the sidebar to begin editing.</p>
         </div>
-      </footer>
+      ) : (
+        <div className="editor-canvas" ref={editorRef} />
+      )}
     </main>
   )
 }
