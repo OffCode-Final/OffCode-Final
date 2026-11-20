@@ -1,14 +1,10 @@
 import http from 'node:http';
 import { WebSocketServer } from 'ws';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import { FilePersistence } from './persistence.js';
-
-const require = createRequire(import.meta.url);
-const utils = require('y-websocket/bin/utils');
-const { setupWSConnection, setPersistence, docs } = utils;
+import { setupWSConnection, setPersistence, docs } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -140,7 +136,6 @@ export function createSyncServer({
       console.error('Error flushing persistence:', e);
     }
 
-    // Close all open client sockets
     for (const client of wss.clients) {
       try {
         client.terminate();
@@ -148,6 +143,9 @@ export function createSyncServer({
     }
 
     wss.close(() => {
+      if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
       server.close(() => {
         running = false;
         resolve();
