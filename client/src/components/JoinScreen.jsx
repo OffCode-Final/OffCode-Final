@@ -8,13 +8,21 @@ export default function JoinScreen({ onJoin }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    // Load stored username or generate a friendly default
-    const savedName = localStorage.getItem('offcode_user_name')
-    if (savedName) {
-      setUserName(savedName)
+    // If ?as=<name> is provided in URL, prioritize it
+    const params = new URLSearchParams(window.location.search)
+    const asParam = params.get('as')
+
+    if (asParam && asParam.trim()) {
+      setUserName(asParam.trim())
     } else {
-      const randomSuffix = Math.floor(100 + Math.random() * 900)
-      setUserName(`Developer-${randomSuffix}`)
+      // Load stored username or generate a friendly default
+      const savedName = localStorage.getItem('offcode_user_name')
+      if (savedName) {
+        setUserName(savedName)
+      } else {
+        const randomSuffix = Math.floor(100 + Math.random() * 900)
+        setUserName(`Developer-${randomSuffix}`)
+      }
     }
 
     // Set initial room from URL or default

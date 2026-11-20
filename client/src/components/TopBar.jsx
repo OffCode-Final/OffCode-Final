@@ -21,7 +21,13 @@ export default function TopBar({
   activeFile,
   onRunCode,
   isRunning,
-  onStopCode
+  onStopCode,
+  isHost,
+  mode = 'free',
+  onSetMode,
+  pendingProposalsCount = 0,
+  onOpenReviewDrawer,
+  onOpenPushDraft
 }) {
   const [copied, setCopied] = useState(false)
   const [savedToast, setSavedToast] = useState(false)
@@ -98,6 +104,54 @@ export default function TopBar({
             {copied ? '✓ Copied' : '🔗 Copy Link'}
           </button>
         </div>
+
+        {/* Phase D: Host Mode Switch & Review Controls */}
+        {isHost ? (
+          <div className="host-mode-controls">
+            <span className="host-pill-top">👑 HOST</span>
+            <div className="mode-toggle-pill">
+              <button
+                type="button"
+                className={`btn-mode-toggle ${mode === 'free' ? 'active' : ''}`}
+                onClick={() => onSetMode && onSetMode('free')}
+                title="Live Mode: Everyone edits main files directly"
+              >
+                Live
+              </button>
+              <button
+                type="button"
+                className={`btn-mode-toggle ${mode === 'review' ? 'active' : ''}`}
+                onClick={() => onSetMode && onSetMode('review')}
+                title="Review Mode: Collaborators work in drafts and push proposals"
+              >
+                Review
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn-toolbar btn-proposals"
+              onClick={onOpenReviewDrawer}
+              title="Open Proposals Review & Diff Inspector"
+            >
+              📋 Proposals {pendingProposalsCount > 0 && <span className="counter-pill">{pendingProposalsCount}</span>}
+            </button>
+          </div>
+        ) : (
+          mode === 'review' && (
+            <div className="non-host-review-controls">
+              <span className="badge-review-mode">⚠️ Review Mode</span>
+              <button
+                type="button"
+                className="btn-toolbar btn-push-draft-top"
+                onClick={onOpenPushDraft}
+                disabled={!activeFile}
+                title="Push your private draft for host review"
+              >
+                🚀 Push Draft
+              </button>
+            </div>
+          )
+        )}
 
         {/* Run / Stop Code (Phase B) */}
         <div className="run-actions-group">
@@ -199,7 +253,7 @@ export default function TopBar({
             className="user-avatar-dot"
             style={{ backgroundColor: userColor }}
           />
-          <span className="user-profile-name">{userName}</span>
+          <span className="user-profile-name">{userName} {isHost && <span title="You are the room host">👑</span>}</span>
         </div>
 
         {/* Leave Room button */}

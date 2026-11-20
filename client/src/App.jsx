@@ -21,6 +21,8 @@ import Editor from './components/Editor'
 import PeoplePanel from './components/PeoplePanel'
 import DebugPanel from './components/DebugPanel'
 import OutputPanel from './components/OutputPanel'
+import ReviewDrawer from './components/ReviewDrawer'
+import PushDraftModal from './components/PushDraftModal'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -43,6 +45,14 @@ export default function App() {
   const [followingUserId, setFollowingUserId] = useState(null)
   const [targetScrollLine, setTargetScrollLine] = useState(null)
   const [hostId, setHostId] = useState(null)
+
+  // Phase D: Host & Review Mode State
+  const [mode, setMode] = useState('free') // 'free' | 'review'
+  const [proposals, setProposals] = useState([])
+  const [isReviewDrawerOpen, setIsReviewDrawerOpen] = useState(false)
+  const [isPushDraftOpen, setIsPushDraftOpen] = useState(false)
+  const [reviewTab, setReviewTab] = useState('draft') // 'draft' | 'main'
+  const [toasts, setToasts] = useState([])
 
   const workspaceRef = useRef(null)
   const pythonWorkerRef = useRef(null)
@@ -71,6 +81,15 @@ export default function App() {
         timestamp: new Date().toLocaleTimeString()
       }
     ])
+  }, [])
+
+  // Display user-facing toast notification
+  const showToast = useCallback((text, type = 'info') => {
+    const id = `${Date.now()}-${Math.random()}`
+    setToasts((prev) => [...prev, { id, text, type }])
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, 4000)
   }, [])
 
   // Join workspace
@@ -170,12 +189,43 @@ export default function App() {
     ws.awareness.on('change', onAwarenessChange)
 
     // Listen to meta changes (host election & review mode)
-    if (ws.getHost) {
-      setHostId(ws.getHost())
-    }
-    const unsubMeta = ws.onMetaChange ? ws.onMetaChange(() => {
-      if (ws.getHost) setHostId(ws.getHost())
-    }) : () => {}
+    if (ws.getHost) setHostId(ws.getHost())
+    if (ws.getMode) setMode(ws.getMode())
+    if (ws.listProposals) setProposals(ws.listProposals())
+
+    const unsubMeta = ws.onMetaChange
+      ? ws.onMetaChange(() => {
+          if (ws.getHost) setHostId(ws.getHost())
+          if (ws.getMode) setMode(ws.getMode())
+        })
+      : () => {}
+
+    const myUserId = ws.getUserId ? ws.getUserId() : null
+    let prevProposals = ws.listProposals ? ws.listProposals() : []
+
+    const unsubProposals = ws.onProposalsChange
+      ? ws.onProposalsChange(() => {
+          const latest = ws.listProposals()
+          setProposals(latest)
+
+          // Notify non-host when host acts on their proposals
+          latest.forEach((p) => {
+            if (p.authorId === myUserId) {
+              const old = prevProposals.find((o) => o.id === p.id)
+              if (old && old.status === 'pending') {
+                if (p.status === 'accepted') {
+                  showToast(`🎉 Host ACCEPTED your proposal for "${p.file}"!`, 'success')
+                  logEvent('review', `Your proposal for "${p.file}" was accepted by host`)
+                } else if (p.status === 'rejected') {
+                  showToast(`❌ Host REJECTED your proposal for "${p.file}".`, 'danger')
+                  logEvent('review', `Your proposal for "${p.file}" was rejected by host`)
+                }
+              }
+            }
+          })
+          prevProposals = latest
+        })
+      : () => {}
 
     // Wait until workspace is ready, then set initial files and awareness
     ws.whenReady.then(() => {
@@ -185,6 +235,8 @@ export default function App() {
         setActiveFile((prev) => prev || initialFiles[0])
       }
       if (ws.getHost) setHostId(ws.getHost())
+      if (ws.getMode) setMode(ws.getMode())
+      if (ws.listProposals) setProposals(ws.listProposals())
       onAwarenessChange()
       logEvent('sync', 'Workspace ready and synchronized with server')
     })
@@ -199,6 +251,7 @@ export default function App() {
       unsubFiles()
       unsubUndoStack()
       unsubMeta()
+      unsubProposals()
       ws.ydoc.off('update', onDocUpdate)
       ws.awareness.off('change', onAwarenessChange)
       ws.destroy()
@@ -213,8 +266,75 @@ export default function App() {
     }
   }, [workspace, activeFile])
 
-  // Active file's Y.Text instance
-  const activeYText = workspace && activeFile ? workspace.getText(activeFile) : null
+  // Phase D: Host & Review Mode Computation
+  const isHost = Boolean(workspace && workspace.isHost && workspace.isHost())
+  const isReviewMode = mode === 'review'
+  const isNonHostReview = isReviewMode && !isHost
+
+  // Active Y.Text based on mode and review tab
+  const isDraftEditing = isNonHostReview && reviewTab === 'draft'
+  const isMainReadOnly = isNonHostReview && reviewTab === 'main'
+
+  let activeYText = null
+  if (workspace && activeFile) {
+    if (isDraftEditing) {
+      activeYText = workspace.getDraft(activeFile)
+    } else {
+      activeYText = workspace.getText(activeFile)
+    }
+  }
+
+  // Phase D: Actions
+  const handleSetMode = useCallback(
+    (newMode) => {
+      if (!workspace || !workspace.setMode) return
+      workspace.setMode(newMode)
+      setMode(newMode)
+      logEvent('mode', `Host changed room mode to ${newMode.toUpperCase()}`)
+    },
+    [workspace, logEvent]
+  )
+
+  const handlePushDraft = useCallback(
+    (message) => {
+      if (!workspace || !workspace.pushDraft || !activeFile) return
+      const propId = workspace.pushDraft(activeFile, message)
+      showToast('Draft proposal submitted for host review!', 'success')
+      logEvent('review', `Pushed draft proposal for "${activeFile}"`)
+      setIsPushDraftOpen(false)
+    },
+    [workspace, activeFile, showToast, logEvent]
+  )
+
+  const handleAcceptProposal = useCallback(
+    (id) => {
+      if (!workspace || !workspace.acceptProposal) return
+      workspace.acceptProposal(id)
+      showToast('Proposal accepted & applied to main file', 'success')
+      logEvent('review', `Accepted proposal ${id}`)
+    },
+    [workspace, showToast, logEvent]
+  )
+
+  const handleRejectProposal = useCallback(
+    (id) => {
+      if (!workspace || !workspace.rejectProposal) return
+      workspace.rejectProposal(id)
+      showToast('Proposal rejected', 'danger')
+      logEvent('review', `Rejected proposal ${id}`)
+    },
+    [workspace, showToast, logEvent]
+  )
+
+  const handleRevertProposal = useCallback(
+    (id) => {
+      if (!workspace || !workspace.revertProposal) return
+      workspace.revertProposal(id)
+      showToast('Proposal reverted from main file', 'info')
+      logEvent('review', `Reverted proposal ${id}`)
+    },
+    [workspace, showToast, logEvent]
+  )
 
   // File operations
   const handleSelectFile = (fileName) => {
@@ -477,14 +597,15 @@ export default function App() {
     }
   }
 
-  // Undo / Redo for active file
+  // Undo / Redo for active file or personal draft
+  const activeCacheKey = isDraftEditing ? `draft:${activeFile}` : activeFile
   const activeUndoManager =
     workspace && activeFile && activeYText
-      ? getUndoManager(activeFile, activeYText)
+      ? getUndoManager(activeCacheKey, activeYText)
       : null
 
-  const activeDepths = activeFile && undoDepths[activeFile]
-    ? undoDepths[activeFile]
+  const activeDepths = activeFile && undoDepths[activeCacheKey]
+    ? undoDepths[activeCacheKey]
     : {
         undo: activeUndoManager?.undoStack?.length || 0,
         redo: activeUndoManager?.redoStack?.length || 0
@@ -493,14 +614,14 @@ export default function App() {
   const handleUndo = () => {
     if (activeUndoManager) {
       activeUndoManager.undo()
-      logEvent('undo', `Performed Undo on "${activeFile}"`)
+      logEvent('undo', `Performed Undo on "${activeCacheKey}"`)
     }
   }
 
   const handleRedo = () => {
     if (activeUndoManager) {
       activeUndoManager.redo()
-      logEvent('redo', `Performed Redo on "${activeFile}"`)
+      logEvent('redo', `Performed Redo on "${activeCacheKey}"`)
     }
   }
 
@@ -524,6 +645,7 @@ export default function App() {
 
   const activeExt = getFileExtension(activeFile)
   const isHtml = ['html', 'htm'].includes(activeExt)
+  const pendingCount = proposals.filter((p) => p.status === 'pending').length
 
   // Show Join screen if not connected
   if (!session || !workspace) {
@@ -554,6 +676,12 @@ export default function App() {
         onRunCode={handleRunCode}
         isRunning={isRunning}
         onStopCode={handleStopCode}
+        isHost={isHost}
+        mode={mode}
+        onSetMode={handleSetMode}
+        pendingProposalsCount={pendingCount}
+        onOpenReviewDrawer={() => setIsReviewDrawerOpen(true)}
+        onOpenPushDraft={() => setIsPushDraftOpen(true)}
       />
 
       {/* Main Workspace Body */}
@@ -577,6 +705,11 @@ export default function App() {
             remoteUsersViewingThisFile={remoteUsersInSameFile}
             targetScrollLine={targetScrollLine}
             onUserInteraction={handleUserInteraction}
+            readOnly={isMainReadOnly}
+            isReviewMode={isNonHostReview}
+            isDraft={isDraftEditing}
+            onSwitchReviewTab={(tab) => setReviewTab(tab)}
+            onPushDraft={() => setIsPushDraftOpen(true)}
           />
 
           {/* Phase B: Bottom Output & Preview Panel */}
@@ -603,6 +736,36 @@ export default function App() {
         />
       </div>
 
+      {/* Host Review Proposals Drawer */}
+      <ReviewDrawer
+        isOpen={isReviewDrawerOpen}
+        onClose={() => setIsReviewDrawerOpen(false)}
+        proposals={proposals}
+        onAccept={handleAcceptProposal}
+        onReject={handleRejectProposal}
+        onRevert={handleRevertProposal}
+        isHost={isHost}
+      />
+
+      {/* Push Draft Proposal Modal */}
+      <PushDraftModal
+        isOpen={isPushDraftOpen}
+        onClose={() => setIsPushDraftOpen(false)}
+        onSubmit={handlePushDraft}
+        fileName={activeFile}
+      />
+
+      {/* Live Toast Notifications */}
+      {toasts.length > 0 && (
+        <div className="toast-container">
+          {toasts.map((t) => (
+            <div key={t.id} className={`toast-message toast-${t.type}`}>
+              {t.text}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Hackathon Demo & Debug Panel Drawer */}
       <DebugPanel
         isOpen={showDebug}
@@ -615,6 +778,9 @@ export default function App() {
         onClearLogs={() => setEventsLog([])}
         onSimulateRemoteEdit={handleSimulateRemoteEdit}
         activeFile={activeFile}
+        mode={mode}
+        hostId={hostId}
+        pendingProposalsCount={pendingCount}
       />
     </div>
   )
