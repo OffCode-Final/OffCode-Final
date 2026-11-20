@@ -17,7 +17,8 @@ import {
 
 // Server URL for the teammate's real WebSocket sync engine
 export const SYNC_SERVER_URL =
-  import.meta.env.VITE_SYNC_SERVER_URL || 'ws://localhost:1234'
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_SYNC_SERVER_URL) ||
+  'ws://localhost:1234'
 
 /**
  * Creates and initializes a workspace instance.
