@@ -1,8 +1,35 @@
+# Dependencies
 node_modules/
-package-lock.json
+.pnp
+.pnp.js
+
+# Production build
+dist/
+dist-ssr/
+*.local
+
+# Server & CRDT Sync Persistence
 server/data/
 *.ydoc
 *.tmp
 tests/test_server_data/
 .env
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor directories
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
 .DS_Store
+Thumbs.db
