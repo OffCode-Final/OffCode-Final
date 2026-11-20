@@ -14,7 +14,8 @@ import {
   Copy,
   Check,
   GitPullRequest,
-  Send
+  Send,
+  MessageSquare
 } from 'lucide-react'
 import { getFileExtension } from '../utils/helpers'
 
@@ -44,7 +45,10 @@ export default function TopBar({
   onSetMode,
   pendingProposalsCount = 0,
   onOpenReviewDrawer,
-  onOpenPushDraft
+  onOpenPushDraft,
+  isChatOpen = false,
+  onToggleChat,
+  unreadChatCount = 0
 }) {
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
@@ -202,6 +206,20 @@ export default function TopBar({
         >
           <Save size={13} />
           <span>Save</span>
+        </button>
+
+        {/* Chat Sidebar Toggle */}
+        <button
+          type="button"
+          className={`btn-flat btn-secondary btn-chat-toggle ${isChatOpen ? 'active' : ''}`}
+          onClick={onToggleChat}
+          title={isChatOpen ? 'Close chat' : (unreadChatCount > 0 ? `Open chat (${unreadChatCount} unread)` : 'Open chat')}
+        >
+          <MessageSquare size={13} />
+          <span>Chat</span>
+          {unreadChatCount > 0 && !isChatOpen && (
+            <span className="badge-unread-count">{unreadChatCount}</span>
+          )}
         </button>
 
         {/* More Actions Dropdown Menu */}

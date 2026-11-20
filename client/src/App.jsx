@@ -26,6 +26,7 @@ import OutputPanel from './components/OutputPanel'
 import ReviewDrawer from './components/ReviewDrawer'
 import PushDraftModal from './components/PushDraftModal'
 import StatusBar from './components/StatusBar'
+import ChatPanel from './components/ChatPanel'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -58,6 +59,8 @@ export default function App() {
   const [isPushDraftOpen, setIsPushDraftOpen] = useState(false)
   const [reviewTab, setReviewTab] = useState('draft') // 'draft' | 'main'
   const [toasts, setToasts] = useState([])
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [unreadChatCount, setUnreadChatCount] = useState(0)
 
   const workspaceRef = useRef(null)
   const pythonWorkerRef = useRef(null)
@@ -313,6 +316,42 @@ export default function App() {
   const isHost = Boolean(workspace && workspace.isHost && workspace.isHost())
   const isReviewMode = mode === 'review'
   const isNonHostReview = isReviewMode && !isHost
+
+  // Chat Sidebar Toggle & Unread Count Tracking
+  const handleToggleChat = useCallback(() => {
+    setIsChatOpen((prev) => {
+      const next = !prev
+      if (next) setUnreadChatCount(0)
+      return next
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!workspace?.ydoc) return
+    const chatArray = workspace.ydoc.getArray('chat')
+    let prevLength = chatArray.length
+
+    const handleChatChange = () => {
+      const currentLength = chatArray.length
+      if (!isChatOpen) {
+        const addedDelta = currentLength - prevLength
+        if (addedDelta > 0) {
+          const myUserId = workspace.getUserId ? workspace.getUserId() : null
+          const latestItems = chatArray.toArray().slice(-addedDelta)
+          const fromOthers = latestItems.filter((m) => m && m.userId !== myUserId).length
+          if (fromOthers > 0) {
+            setUnreadChatCount((prev) => prev + fromOthers)
+          }
+        }
+      }
+      prevLength = currentLength
+    }
+
+    chatArray.observe(handleChatChange)
+    return () => {
+      chatArray.unobserve(handleChatChange)
+    }
+  }, [workspace, isChatOpen])
 
   // Active Y.Text based on mode and review tab
   const isDraftEditing = isNonHostReview && reviewTab === 'draft'
@@ -738,6 +777,9 @@ export default function App() {
         pendingProposalsCount={pendingCount}
         onOpenReviewDrawer={() => setIsReviewDrawerOpen(true)}
         onOpenPushDraft={() => setIsPushDraftOpen(true)}
+        isChatOpen={isChatOpen}
+        onToggleChat={handleToggleChat}
+        unreadChatCount={unreadChatCount}
       />
 
       {/* Offline Connection Error Banner */}
@@ -807,6 +849,14 @@ export default function App() {
           followingUserId={followingUserId}
           onToggleFollow={handleToggleFollow}
           hostId={hostId}
+        />
+
+        {/* Collapsible Chat Sidebar */}
+        <ChatPanel
+          isOpen={isChatOpen}
+          onClose={() => setIsChatOpen(false)}
+          workspace={workspace}
+          session={session}
         />
       </div>
 
