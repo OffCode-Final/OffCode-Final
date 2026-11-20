@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { getFileBadgeInfo } from '../utils/helpers'
+import { getFileBadgeInfo, SUPPORTED_EXTENSIONS, getFileExtension } from '../utils/helpers'
 
 export default function Sidebar({
   files,
   activeFile,
   onSelectFile,
   onCreateFile,
-  onDeleteFile
+  onDeleteFile,
+  users = []
 }) {
   const [isCreating, setIsCreating] = useState(false)
   const [newFileName, setNewFileName] = useState('')
@@ -22,6 +23,13 @@ export default function Sidebar({
       return
     }
 
+    // Check if filename has an extension
+    const ext = getFileExtension(cleanName)
+    if (!ext) {
+      setError('Please include an extension (e.g. .py, .js, .html, .css, .json, .md, .cpp, .java).')
+      return
+    }
+
     if (files.includes(cleanName)) {
       setError('A file with this name already exists.')
       return
@@ -29,6 +37,21 @@ export default function Sidebar({
 
     onCreateFile(cleanName)
     setNewFileName('')
+    setIsCreating(false)
+    setError('')
+  }
+
+  const handleQuickPreset = (preset) => {
+    // Generate a unique name for this extension
+    let base = preset.defaultName
+    let counter = 1
+    while (files.includes(base)) {
+      const ext = preset.ext
+      const raw = preset.defaultName.replace(`.${ext}`, '')
+      base = `${raw}${counter}.${ext}`
+      counter++
+    }
+    onCreateFile(base)
     setIsCreating(false)
     setError('')
   }
@@ -51,7 +74,7 @@ export default function Sidebar({
             setIsCreating(true)
             setError('')
           }}
-          title="Create a new file"
+          title="Create a new file with any supported extension"
         >
           + New File
         </button>
@@ -68,13 +91,32 @@ export default function Sidebar({
               setNewFileName(e.target.value)
               setError('')
             }}
-            placeholder="e.g. script.js, style.css"
+            placeholder="e.g. main.py, app.js, index.html"
             autoFocus
           />
           {error && <div className="input-error">{error}</div>}
+
+          {/* Quick 1-click language extension presets */}
+          <div className="preset-chips-container">
+            <span className="preset-label">Quick Presets:</span>
+            <div className="preset-chips">
+              {SUPPORTED_EXTENSIONS.map((p) => (
+                <button
+                  key={p.ext}
+                  type="button"
+                  className="btn-preset-chip"
+                  onClick={() => handleQuickPreset(p)}
+                  title={`Create new ${p.label} file`}
+                >
+                  +{p.ext}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="new-file-actions">
             <button type="submit" className="btn-small btn-primary">
-              Create
+              Create File
             </button>
             <button
               type="button"
@@ -108,6 +150,9 @@ export default function Sidebar({
           files.map((fileName) => {
             const badge = getFileBadgeInfo(fileName)
             const isActive = fileName === activeFile
+            const remoteUsersOnFile = users.filter(
+              (u) => !u.isYou && u.currentFile === fileName
+            )
 
             return (
               <div
@@ -124,6 +169,22 @@ export default function Sidebar({
                     {badge.label}
                   </span>
                   <span className="file-name">{fileName}</span>
+                  {remoteUsersOnFile.length > 0 && (
+                    <div
+                      className="file-peer-indicators"
+                      title={`${remoteUsersOnFile
+                        .map((u) => `${u.name} (Ln ${u.currentLine || 1})`)
+                        .join(', ')} currently viewing this file`}
+                    >
+                      {remoteUsersOnFile.map((u) => (
+                        <span
+                          key={u.clientId}
+                          className="file-peer-dot"
+                          style={{ backgroundColor: u.color }}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <button

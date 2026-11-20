@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { getFileExtension } from '../utils/helpers'
 
 export default function TopBar({
   roomId,
@@ -14,9 +15,22 @@ export default function TopBar({
   redoDepth,
   showDebug,
   onToggleDebug,
-  onLeaveRoom
+  onLeaveRoom,
+  onSaveCurrentFile,
+  onDownloadAllZip,
+  activeFile,
+  onRunCode,
+  isRunning,
+  onStopCode,
+  isHost,
+  mode = 'free',
+  onSetMode,
+  pendingProposalsCount = 0,
+  onOpenReviewDrawer,
+  onOpenPushDraft
 }) {
   const [copied, setCopied] = useState(false)
+  const [savedToast, setSavedToast] = useState(false)
 
   const handleCopyLink = () => {
     const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`
@@ -25,6 +39,21 @@ export default function TopBar({
       setTimeout(() => setCopied(false), 2000)
     })
   }
+
+  const handleSaveClick = () => {
+    onSaveCurrentFile()
+    setSavedToast(true)
+    setTimeout(() => setSavedToast(false), 1800)
+  }
+
+  // Check if active file can be executed offline
+  const ext = getFileExtension(activeFile)
+  const canRun = ['py', 'js', 'jsx', 'mjs', 'html', 'htm'].includes(ext)
+  const runTooltip = !activeFile
+    ? 'No file open'
+    : canRun
+    ? `Run ${activeFile} (Ctrl+Enter)`
+    : "Running this language isn't supported offline"
 
   const getStatusBadge = () => {
     switch (status) {
@@ -73,6 +102,99 @@ export default function TopBar({
             title="Copy shareable room link to clipboard"
           >
             {copied ? '✓ Copied' : '🔗 Copy Link'}
+          </button>
+        </div>
+
+        {/* Phase D: Host Mode Switch & Review Controls */}
+        {isHost ? (
+          <div className="host-mode-controls">
+            <span className="host-pill-top">👑 HOST</span>
+            <div className="mode-toggle-pill">
+              <button
+                type="button"
+                className={`btn-mode-toggle ${mode === 'free' ? 'active' : ''}`}
+                onClick={() => onSetMode && onSetMode('free')}
+                title="Live Mode: Everyone edits main files directly"
+              >
+                Live
+              </button>
+              <button
+                type="button"
+                className={`btn-mode-toggle ${mode === 'review' ? 'active' : ''}`}
+                onClick={() => onSetMode && onSetMode('review')}
+                title="Review Mode: Collaborators work in drafts and push proposals"
+              >
+                Review
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn-toolbar btn-proposals"
+              onClick={onOpenReviewDrawer}
+              title="Open Proposals Review & Diff Inspector"
+            >
+              📋 Proposals {pendingProposalsCount > 0 && <span className="counter-pill">{pendingProposalsCount}</span>}
+            </button>
+          </div>
+        ) : (
+          mode === 'review' && (
+            <div className="non-host-review-controls">
+              <span className="badge-review-mode">⚠️ Review Mode</span>
+              <button
+                type="button"
+                className="btn-toolbar btn-push-draft-top"
+                onClick={onOpenPushDraft}
+                disabled={!activeFile}
+                title="Push your private draft for host review"
+              >
+                🚀 Push Draft
+              </button>
+            </div>
+          )
+        )}
+
+        {/* Run / Stop Code (Phase B) */}
+        <div className="run-actions-group">
+          {isRunning ? (
+            <button
+              type="button"
+              className="btn-toolbar btn-stop-top"
+              onClick={onStopCode}
+              title="Stop running code"
+            >
+              ⏹ Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-toolbar btn-run"
+              onClick={onRunCode}
+              disabled={!canRun}
+              title={runTooltip}
+            >
+              ▶ Run
+            </button>
+          )}
+        </div>
+
+        {/* Save Current File & Download All .zip (Phase A) */}
+        <div className="file-actions-group">
+          <button
+            type="button"
+            className="btn-toolbar btn-save"
+            onClick={handleSaveClick}
+            disabled={!activeFile}
+            title={`Download "${activeFile || 'current file'}" to your computer (Ctrl+S)`}
+          >
+            {savedToast ? '✓ Saved!' : '💾 Save'}
+          </button>
+          <button
+            type="button"
+            className="btn-toolbar btn-download-all"
+            onClick={onDownloadAllZip}
+            title="Download all workspace files as a .zip archive"
+          >
+            📦 Download All (.zip)
           </button>
         </div>
       </div>
@@ -131,7 +253,7 @@ export default function TopBar({
             className="user-avatar-dot"
             style={{ backgroundColor: userColor }}
           />
-          <span className="user-profile-name">{userName}</span>
+          <span className="user-profile-name">{userName} {isHost && <span title="You are the room host">👑</span>}</span>
         </div>
 
         {/* Leave Room button */}

@@ -8,15 +8,18 @@ import {
   keymap
 } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
-import { bracketMatching, foldGutter } from '@codemirror/language'
+import { bracketMatching, foldGutter, indentOnInput, indentUnit } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 
-import { javascript } from '@codemirror/lang-javascript'
 import { python } from '@codemirror/lang-python'
+import { javascript } from '@codemirror/lang-javascript'
 import { html } from '@codemirror/lang-html'
 import { css } from '@codemirror/lang-css'
 import { json } from '@codemirror/lang-json'
+import { markdown } from '@codemirror/lang-markdown'
+import { cpp } from '@codemirror/lang-cpp'
+import { java } from '@codemirror/lang-java'
 
 import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension, getLanguageName, getFileBadgeInfo } from '../utils/helpers'
@@ -25,7 +28,14 @@ export default function Editor({
   activeFile,
   ytext,
   awareness,
-  remoteUsersViewingThisFile
+  remoteUsersViewingThisFile,
+  targetScrollLine,
+  onUserInteraction,
+  readOnly = false,
+  isReviewMode = false,
+  isDraft = false,
+  onSwitchReviewTab,
+  onPushDraft
 }) {
   const editorRef = useRef(null)
   const viewRef = useRef(null)
@@ -37,10 +47,12 @@ export default function Editor({
     lineCount: 1
   })
 
-  // Language extension selector based on file extension
+  // Language extension selector supporting all Phase A languages
   const getLanguageSupport = (fileName) => {
     const ext = getFileExtension(fileName)
     switch (ext) {
+      case 'py':
+        return python()
       case 'js':
       case 'jsx':
       case 'mjs':
@@ -48,8 +60,6 @@ export default function Editor({
       case 'ts':
       case 'tsx':
         return javascript({ jsx: true, typescript: true })
-      case 'py':
-        return python()
       case 'html':
       case 'htm':
         return html()
@@ -57,6 +67,18 @@ export default function Editor({
         return css()
       case 'json':
         return json()
+      case 'md':
+      case 'markdown':
+        return markdown()
+      case 'cpp':
+      case 'cxx':
+      case 'cc':
+      case 'hpp':
+      case 'c':
+      case 'h':
+        return cpp()
+      case 'java':
+        return java()
       default:
         return []
     }
@@ -73,27 +95,43 @@ export default function Editor({
       viewRef.current = null
     }
 
-    // Retrieve or create the persistent cached UndoManager for this file
-    const fileUndoManager = getUndoManager(activeFile, ytext)
+    // Retrieve or create the persistent cached UndoManager for this file or personal draft
+    const cacheKey = isDraft ? `draft:${activeFile}` : activeFile
+    const fileUndoManager = getUndoManager(cacheKey, ytext)
 
     // Notify awareness that we are currently viewing this file
     if (awareness) {
       awareness.setLocalStateField('currentFile', activeFile)
     }
 
-    // CodeMirror extensions
+    // CodeMirror extensions with proper indentation & syntax highlighting
     const extensions = [
       lineNumbers(),
       highlightActiveLineGutter(),
       foldGutter(),
       bracketMatching(),
       highlightActiveLine(),
+      indentOnInput(),
+      indentUnit.of('    '),
       oneDark,
       getLanguageSupport(activeFile),
+      EditorState.readOnly.of(Boolean(readOnly)),
+      EditorView.editable.of(!readOnly),
       // Keymap for local undo/redo with Mod-z and Mod-Shift-z / Mod-y
       keymap.of([...yUndoManagerKeymap, ...defaultKeymap]),
       // Yjs collaboration plugin (Sync + Remote Cursors + Local UndoManager)
-      yCollab(ytext, awareness, { undoManager: fileUndoManager }),
+      yCollab(ytext, awareness, { undoManager: readOnly ? false : fileUndoManager }),
+      // Dom event handlers to unhook follow mode on user interaction
+      EditorView.domEventHandlers({
+        mousedown() {
+          if (onUserInteraction) onUserInteraction()
+          return false
+        },
+        keydown() {
+          if (onUserInteraction) onUserInteraction()
+          return false
+        }
+      }),
       // Update listener for cursor position and document stats
       EditorView.updateListener.of((update) => {
         if (update.selectionSet || update.docChanged) {
@@ -105,6 +143,11 @@ export default function Editor({
             charCount: update.state.doc.length,
             lineCount: update.state.doc.lines
           })
+
+          // Update awareness with current line number
+          if (awareness) {
+            awareness.setLocalStateField('currentLine', line.number)
+          }
         }
       })
     ]
@@ -133,6 +176,9 @@ export default function Editor({
         charCount: state.doc.length,
         lineCount: state.doc.lines
       })
+      if (awareness) {
+        awareness.setLocalStateField('currentLine', 1)
+      }
     } catch {
       // ignore
     }
@@ -143,7 +189,23 @@ export default function Editor({
         viewRef.current = null
       }
     }
-  }, [activeFile, ytext, awareness])
+  }, [activeFile, ytext, awareness, readOnly])
+
+  // Scroll to line when jumped or following a peer
+  useEffect(() => {
+    if (viewRef.current && targetScrollLine != null && targetScrollLine > 0) {
+      const view = viewRef.current
+      try {
+        const lineCount = view.state.doc.lines
+        const lineNum = Math.min(Math.max(1, targetScrollLine), lineCount)
+        const line = view.state.doc.line(lineNum)
+        view.dispatch({
+          selection: { anchor: line.from },
+          scrollIntoView: true
+        })
+      } catch (_) {}
+    }
+  }, [targetScrollLine])
 
   if (!activeFile || !ytext) {
     return (
@@ -162,6 +224,24 @@ export default function Editor({
 
   return (
     <main className="editor-area">
+      {/* Review Mode Banner for Non-Host Drafts */}
+      {isReviewMode && (
+        <div className="review-draft-banner">
+          <div className="banner-left">
+            <span className="banner-icon">⚠️</span>
+            <span className="banner-msg">You're editing your draft. Push it for host review.</span>
+          </div>
+          <button
+            type="button"
+            className="btn-small btn-primary btn-banner-push"
+            onClick={onPushDraft}
+            title="Submit your draft changes for host review"
+          >
+            🚀 Push Draft
+          </button>
+        </div>
+      )}
+
       {/* File Header Tab Bar */}
       <div className="editor-tabs-bar">
         <div className="editor-active-tab">
@@ -173,9 +253,31 @@ export default function Editor({
           </span>
           <span className="tab-title">{activeFile}</span>
           <span className="tab-live-indicator" title="Synced in real-time via CRDT">
-            ● live
+            ● {isReviewMode ? (isDraft ? 'draft' : 'read-only main') : 'live'}
           </span>
         </div>
+
+        {/* Review Mode Draft vs Main File Tabs */}
+        {isReviewMode && onSwitchReviewTab && (
+          <div className="review-tabs-switcher">
+            <button
+              type="button"
+              className={`btn-review-tab ${isDraft ? 'active' : ''}`}
+              onClick={() => onSwitchReviewTab('draft')}
+              title="Edit your personal draft"
+            >
+              ✏️ My Draft (editing)
+            </button>
+            <button
+              type="button"
+              className={`btn-review-tab ${!isDraft ? 'active' : ''}`}
+              onClick={() => onSwitchReviewTab('main')}
+              title="View the authoritative main file"
+            >
+              👁️ Main file (read-only)
+            </button>
+          </div>
+        )}
 
         {remoteUsersViewingThisFile && remoteUsersViewingThisFile.length > 0 && (
           <div className="file-collaborators-preview">

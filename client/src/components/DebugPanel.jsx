@@ -8,7 +8,10 @@ export default function DebugPanel({
   eventsLog,
   onClearLogs,
   onSimulateRemoteEdit,
-  activeFile
+  activeFile,
+  mode = 'free',
+  hostId = null,
+  pendingProposalsCount = 0
 }) {
   if (!isOpen) return null
 
@@ -50,6 +53,29 @@ export default function DebugPanel({
           <span className="card-label">Collaborators in Room</span>
           <span className="card-value">{usersCount}</span>
           <span className="card-subtext">Peers in Awareness</span>
+        </div>
+
+        {/* Phase E: Mode, Host ID, and Pending Proposals Cards */}
+        <div className="debug-card">
+          <span className="card-label">Room Mode</span>
+          <span className="card-value" style={{ color: mode === 'review' ? '#fbbf24' : '#34d399' }}>
+            {mode === 'review' ? 'REVIEW' : 'LIVE'}
+          </span>
+          <span className="card-subtext">Shared CRDT Room State</span>
+        </div>
+
+        <div className="debug-card">
+          <span className="card-label">Room Host ID</span>
+          <span className="card-value client-id-text">{hostId || 'Electing...'}</span>
+          <span className="card-subtext">Leader / Host Authority</span>
+        </div>
+
+        <div className="debug-card">
+          <span className="card-label">Pending Proposals</span>
+          <span className="card-value" style={{ color: pendingProposalsCount > 0 ? '#f87171' : '#94a3b8' }}>
+            {pendingProposalsCount}
+          </span>
+          <span className="card-subtext">Awaiting Host Review</span>
         </div>
 
         {/* Per-File Undo/Redo Stacks */}
