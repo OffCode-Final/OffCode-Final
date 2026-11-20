@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { getFileExtension } from '../utils/helpers'
 
 export default function TopBar({
   roomId,
@@ -17,7 +18,10 @@ export default function TopBar({
   onLeaveRoom,
   onSaveCurrentFile,
   onDownloadAllZip,
-  activeFile
+  activeFile,
+  onRunCode,
+  isRunning,
+  onStopCode
 }) {
   const [copied, setCopied] = useState(false)
   const [savedToast, setSavedToast] = useState(false)
@@ -35,6 +39,15 @@ export default function TopBar({
     setSavedToast(true)
     setTimeout(() => setSavedToast(false), 1800)
   }
+
+  // Check if active file can be executed offline
+  const ext = getFileExtension(activeFile)
+  const canRun = ['py', 'js', 'jsx', 'mjs', 'html', 'htm'].includes(ext)
+  const runTooltip = !activeFile
+    ? 'No file open'
+    : canRun
+    ? `Run ${activeFile} (Ctrl+Enter)`
+    : "Running this language isn't supported offline"
 
   const getStatusBadge = () => {
     switch (status) {
@@ -84,6 +97,30 @@ export default function TopBar({
           >
             {copied ? '✓ Copied' : '🔗 Copy Link'}
           </button>
+        </div>
+
+        {/* Run / Stop Code (Phase B) */}
+        <div className="run-actions-group">
+          {isRunning ? (
+            <button
+              type="button"
+              className="btn-toolbar btn-stop-top"
+              onClick={onStopCode}
+              title="Stop running code"
+            >
+              ⏹ Stop
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-toolbar btn-run"
+              onClick={onRunCode}
+              disabled={!canRun}
+              title={runTooltip}
+            >
+              ▶ Run
+            </button>
+          )}
         </div>
 
         {/* Save Current File & Download All .zip (Phase A) */}

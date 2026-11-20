@@ -25,6 +25,7 @@
     "@codemirror/view": "^6.43.15",
     "diff-match-patch": "^1.0.5",
     "jszip": "^3.10.2",
+    "pyodide": "^314.0.8",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "y-codemirror.next": "^0.3.6",

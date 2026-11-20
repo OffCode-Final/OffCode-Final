@@ -10,7 +10,8 @@ import {
   updateUrlRoom,
   downloadFile,
   downloadAllAsZip,
-  getInitialTemplate
+  getInitialTemplate,
+  getFileExtension
 } from './utils/helpers'
 
 import JoinScreen from './components/JoinScreen'
@@ -19,6 +20,7 @@ import Sidebar from './components/Sidebar'
 import Editor from './components/Editor'
 import PeoplePanel from './components/PeoplePanel'
 import DebugPanel from './components/DebugPanel'
+import OutputPanel from './components/OutputPanel'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -31,7 +33,16 @@ export default function App() {
   const [undoDepths, setUndoDepths] = useState({})
   const [eventsLog, setEventsLog] = useState([])
 
+  // Phase B: Code Execution & Output State
+  const [outputs, setOutputs] = useState([])
+  const [isOutputOpen, setIsOutputOpen] = useState(false)
+  const [isRunning, setIsRunning] = useState(false)
+  const [htmlContent, setHtmlContent] = useState('')
+
   const workspaceRef = useRef(null)
+  const pythonWorkerRef = useRef(null)
+  const jsWorkerRef = useRef(null)
+  const jsTimeoutRef = useRef(null)
 
   // Append entry to live activity event log
   const logEvent = useCallback((type, message) => {
@@ -42,6 +53,19 @@ export default function App() {
       message
     }
     setEventsLog((prev) => [entry, ...prev].slice(0, 50))
+  }, [])
+
+  // Append line to Output Panel
+  const addOutput = useCallback((type, text) => {
+    setOutputs((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${Math.random()}`,
+        type,
+        text,
+        timestamp: new Date().toLocaleTimeString()
+      }
+    ])
   }, [])
 
   // Join workspace
@@ -58,6 +82,18 @@ export default function App() {
       workspaceRef.current = null
     }
     clearAllUndoManagers()
+    if (pythonWorkerRef.current) {
+      pythonWorkerRef.current.terminate()
+      pythonWorkerRef.current = null
+    }
+    if (jsWorkerRef.current) {
+      jsWorkerRef.current.terminate()
+      jsWorkerRef.current = null
+    }
+    if (jsTimeoutRef.current) {
+      clearTimeout(jsTimeoutRef.current)
+    }
+
     setWorkspace(null)
     setSession(null)
     setFiles([])
@@ -135,7 +171,7 @@ export default function App() {
         setActiveFile((prev) => prev || initialFiles[0])
       }
       onAwarenessChange()
-      logEvent('sync', 'Workspace ready and synchronized')
+      logEvent('sync', 'Workspace ready and synchronized with server')
     })
 
     // Subscribe to Undo/Redo stack changes
@@ -203,24 +239,157 @@ export default function App() {
     logEvent('save', 'Exported full project as .zip archive')
   }, [workspace, session, logEvent])
 
-  // Phase A: Global Ctrl+S shortcut preventing browser default
+  // Phase B: Stop Code Execution
+  const handleStopCode = useCallback(() => {
+    if (jsTimeoutRef.current) {
+      clearTimeout(jsTimeoutRef.current)
+      jsTimeoutRef.current = null
+    }
+
+    if (pythonWorkerRef.current) {
+      pythonWorkerRef.current.terminate()
+      pythonWorkerRef.current = null
+    }
+
+    if (jsWorkerRef.current) {
+      jsWorkerRef.current.terminate()
+      jsWorkerRef.current = null
+    }
+
+    setIsRunning(false)
+    addOutput('stderr', '[STOPPED] Execution killed by user.')
+    logEvent('run', 'Execution stopped by user')
+  }, [addOutput, logEvent])
+
+  // Phase B: Run Code Execution
+  const handleRunCode = useCallback(() => {
+    if (!activeFile || !activeYText) return
+    const ext = getFileExtension(activeFile)
+    const code = activeYText.toString()
+
+    setIsOutputOpen(true)
+
+    // 1. Python Execution via Web Worker + Pyodide
+    if (ext === 'py') {
+      setIsRunning(true)
+      addOutput('status', `=== Running Python: ${activeFile} ===`)
+      logEvent('run', `Executing Python file "${activeFile}"`)
+
+      // Create new or reuse module worker for Pyodide
+      if (!pythonWorkerRef.current) {
+        pythonWorkerRef.current = new Worker('/python-worker.js', { type: 'module' })
+      }
+
+      const worker = pythonWorkerRef.current
+
+      worker.onmessage = (e) => {
+        const { type, data, message, duration } = e.data
+        if (type === 'stdout') {
+          addOutput('stdout', data)
+        } else if (type === 'stderr') {
+          addOutput('stderr', data)
+        } else if (type === 'status') {
+          addOutput('status', message)
+        } else if (type === 'done') {
+          setIsRunning(false)
+          addOutput('status', `=== Finished in ${duration}s ===`)
+        } else if (type === 'error') {
+          setIsRunning(false)
+          addOutput('stderr', `Error: ${data}`)
+        }
+      }
+
+      worker.onerror = (err) => {
+        setIsRunning(false)
+        addOutput('stderr', `Worker Error: ${err.message}`)
+      }
+
+      worker.postMessage({ type: 'run', code })
+      return
+    }
+
+    // 2. JavaScript Execution via Web Worker with 10s Timeout
+    if (['js', 'jsx', 'mjs'].includes(ext)) {
+      setIsRunning(true)
+      addOutput('status', `=== Running JavaScript: ${activeFile} ===`)
+      logEvent('run', `Executing JavaScript file "${activeFile}"`)
+
+      if (jsWorkerRef.current) {
+        jsWorkerRef.current.terminate()
+      }
+      const worker = new Worker('/js-worker.js')
+      jsWorkerRef.current = worker
+
+      // 10-second safety timeout
+      jsTimeoutRef.current = setTimeout(() => {
+        worker.terminate()
+        setIsRunning(false)
+        addOutput('stderr', 'Error: Execution timed out (exceeded 10 seconds).')
+      }, 10000)
+
+      worker.onmessage = (e) => {
+        const { type, data, duration } = e.data
+        if (type === 'stdout') {
+          addOutput('stdout', data)
+        } else if (type === 'stderr') {
+          addOutput('stderr', data)
+        } else if (type === 'done') {
+          clearTimeout(jsTimeoutRef.current)
+          setIsRunning(false)
+          addOutput('status', `=== Finished in ${duration}s ===`)
+        } else if (type === 'error') {
+          clearTimeout(jsTimeoutRef.current)
+          setIsRunning(false)
+          addOutput('stderr', `Error: ${data}`)
+        }
+      }
+
+      worker.onerror = (err) => {
+        clearTimeout(jsTimeoutRef.current)
+        setIsRunning(false)
+        addOutput('stderr', `Worker Error: ${err.message}`)
+      }
+
+      worker.postMessage({ code })
+      return
+    }
+
+    // 3. HTML Live Preview in Sandboxed Iframe
+    if (['html', 'htm'].includes(ext)) {
+      setHtmlContent(code)
+      addOutput('status', `=== Live HTML Preview loaded for ${activeFile} ===`)
+      logEvent('run', `Opened HTML live preview for "${activeFile}"`)
+      return
+    }
+
+    // 4. Other languages
+    addOutput('stderr', `Running ${ext.toUpperCase()} is not supported offline.`)
+  }, [activeFile, activeYText, addOutput, logEvent])
+
+  // Global Keyboard Shortcuts (Ctrl+S for Save, Ctrl+Enter for Run)
   useEffect(() => {
     const handleKeyDown = (e) => {
+      // Ctrl+S / Cmd+S
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault()
         handleSaveCurrentFile()
       }
+      // Ctrl+Enter / Cmd+Enter
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault()
+        handleRunCode()
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleSaveCurrentFile])
+  }, [handleSaveCurrentFile, handleRunCode])
 
   // Offline / Online toggle
   const handleToggleOnline = () => {
     if (!workspace) return
     if (status === 'offline') {
       workspace.goOnline()
-      logEvent('network', 'Reconnecting... will auto-merge local edits')
+      logEvent('network', 'Reconnecting to sync server...')
     } else {
       workspace.goOffline()
       logEvent('network', 'Switched to offline mode: local edits isolated')
@@ -272,6 +441,9 @@ export default function App() {
     (u) => !u.isYou && u.currentFile === activeFile
   )
 
+  const activeExt = getFileExtension(activeFile)
+  const isHtml = ['html', 'htm'].includes(activeExt)
+
   // Show Join screen if not connected
   if (!session || !workspace) {
     return <JoinScreen onJoin={handleJoin} />
@@ -298,6 +470,9 @@ export default function App() {
         onSaveCurrentFile={handleSaveCurrentFile}
         onDownloadAllZip={handleDownloadAllZip}
         activeFile={activeFile}
+        onRunCode={handleRunCode}
+        isRunning={isRunning}
+        onStopCode={handleStopCode}
       />
 
       {/* Main Workspace Body */}
@@ -311,13 +486,27 @@ export default function App() {
           onDeleteFile={handleDeleteFile}
         />
 
-        {/* Center: CodeMirror 6 Editor */}
-        <Editor
-          activeFile={activeFile}
-          ytext={activeYText}
-          awareness={workspace.awareness}
-          remoteUsersViewingThisFile={remoteUsersInSameFile}
-        />
+        {/* Center: CodeMirror 6 Editor with Bottom Output Panel */}
+        <div className="editor-and-output-column">
+          <Editor
+            activeFile={activeFile}
+            ytext={activeYText}
+            awareness={workspace.awareness}
+            remoteUsersViewingThisFile={remoteUsersInSameFile}
+          />
+
+          {/* Phase B: Bottom Output & Preview Panel */}
+          <OutputPanel
+            isOpen={isOutputOpen}
+            onClose={() => setIsOutputOpen(false)}
+            outputs={outputs}
+            onClear={() => setOutputs([])}
+            isRunning={isRunning}
+            onStop={handleStopCode}
+            htmlContent={htmlContent}
+            isHtmlMode={isHtml}
+          />
+        </div>
 
         {/* Right: People Panel */}
         <PeoplePanel users={users} activeFile={activeFile} />
