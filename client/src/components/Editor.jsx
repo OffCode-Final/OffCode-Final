@@ -83,7 +83,8 @@ export default function Editor({
   isReviewMode = false,
   isDraft = false,
   onSwitchReviewTab,
-  onPushDraft
+  onPushDraft,
+  onPointersChange
 }) {
   const editorRef = useRef(null)
   const viewRef = useRef(null)
@@ -283,14 +284,6 @@ export default function Editor({
       }
     }
 
-    const handleMouseLeave = () => {
-      clearPointer()
-    }
-
-    const handleWindowBlur = () => {
-      clearPointer()
-    }
-
     const handleVisibilityChange = () => {
       if (document.hidden) {
         clearPointer()
@@ -298,15 +291,11 @@ export default function Editor({
     }
 
     scroller.addEventListener('mousemove', handleMouseMove, { passive: true })
-    scroller.addEventListener('mouseleave', handleMouseLeave)
-    window.addEventListener('blur', handleWindowBlur)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       clearPointer()
       scroller.removeEventListener('mousemove', handleMouseMove)
-      scroller.removeEventListener('mouseleave', handleMouseLeave)
-      window.removeEventListener('blur', handleWindowBlur)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       setScrollerNode(null)
       if (viewRef.current) {
@@ -320,6 +309,9 @@ export default function Editor({
   useEffect(() => {
     if (!awareness || !activeFile) {
       setRemotePointers([])
+      if (onPointersChange) {
+        onPointersChange(0)
+      }
       return
     }
 
@@ -362,6 +354,9 @@ export default function Editor({
       })
 
       setRemotePointers(list)
+      if (onPointersChange) {
+        onPointersChange(list.length)
+      }
     }
 
     awareness.on('change', updatePointers)
@@ -371,11 +366,11 @@ export default function Editor({
     return () => {
       awareness.off('change', updatePointers)
       clearInterval(interval)
-      if (awareness) {
-        awareness.setLocalStateField('pointer', null)
+      if (onPointersChange) {
+        onPointersChange(0)
       }
     }
-  }, [awareness, activeFile])
+  }, [awareness, activeFile, onPointersChange])
 
   // Scroll to line when jumped or following a peer
   useEffect(() => {

@@ -13,7 +13,8 @@ export default function DebugPanel({
   activeFile,
   mode = 'free',
   hostId = null,
-  pendingProposalsCount = 0
+  pendingProposalsCount = 0,
+  pointersReceivedCount = 0
 }) {
   if (!isOpen) return null
 
@@ -64,6 +65,15 @@ export default function DebugPanel({
               <span className="stat-label">Pending Proposals</span>
               <span className="stat-val">{pendingProposalsCount}</span>
             </div>
+
+            <div className="stat-card">
+              <span className="stat-label">Pointers received</span>
+              <span className="stat-val">{pointersReceivedCount}</span>
+            </div>
+          </div>
+
+          <div className="debug-pointer-line" style={{ padding: '2px 0 8px 0', fontSize: '11px', color: 'var(--text-muted)' }}>
+            Pointers received: <strong style={{ color: 'var(--text-bright)' }}>{pointersReceivedCount}</strong>
           </div>
 
           {/* Undo/Redo Stacks Table */}

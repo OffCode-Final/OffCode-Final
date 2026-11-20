@@ -40,6 +40,7 @@ export default function App() {
   const [showDebug, setShowDebug] = useState(false)
   const [undoDepths, setUndoDepths] = useState({})
   const [eventsLog, setEventsLog] = useState([])
+  const [pointersReceivedCount, setPointersReceivedCount] = useState(0)
 
   // Code Execution & Output State
   const [outputs, setOutputs] = useState([])
@@ -901,6 +902,7 @@ export default function App() {
             isDraft={isDraftEditing}
             onSwitchReviewTab={(tab) => setReviewTab(tab)}
             onPushDraft={() => setIsPushDraftOpen(true)}
+            onPointersChange={setPointersReceivedCount}
           />
 
           {/* Bottom Output & Preview Panel */}
@@ -994,6 +996,7 @@ export default function App() {
         mode={mode}
         hostId={hostId}
         pendingProposalsCount={pendingCount}
+        pointersReceivedCount={pointersReceivedCount}
       />
     </div>
   )
