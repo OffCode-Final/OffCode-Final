@@ -3,13 +3,10 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createRequire } from 'node:module';
 import WebSocket from 'ws';
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
 import { createSyncServer } from '../server/index.js';
-
-const require = createRequire(import.meta.url);
-const Y = require('yjs');
-const { WebsocketProvider } = require('y-websocket');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,7 +39,9 @@ test('Phase 1: Server and Core Persistence Verification', async (t) => {
 
   t.after(async () => {
     await syncServer.stop();
-    fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
+    try {
+      fs.rmSync(TEST_DATA_DIR, { recursive: true, force: true });
+    } catch (_) {}
   });
 
   await t.test('1. Health check endpoint responds with 200 OK and valid JSON + CORS', async () => {
@@ -75,14 +74,12 @@ test('Phase 1: Server and Core Persistence Verification', async (t) => {
 
     await Promise.all(clients.map(c => waitForSync(c.provider)));
 
-    // Client 0 creates 'main.js'
     const client0Files = clients[0].doc.getMap('files');
     const client0Text = new Y.Text();
     client0Files.set('main.js', client0Text);
 
     await delay(100);
 
-    // All 5 clients insert unique lines concurrently
     for (let i = 0; i < numClients; i++) {
       const filesMap = clients[i].doc.getMap('files');
       const text = filesMap.get('main.js');
@@ -157,12 +154,10 @@ test('Phase 1: Server and Core Persistence Verification', async (t) => {
     assert.ok(fs.existsSync(expectedFilePath), `Persistence file must exist at ${expectedFilePath}`);
     assert.ok(fs.statSync(expectedFilePath).size > 0, 'Persistence file must not be empty');
 
-    // Evict room from in-memory cache to simulate server restart
     if (syncServer.docs.has(roomId)) {
       syncServer.docs.delete(roomId);
     }
 
-    // Late joiner connects
     const docLate = new Y.Doc();
     const providerLate = new WebsocketProvider(`ws://127.0.0.1:${TEST_PORT}`, roomId, docLate, { WebSocketPolyfill: WebSocket });
     await waitForSync(providerLate);

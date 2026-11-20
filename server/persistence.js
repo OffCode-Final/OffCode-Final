@@ -1,9 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
-const Y = require('yjs');
+import * as Y from 'yjs';
 
 /**
  * File-based persistence adapter for Yjs documents.
@@ -21,16 +18,10 @@ export class FilePersistence {
   }
 
   getFilePath(docName) {
-    // Sanitize docName for safe filename on Windows/Linux/macOS
     const safeName = encodeURIComponent(docName).replace(/[^a-zA-Z0-9_\-.~]/g, '_');
     return path.join(this.dataDir, `${safeName}.ydoc`);
   }
 
-  /**
-   * Called by y-websocket when a room document is created.
-   * Loads existing state from disk synchronously so late joiners and reconnected
-   * clients receive the complete history immediately.
-   */
   bindState(docName, ydoc) {
     const filePath = this.getFilePath(docName);
     if (fs.existsSync(filePath)) {
@@ -47,8 +38,7 @@ export class FilePersistence {
       console.log(`[Persistence] New room created: "${docName}"`);
     }
 
-    // Listen for updates and schedule debounced save
-    ydoc.on('update', (_update, _origin) => {
+    ydoc.on('update', () => {
       this.scheduleSave(docName, ydoc);
     });
   }
@@ -66,9 +56,6 @@ export class FilePersistence {
     this.pendingSaves.set(docName, { timeout, ydoc });
   }
 
-  /**
-   * Atomically save a Y.Doc to disk using write-to-temp + rename.
-   */
   saveDocNow(docName, ydoc) {
     if (this.pendingSaves.has(docName)) {
       clearTimeout(this.pendingSaves.get(docName).timeout);
@@ -90,26 +77,18 @@ export class FilePersistence {
     }
   }
 
-  /**
-   * Called by y-websocket when all connections to a room have disconnected.
-   */
   async writeState(docName, ydoc) {
     this.saveDocNow(docName, ydoc);
     console.log(`[Persistence] Flushed and saved room "${docName}" (all clients disconnected)`);
   }
 
-  /**
-   * Flush all active rooms to disk immediately (e.g. on server shutdown).
-   */
   flushAll(docsMap) {
-    // Flush any pending scheduled saves
     for (const [docName, entry] of this.pendingSaves.entries()) {
       clearTimeout(entry.timeout);
       this.saveDocNow(docName, entry.ydoc);
     }
     this.pendingSaves.clear();
 
-    // Flush all loaded docs in memory
     if (docsMap) {
       for (const [docName, doc] of docsMap.entries()) {
         this.saveDocNow(docName, doc);
