@@ -338,6 +338,37 @@ body, #root {
   background: rgba(59, 130, 246, 0.15);
 }
 
+.file-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: 0.25rem;
+}
+
+.btn-save {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #34d399;
+}
+
+.btn-save:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: #10b981;
+  color: #fff;
+}
+
+.btn-download-all {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.35);
+  color: #c084fc;
+}
+
+.btn-download-all:hover:not(:disabled) {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: #8b5cf6;
+  color: #fff;
+}
+
 .undo-redo-group {
   display: flex;
   gap: 0.35rem;
@@ -565,6 +596,41 @@ body, #root {
   padding: 0.4rem 0.6rem;
   font-size: 0.8rem;
   margin-bottom: 0.45rem;
+}
+
+.preset-chips-container {
+  margin-bottom: 0.65rem;
+}
+
+.preset-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.btn-preset-chip {
+  background: #191f2c;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.btn-preset-chip:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: var(--accent-primary);
+  color: #fff;
 }
 
 .new-file-actions {

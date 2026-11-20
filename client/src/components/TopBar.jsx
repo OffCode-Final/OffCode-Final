@@ -14,9 +14,13 @@ export default function TopBar({
   redoDepth,
   showDebug,
   onToggleDebug,
-  onLeaveRoom
+  onLeaveRoom,
+  onSaveCurrentFile,
+  onDownloadAllZip,
+  activeFile
 }) {
   const [copied, setCopied] = useState(false)
+  const [savedToast, setSavedToast] = useState(false)
 
   const handleCopyLink = () => {
     const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`
@@ -24,6 +28,12 @@ export default function TopBar({
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
+  }
+
+  const handleSaveClick = () => {
+    onSaveCurrentFile()
+    setSavedToast(true)
+    setTimeout(() => setSavedToast(false), 1800)
   }
 
   const getStatusBadge = () => {
@@ -73,6 +83,27 @@ export default function TopBar({
             title="Copy shareable room link to clipboard"
           >
             {copied ? '✓ Copied' : '🔗 Copy Link'}
+          </button>
+        </div>
+
+        {/* Save Current File & Download All .zip (Phase A) */}
+        <div className="file-actions-group">
+          <button
+            type="button"
+            className="btn-toolbar btn-save"
+            onClick={handleSaveClick}
+            disabled={!activeFile}
+            title={`Download "${activeFile || 'current file'}" to your computer (Ctrl+S)`}
+          >
+            {savedToast ? '✓ Saved!' : '💾 Save'}
+          </button>
+          <button
+            type="button"
+            className="btn-toolbar btn-download-all"
+            onClick={onDownloadAllZip}
+            title="Download all workspace files as a .zip archive"
+          >
+            📦 Download All (.zip)
           </button>
         </div>
       </div>

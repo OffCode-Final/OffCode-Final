@@ -8,15 +8,18 @@ import {
   keymap
 } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
-import { bracketMatching, foldGutter } from '@codemirror/language'
+import { bracketMatching, foldGutter, indentOnInput, indentUnit } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 
-import { javascript } from '@codemirror/lang-javascript'
 import { python } from '@codemirror/lang-python'
+import { javascript } from '@codemirror/lang-javascript'
 import { html } from '@codemirror/lang-html'
 import { css } from '@codemirror/lang-css'
 import { json } from '@codemirror/lang-json'
+import { markdown } from '@codemirror/lang-markdown'
+import { cpp } from '@codemirror/lang-cpp'
+import { java } from '@codemirror/lang-java'
 
 import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension, getLanguageName, getFileBadgeInfo } from '../utils/helpers'
@@ -37,10 +40,12 @@ export default function Editor({
     lineCount: 1
   })
 
-  // Language extension selector based on file extension
+  // Language extension selector supporting all Phase A languages
   const getLanguageSupport = (fileName) => {
     const ext = getFileExtension(fileName)
     switch (ext) {
+      case 'py':
+        return python()
       case 'js':
       case 'jsx':
       case 'mjs':
@@ -48,8 +53,6 @@ export default function Editor({
       case 'ts':
       case 'tsx':
         return javascript({ jsx: true, typescript: true })
-      case 'py':
-        return python()
       case 'html':
       case 'htm':
         return html()
@@ -57,6 +60,18 @@ export default function Editor({
         return css()
       case 'json':
         return json()
+      case 'md':
+      case 'markdown':
+        return markdown()
+      case 'cpp':
+      case 'cxx':
+      case 'cc':
+      case 'hpp':
+      case 'c':
+      case 'h':
+        return cpp()
+      case 'java':
+        return java()
       default:
         return []
     }
@@ -81,13 +96,15 @@ export default function Editor({
       awareness.setLocalStateField('currentFile', activeFile)
     }
 
-    // CodeMirror extensions
+    // CodeMirror extensions with proper indentation & syntax highlighting
     const extensions = [
       lineNumbers(),
       highlightActiveLineGutter(),
       foldGutter(),
       bracketMatching(),
       highlightActiveLine(),
+      indentOnInput(),
+      indentUnit.of('    '),
       oneDark,
       getLanguageSupport(activeFile),
       // Keymap for local undo/redo with Mod-z and Mod-Shift-z / Mod-y
@@ -105,6 +122,11 @@ export default function Editor({
             charCount: update.state.doc.length,
             lineCount: update.state.doc.lines
           })
+
+          // Update awareness with current line number
+          if (awareness) {
+            awareness.setLocalStateField('currentLine', line.number)
+          }
         }
       })
     ]
@@ -133,6 +155,9 @@ export default function Editor({
         charCount: state.doc.length,
         lineCount: state.doc.lines
       })
+      if (awareness) {
+        awareness.setLocalStateField('currentLine', 1)
+      }
     } catch {
       // ignore
     }

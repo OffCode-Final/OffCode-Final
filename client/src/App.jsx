@@ -6,7 +6,12 @@ import {
   clearAllUndoManagers,
   onUndoStackChange
 } from './utils/undoCache'
-import { updateUrlRoom } from './utils/helpers'
+import {
+  updateUrlRoom,
+  downloadFile,
+  downloadAllAsZip,
+  getInitialTemplate
+} from './utils/helpers'
 
 import JoinScreen from './components/JoinScreen'
 import TopBar from './components/TopBar'
@@ -110,6 +115,7 @@ export default function App() {
             name: state.user.name || 'Anonymous',
             color: state.user.color || '#6366f1',
             currentFile: state.currentFile || null,
+            currentLine: state.currentLine || 1,
             isYou: clientId === ws.ydoc.clientID
           })
         }
@@ -155,6 +161,9 @@ export default function App() {
     }
   }, [workspace, activeFile])
 
+  // Active file's Y.Text instance
+  const activeYText = workspace && activeFile ? workspace.getText(activeFile) : null
+
   // File operations
   const handleSelectFile = (fileName) => {
     setActiveFile(fileName)
@@ -163,8 +172,10 @@ export default function App() {
 
   const handleCreateFile = (fileName) => {
     if (!workspace) return
-    const text = workspace.createFile(fileName)
+    const initialContent = getInitialTemplate(fileName)
+    const text = workspace.createFile(fileName, initialContent)
     if (text) {
+      setFiles(workspace.listFiles())
       setActiveFile(fileName)
       logEvent('file', `Created new file "${fileName}"`)
     }
@@ -174,8 +185,35 @@ export default function App() {
     if (!workspace) return
     workspace.deleteFile(fileName)
     removeUndoManager(fileName)
+    setFiles(workspace.listFiles())
     logEvent('file', `Deleted file "${fileName}"`)
   }
+
+  // Phase A: Save current file to disk
+  const handleSaveCurrentFile = useCallback(() => {
+    if (!activeFile || !activeYText) return
+    downloadFile(activeFile, activeYText.toString())
+    logEvent('save', `Downloaded "${activeFile}" to computer`)
+  }, [activeFile, activeYText, logEvent])
+
+  // Phase A: Download all files as a .zip
+  const handleDownloadAllZip = useCallback(() => {
+    if (!workspace) return
+    downloadAllAsZip(workspace, session?.roomId)
+    logEvent('save', 'Exported full project as .zip archive')
+  }, [workspace, session, logEvent])
+
+  // Phase A: Global Ctrl+S shortcut preventing browser default
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault()
+        handleSaveCurrentFile()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [handleSaveCurrentFile])
 
   // Offline / Online toggle
   const handleToggleOnline = () => {
@@ -188,9 +226,6 @@ export default function App() {
       logEvent('network', 'Switched to offline mode: local edits isolated')
     }
   }
-
-  // Active file's Y.Text instance
-  const activeYText = workspace && activeFile ? workspace.getText(activeFile) : null
 
   // Undo / Redo for active file
   const activeUndoManager =
@@ -260,6 +295,9 @@ export default function App() {
         showDebug={showDebug}
         onToggleDebug={() => setShowDebug(!showDebug)}
         onLeaveRoom={handleLeaveRoom}
+        onSaveCurrentFile={handleSaveCurrentFile}
+        onDownloadAllZip={handleDownloadAllZip}
+        activeFile={activeFile}
       />
 
       {/* Main Workspace Body */}
