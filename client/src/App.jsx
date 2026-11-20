@@ -26,7 +26,7 @@ import OutputPanel from './components/OutputPanel'
 import ReviewDrawer from './components/ReviewDrawer'
 import PushDraftModal from './components/PushDraftModal'
 import StatusBar from './components/StatusBar'
-import ChatPanel from './components/ChatPanel'
+import ChatPanel, { getChatJoinedAt, getMessageTime } from './components/ChatPanel'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -372,12 +372,27 @@ export default function App() {
 
     const handleChatChange = () => {
       const currentLength = chatArray.length
+      // If chat is emptied (e.g. host cleared chat), reset unread count immediately
+      if (currentLength === 0) {
+        setUnreadChatCount(0)
+        prevLength = 0
+        return
+      }
+
       if (!isChatOpen) {
         const addedDelta = currentLength - prevLength
         if (addedDelta > 0) {
           const myUserId = workspace.getUserId ? workspace.getUserId() : null
+          const joinedAt = getChatJoinedAt(session?.roomId, myUserId)
+          const cutoff = joinedAt - 2000
+
           const latestItems = chatArray.toArray().slice(-addedDelta)
-          const fromOthers = latestItems.filter((m) => m && m.userId !== myUserId).length
+          const fromOthers = latestItems.filter((m) => {
+            if (!m || m.userId === myUserId) return false
+            const mTime = getMessageTime(m)
+            return mTime >= cutoff
+          }).length
+
           if (fromOthers > 0) {
             setUnreadChatCount((prev) => prev + fromOthers)
           }
@@ -919,6 +934,7 @@ export default function App() {
           onClose={() => setIsChatOpen(false)}
           workspace={workspace}
           session={session}
+          isHost={isHost}
         />
       </div>
 

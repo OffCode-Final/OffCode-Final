@@ -1645,6 +1645,25 @@ button:disabled {
   color: var(--text-muted);
 }
 
+.btn-clear-chat {
+  padding: 1px 6px;
+  font-size: 10px;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 2px;
+  font-family: var(--font-ui);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.btn-clear-chat:hover {
+  background-color: var(--bg-hover-row);
+  color: var(--text-bright);
+  border-color: var(--status-red);
+}
+
 .chat-messages-container {
   flex: 1;
   overflow-y: auto;
