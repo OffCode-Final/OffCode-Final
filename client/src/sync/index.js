@@ -657,6 +657,10 @@ export function createWorkspace({
 
   // 10. Clean Workspace Teardown
   const destroy = () => {
+    try {
+      awareness.setLocalState(null);
+    } catch (_) {}
+
     if (typeof window !== 'undefined') {
       window.removeEventListener('online', handleBrowserOnline);
       window.removeEventListener('offline', handleBrowserOffline);

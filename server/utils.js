@@ -99,10 +99,12 @@ const messageListener = (conn, doc, message) => {
           conn
         );
         break;
+      default:
+        break;
     }
   } catch (err) {
-    console.error('[Yjs Server] Message error:', err);
-    doc.emit('error', [err]);
+    // Malformed packet or decoding error: safely ignore without crashing the server
+    console.warn('[Yjs Server] Malformed message safely ignored:', err?.message || err);
   }
 };
 
@@ -110,6 +112,16 @@ const closeConn = (doc, conn) => {
   if (doc.conns.has(conn)) {
     const controlledIds = doc.conns.get(conn);
     doc.conns.delete(conn);
+    // Bump awareness clock for controlled clients so all remaining peers accept removal
+    for (const clientID of controlledIds) {
+      const curMeta = doc.awareness.meta.get(clientID);
+      if (curMeta) {
+        doc.awareness.meta.set(clientID, {
+          clock: curMeta.clock + 1,
+          lastUpdated: Math.floor(Date.now() / 1000)
+        });
+      }
+    }
     awarenessProtocol.removeAwarenessStates(
       doc.awareness,
       Array.from(controlledIds),
@@ -147,6 +159,12 @@ export const setupWSConnection = (conn, req, { docName = (req.url || '').slice(1
   conn.binaryType = 'arraybuffer';
   const doc = getYDoc(docName, gc);
   doc.conns.set(conn, new Set());
+
+  conn.on('error', (err) => {
+    if (doc.conns.has(conn)) {
+      closeConn(doc, conn);
+    }
+  });
 
   conn.on('message', (message) => {
     messageListener(conn, doc, new Uint8Array(message));
