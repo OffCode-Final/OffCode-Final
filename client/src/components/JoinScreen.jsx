@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
+import { Sun, Moon } from 'lucide-react'
 import { USER_COLORS, getRandomColor, getInitialRoomFromUrl, copyToClipboard } from '../utils/helpers'
 
-export default function JoinScreen({ onJoin }) {
+export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const [tab, setTab] = useState('join') // 'create' | 'join'
   const [userName, setUserName] = useState('')
   const [roomId, setRoomId] = useState('')
@@ -96,6 +97,19 @@ export default function JoinScreen({ onJoin }) {
 
   return (
     <div className="join-container">
+      {onToggleTheme && (
+        <div className="join-theme-corner">
+          <button
+            type="button"
+            className="btn-icon-bar btn-theme-toggle"
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+        </div>
+      )}
       <div className="join-card">
         <div className="join-header">
           <h2>OffCode</h2>

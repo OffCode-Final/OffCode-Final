@@ -218,7 +218,7 @@ export default function Sidebar({
           <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-muted)' }}>
             {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
           </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', color: '#eab308' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--color-warning)' }}>
             {isExpanded ? <FolderOpen size={14} /> : <Folder size={14} />}
           </span>
           <span className="file-row-name" style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>

@@ -72,6 +72,31 @@ export default function App() {
     }
   })
 
+  // OffCode Dual Theme State (dark/light)
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem('offcode-theme')
+      if (saved === 'dark' || saved === 'light') return saved
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        return 'light'
+      }
+    } catch (_) {}
+    return 'dark'
+  })
+
+  useEffect(() => {
+    try {
+      document.documentElement.setAttribute('data-theme', theme)
+      window.localStorage.setItem('offcode-theme', theme)
+      const meta = document.querySelector('meta[name="theme-color"]')
+      if (meta) meta.setAttribute('content', theme === 'dark' ? '#0f1115' : '#f6f7f9')
+    } catch (_) {}
+  }, [theme])
+
+  const handleToggleTheme = useCallback(() => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
+  }, [])
+
   const handleToggleShowUserChanges = useCallback(() => {
     setShowUserChanges((prev) => {
       const next = !prev
@@ -1021,7 +1046,7 @@ export default function App() {
 
   // Show Join screen if not connected
   if (!session || !workspace) {
-    return <JoinScreen onJoin={handleJoin} />
+    return <JoinScreen onJoin={handleJoin} theme={theme} onToggleTheme={handleToggleTheme} />
   }
 
   return (
@@ -1060,6 +1085,8 @@ export default function App() {
         isStopped={isCurrentUserStopped}
         showUserChanges={showUserChanges}
         onToggleShowUserChanges={handleToggleShowUserChanges}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* Stopped by Host Banner */}
@@ -1067,15 +1094,15 @@ export default function App() {
         <div
           className="stopped-banner"
           style={{
-            background: '#7f1d1d',
-            color: '#fef2f2',
+            background: 'var(--color-danger-bg)',
+            color: 'var(--color-danger)',
             padding: '8px 16px',
             fontSize: '13px',
             fontWeight: 500,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            borderBottom: '1px solid #991b1b',
+            borderBottom: '1px solid var(--border-color)',
             letterSpacing: '0.2px'
           }}
         >
@@ -1139,6 +1166,7 @@ export default function App() {
             currentUserName={session?.userName || 'Anonymous'}
             currentUserColor={session?.userColor || '#6366f1'}
             users={users}
+            theme={theme}
           />
 
           {/* Bottom Output & Preview Panel */}
@@ -1188,6 +1216,8 @@ export default function App() {
         cursorPos={cursorPos}
         isHost={isHost}
         mode={mode}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
       />
 
       {/* Host Review Proposals Drawer */}

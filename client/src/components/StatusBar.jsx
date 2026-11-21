@@ -7,17 +7,19 @@ export default function StatusBar({
   activeLanguage,
   cursorPos,
   isHost,
-  mode
+  mode,
+  theme,
+  onToggleTheme
 }) {
   const getStatusColor = () => {
     switch (status) {
       case 'online':
-        return '#4ec9b0'
+        return 'var(--color-success)'
       case 'connecting':
-        return '#cca700'
+        return 'var(--color-warning)'
       case 'offline':
       default:
-        return '#f48771'
+        return 'var(--color-danger)'
     }
   }
 
@@ -84,6 +86,17 @@ export default function StatusBar({
           <Users size={12} className="status-icon" />
           <span>{usersCount} {usersCount === 1 ? 'collaborator' : 'collaborators'}</span>
         </span>
+
+        {theme && (
+          <button
+            type="button"
+            className="status-bar-item status-bar-btn"
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? 'Theme: Dark (click to switch)' : 'Theme: Light (click to switch)'}
+          >
+            <span>{theme === 'dark' ? 'Dark' : 'Light'}</span>
+          </button>
+        )}
       </div>
     </footer>
   )

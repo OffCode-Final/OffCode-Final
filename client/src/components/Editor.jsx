@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { EditorState } from '@codemirror/state'
+import { EditorState, Compartment } from '@codemirror/state'
 import {
   EditorView,
   lineNumbers,
@@ -9,8 +9,8 @@ import {
   keymap
 } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
-import { bracketMatching, foldGutter, indentOnInput, indentUnit } from '@codemirror/language'
-import { oneDark } from '@codemirror/theme-one-dark'
+import { bracketMatching, foldGutter, indentOnInput, indentUnit, HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { tags as t } from '@lezer/highlight'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import { X, Send } from 'lucide-react'
 
@@ -27,47 +27,96 @@ import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension } from '../utils/helpers'
 import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
 
-// VS Code Dark+ Editor Theme
-const vsCodeDarkTheme = EditorView.theme(
-  {
-    '&': {
-      backgroundColor: '#1e1e1e',
-      color: '#cccccc',
-      fontFamily: '"JetBrains Mono", Consolas, "Courier New", monospace',
-      fontSize: '13px',
-      lineHeight: '1.5'
+// Highlight styles tuned for Dark (soft pastel) and Light (GitHub-light)
+const darkHighlightStyle = HighlightStyle.define([
+  { tag: t.keyword, color: '#c678dd' },
+  { tag: [t.name, t.deleted, t.character, t.macroName], color: '#e06c75' },
+  { tag: [t.function(t.variableName), t.labelName], color: '#61afef' },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#d19a66' },
+  { tag: [t.definition(t.name), t.separator], color: '#abb2bf' },
+  { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#e5c07b' },
+  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)], color: '#56b6c2' },
+  { tag: [t.meta, t.comment], color: 'var(--text-faint, #5c6572)', fontStyle: 'italic' },
+  { tag: t.strong, fontWeight: 'bold' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.link, textDecoration: 'underline' },
+  { tag: t.heading, fontWeight: 'bold', color: '#e06c75' },
+  { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#d19a66' },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: '#98c379' },
+  { tag: t.invalid, color: '#ef4444' }
+])
+
+const lightHighlightStyle = HighlightStyle.define([
+  { tag: t.keyword, color: '#cf222e' },
+  { tag: [t.name, t.deleted, t.character, t.macroName], color: '#24292f' },
+  { tag: [t.function(t.variableName), t.labelName], color: '#8250df' },
+  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#0550ae' },
+  { tag: [t.definition(t.name), t.separator], color: '#24292f' },
+  { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#953800' },
+  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)], color: '#0a3069' },
+  { tag: [t.meta, t.comment], color: 'var(--text-muted, #6e7781)', fontStyle: 'italic' },
+  { tag: t.strong, fontWeight: 'bold' },
+  { tag: t.emphasis, fontStyle: 'italic' },
+  { tag: t.link, textDecoration: 'underline' },
+  { tag: t.heading, fontWeight: 'bold', color: '#0550ae' },
+  { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#0550ae' },
+  { tag: [t.processingInstruction, t.string, t.inserted], color: '#0a3069' },
+  { tag: t.invalid, color: '#cf222e' }
+])
+
+const themeCompartment = new Compartment()
+const syntaxCompartment = new Compartment()
+
+function getEditorTheme(theme) {
+  const isDark = theme !== 'light'
+  return EditorView.theme(
+    {
+      '&': {
+        backgroundColor: 'var(--bg-editor)',
+        color: 'var(--text-main)',
+        fontFamily: 'var(--font-code)',
+        fontSize: '13.5px',
+        lineHeight: '1.6'
+      },
+      '.cm-content': {
+        caretColor: 'var(--editor-cursor)',
+        fontFamily: 'var(--font-code)'
+      },
+      '.cm-cursor, .cm-dropCursor': {
+        borderLeft: '2px solid var(--editor-cursor)'
+      },
+      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+        backgroundColor: 'var(--editor-selection) !important'
+      },
+      '.cm-activeLine': {
+        backgroundColor: 'var(--editor-active-line)'
+      },
+      '.cm-gutters': {
+        backgroundColor: 'var(--editor-gutter-bg)',
+        color: 'var(--editor-gutter-color)',
+        borderRight: '1px solid var(--border-color)'
+      },
+      '.cm-activeLineGutter': {
+        backgroundColor: 'var(--editor-active-line)',
+        color: 'var(--text-main)'
+      },
+      '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
+        backgroundColor: isDark ? 'rgba(59, 130, 246, 0.25)' : 'rgba(37, 99, 235, 0.2)',
+        outline: isDark ? '1px solid #3b82f6' : '1px solid #2563eb'
+      },
+      '.cm-line': {
+        paddingLeft: '4px'
+      }
     },
-    '.cm-content': {
-      caretColor: '#aeafad'
-    },
-    '.cm-cursor, .cm-dropCursor': {
-      borderLeft: '2px solid #aeafad'
-    },
-    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-      backgroundColor: '#264f78 !important'
-    },
-    '.cm-activeLine': {
-      backgroundColor: '#282828'
-    },
-    '.cm-gutters': {
-      backgroundColor: '#1e1e1e',
-      color: '#858585',
-      borderRight: '1px solid #3c3c3c'
-    },
-    '.cm-activeLineGutter': {
-      backgroundColor: '#282828',
-      color: '#cccccc'
-    },
-    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
-      backgroundColor: 'rgba(14, 99, 156, 0.3)',
-      outline: '1px solid #0e639c'
-    },
-    '.cm-line': {
-      paddingLeft: '4px'
-    }
-  },
-  { dark: true }
-)
+    { dark: isDark }
+  )
+}
+
+function getSyntaxTheme(theme) {
+  return theme === 'light'
+    ? syntaxHighlighting(lightHighlightStyle)
+    : syntaxHighlighting(darkHighlightStyle)
+}
 
 export default function Editor({
   activeFile,
@@ -92,7 +141,8 @@ export default function Editor({
   currentUserId = null,
   currentUserName = 'Anonymous',
   currentUserColor = '#6366f1',
-  users = []
+  users = [],
+  theme = 'dark'
 }) {
   const editorRef = useRef(null)
   const viewRef = useRef(null)
@@ -167,8 +217,8 @@ export default function Editor({
       highlightActiveLine(),
       indentOnInput(),
       indentUnit.of('    '),
-      oneDark,
-      vsCodeDarkTheme,
+      themeCompartment.of(getEditorTheme(theme)),
+      syntaxCompartment.of(getSyntaxTheme(theme)),
       getLanguageSupport(activeFile),
       EditorState.readOnly.of(Boolean(readOnly || isStopped)),
       EditorView.editable.of(!readOnly && !isStopped),
@@ -422,6 +472,18 @@ export default function Editor({
     }
   }, [awareness, activeFile, onPointersChange, frozenUserIds])
 
+  // Dynamic Theme Reconfiguration via CodeMirror Compartment
+  useEffect(() => {
+    if (viewRef.current) {
+      viewRef.current.dispatch({
+        effects: [
+          themeCompartment.reconfigure(getEditorTheme(theme)),
+          syntaxCompartment.reconfigure(getSyntaxTheme(theme))
+        ]
+      })
+    }
+  }, [theme])
+
   // Scroll to line when jumped or following a peer
   useEffect(() => {
     if (viewRef.current && targetScrollLine != null && targetScrollLine > 0) {
@@ -540,8 +602,8 @@ export default function Editor({
                       <path
                         d="M0 0 L5 15 L8 9 L14 8 Z"
                         fill={p.color}
-                        stroke="#1e1e1e"
-                        strokeWidth="1"
+                        stroke="var(--bg-editor)"
+                        strokeWidth="1.5"
                         strokeLinejoin="round"
                       />
                     </svg>

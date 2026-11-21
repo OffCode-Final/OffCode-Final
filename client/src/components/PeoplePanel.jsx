@@ -63,11 +63,11 @@ export default function PeoplePanel({
                         <span
                           className="tag-stopped"
                           style={{
-                            background: '#7f1d1d',
-                            color: '#fca5a5',
+                            background: 'var(--color-danger-bg)',
+                            color: 'var(--color-danger)',
                             fontSize: '10px',
                             padding: '1px 5px',
-                            borderRadius: '3px',
+                            borderRadius: 'var(--radius-xs)',
                             fontWeight: 600
                           }}
                         >

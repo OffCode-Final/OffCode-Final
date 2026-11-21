@@ -16,7 +16,9 @@ import {
   GitPullRequest,
   Send,
   MessageSquare,
-  Highlighter
+  Highlighter,
+  Sun,
+  Moon
 } from 'lucide-react'
 import { getFileExtension } from '../utils/helpers'
 
@@ -52,7 +54,9 @@ export default function TopBar({
   unreadChatCount = 0,
   isStopped = false,
   showUserChanges = false,
-  onToggleShowUserChanges
+  onToggleShowUserChanges,
+  theme = 'dark',
+  onToggleTheme
 }) {
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
@@ -226,6 +230,17 @@ export default function TopBar({
           )}
         </button>
 
+        {/* Theme Toggle Button */}
+        <button
+          type="button"
+          className="btn-icon-bar btn-theme-toggle"
+          onClick={onToggleTheme}
+          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+        >
+          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+        </button>
+
         {/* More Actions Dropdown Menu */}
         <div className="more-menu-wrapper" ref={moreRef}>
           <button
@@ -239,6 +254,18 @@ export default function TopBar({
 
           {isMoreOpen && (
             <div className="more-dropdown-menu">
+              <button
+                type="button"
+                className="dropdown-item"
+                onClick={() => {
+                  if (onToggleTheme) onToggleTheme()
+                  setIsMoreOpen(false)
+                }}
+              >
+                {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+                <span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+              </button>
+
               <button
                 type="button"
                 className={`dropdown-item btn-toggle-user-changes ${showUserChanges ? 'active' : ''}`}
@@ -256,8 +283,8 @@ export default function TopBar({
                     fontWeight: 600,
                     padding: '1px 6px',
                     borderRadius: '3px',
-                    background: showUserChanges ? '#047857' : '#374151',
-                    color: showUserChanges ? '#a7f3d0' : '#9ca3af',
+                    background: showUserChanges ? 'var(--color-success-bg)' : 'var(--bg-active-row)',
+                    color: showUserChanges ? 'var(--color-success)' : 'var(--text-muted)',
                     marginLeft: '8px'
                   }}
                 >
