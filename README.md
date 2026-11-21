@@ -1,132 +1,106 @@
 # OffCode
-### Multiplayer Code Editor that Works Offline
 
-A browser-based collaborative code editor where multiple developers can edit the same files in real time, keep working smoothly offline, and automatically merge upon reconnect with zero lost characters.
+Collaborative, offline-first code editor with real-time peer sync and zero data loss.
 
-Built with React, CodeMirror 6, Pyodide WebAssembly, and Yjs CRDTs. Styled in VS Code Dark+ theme.
+## What It Does
 
----
+OffCode allows multiple users to edit code together in real time, continue working uninterrupted when offline, and automatically merge changes upon reconnecting. Built for low-connectivity environments and hackathons, OffCode runs as a single self-contained application serving both the web editor interface and the peer-to-peer sync engine.
 
-## Two Device Live Demo in 3 Steps
+### Key Capabilities
+- Real-Time Collaboration: Live character-by-character editing with remote caret indicators and peer presence.
+- Live Mouse Pointers: Throttled collaborative cursor pointers showing peer names and color badges, with automatic idle fadeout.
+- Offline-First Architecture: Local edits are continuously persisted to browser IndexedDB; when the connection drops, users continue editing locally, and all edits merge automatically on reconnect with zero lost characters.
+- Per-User Undo and Redo: Undoing edits (Ctrl+Z) only reverts your own changes without reverting or interrupting edits made by peers.
+- Host and Review Mode: The host can switch the room into Review mode, enabling non-host collaborators to work in isolated drafts and submit proposals for visual diff review and fuzzy three-way merging.
+- In-Editor Chat Sidebar: Real-time collaborative room chat with unread indicators, host message clearing, and join-time message filtering.
+- Local Code Execution: Run Python (via local offline Pyodide WebAssembly without external network calls), JavaScript (sandboxed Web Worker with watchdog timeout), and HTML live previews.
+- Project Export: Download individual files or bundle the entire project into a ZIP archive.
 
-Use these 3 steps to demonstrate live collaboration between two real devices (laptops, phones, or tablets on the same Wi-Fi) or two browser profiles on the same computer:
+## Tech Stack
 
-### Step 1: Start the Server & Client
-1. In terminal 1, start the WebSocket sync server:
-   ```bash
-   npm run start:server
-   ```
-2. In terminal 2, start the React client:
-   ```bash
-   cd client
-   npm run dev
-   ```
-   The terminal will print your local URL (`http://localhost:5173`) and Network URL (e.g. `http://192.168.1.50:5173`).
+- Frontend: React 19, CodeMirror 6, Vite, Plain JavaScript.
+- Editor Themes and Syntax: VS Code Dark+ styling, syntax highlighting for JavaScript, Python, HTML, CSS, JSON, Markdown, C/C++, and Java.
+- Synchronization and CRDTs: Yjs, y-websocket, y-indexeddb, y-codemirror.next, y-protocols.
+- Offline Execution: Pyodide WebAssembly (pre-cached locally in client/public/pyodide/), isolated Web Workers, sandboxed iframe.
+- Backend: Node.js HTTP server, WebSocket (ws) server, atomic disk file persistence.
 
-### Step 2: Host Creates a Room (Device A)
-1. On Device A (or Window A), navigate to: **`http://localhost:5173`**
-2. In the Join screen:
-   - Enter your name: `Alice`
-   - Select **"Create Room"** (a clean room code like `room-4921` is auto-generated)
-   - Click **"Create & Enter Room"**
-3. Alice enters the editor as **Host** (indicated in the bottom status bar and top bar).
-4. Click the **"Copy"** button next to the Share Link in the Join screen (or share `http://<your-ip>:5173/?room=<room-code>`).
+## System Requirements
 
-### Step 3: Friend Joins the Room (Device B)
-1. On Device B (or a private/incognito window), open the shared link:
-   **`http://<your-ip>:5173/?room=<room-code>`**
-2. The Room Code is automatically prefilled. Enter name: `Bob` and click **"Join Room"**.
-3. **Verify Live Collaboration**:
-   - Both devices immediately see each other in the right-side **People** panel (`2 collaborators`) with colored dots, active file name, and real-time line numbers.
-   - When Bob moves his cursor or selects text, Alice sees Bob's live colored caret and name tag in real time.
-   - Bob can click **"Follow"** next to Alice in the People panel to automatically track Alice's file and cursor position.
+- Node.js: Version 18.0.0 or higher (tested on Node.js 20.x and 24.x).
+- npm: Version 9.0.0 or higher.
+- Modern web browser (Chrome, Edge, Firefox, Safari).
+- Operating System: Windows, macOS, or Linux.
 
----
+## Setup and Installation
 
-## Key Features Verification Walkthrough
+Clone the repository and install dependencies:
 
-### 1. Offline Editing & Automatic Reconnect Merge (Zero Lost Characters)
-1. In Bob's window, click **"Online"** in the bottom status bar (or click "More actions -> Disconnect"). The status turns red **Offline**, and a banner displays: *"Cannot reach the server. Check the link and Wi-Fi. (Offline editing is enabled)"*.
-2. In Bob's window (while offline), type: `// BOB TYPED WHILE OFFLINE`
-3. In Alice's window (online), type concurrently on the same line: `// ALICE CONCURRENT EDIT`
-4. In Bob's window, click **"Retry Connection"** in the banner.
-5. The connection reconnects to **Online**.
-6. **Result**: Both Alice's and Bob's edits merge cleanly with **zero lost characters** thanks to Yjs CRDT conflict resolution.
+```bash
+git clone https://github.com/qdurgeshsingh1234-alt/OffCode.git
+cd OffCode
 
-### 2. Multi-File Isolation
-1. In Alice's sidebar, click **"New file"**, type `script.py`, and click **Create**.
-2. Alice automatically switches to `script.py`.
-3. Notice that Bob is still in `main.js`. Bob's cursor is **not** rendered in `script.py`—each collaborator's cursor only renders in the file they are currently viewing.
-4. The People panel accurately shows Alice in `script.py:1` and Bob in `main.js:1`.
+# Step 1: Install dependencies in root and client
+npm run setup
 
-### 3. Per-User Undo (Ctrl+Z)
-Collaborative per-user undo ensures undoing your own changes never deletes or reverts teammates' work.
-1. In Alice's window, type: `const greeting = "Hello World";`
-2. In Bob's window, type directly below it: `const team = "Antigravity";`
-3. In Alice's window, press **Ctrl+Z** (or click the Undo icon in the top bar).
-4. **Result**: Alice's text is undone, while Bob's text (`const team = "Antigravity";`) **remains completely intact**.
-5. In Alice's window, press **Ctrl+Shift+Z** (or click Redo) to restore Alice's edit.
+# Alternatively, install manually:
+# npm install
+# cd client && npm install && cd ..
 
-### 4. Host & Review Mode (Private Drafts, Visual Diff, and 3-Way Fuzzy Merge)
-1. On Device A (Alice is Host): in the top bar mode toggle, switch from **"Live"** to **"Review"**.
-2. On Device B (Bob):
-   - A banner appears: *"Review mode active. Editing your private draft. Push when ready for host review."*
-   - Two review tabs appear: `My Draft (editing)` and `Main file (read-only)`.
-3. In Bob's draft, add a function:
-   ```javascript
-   function calculateTotal(items) {
-     return items.reduce((sum, item) => sum + item.price, 0);
-   }
-   ```
-4. Click `Main file (read-only)`: verify that the main file is protected and unchanged.
-5. Switch back to `My Draft`, click **"Push Draft"**, enter a summary message (`"Add calculateTotal utility"`), and submit.
-6. On Device A (Alice, Host):
-   - The top bar displays **"Proposals (1)"**.
-   - Alice clicks **"Proposals"** to open the Host Review Drawer.
-   - Alice reviews the visual side-by-side / inline diff (`+` green additions, `-` red deletions).
-   - Alice clicks **"Accept"**.
-7. The proposed changes are merged into the shared file using 3-way fuzzy patching without disrupting other collaborators' cursors. Bob receives an instant toast notification: *"Host accepted your proposal"*.
-8. Alice can also click **"Revert"** in the Review Drawer to safely roll back the proposal at any time.
+# Step 2: Build the client distribution
+npm run build
 
-### 5. Local Offline Code Execution
-1. Open or create `script.py`.
-2. Click **"Run"** in the top bar (or press **Ctrl+Enter**).
-3. The bottom **Output Panel** opens:
-   - Pyodide WebAssembly engine loads offline from local files in `client/public/pyodide/` (no CDN or external network needed).
-   - Python executes inside an isolated Web Worker, capturing `stdout` and execution duration.
-   - If an infinite loop occurs, click **"Stop"** to terminate the Web Worker and immediately unblock the UI.
-   - If `input()` is called, a friendly message explains that interactive console input is disabled in offline execution.
-4. JavaScript files run in an isolated Web Worker with a 10-second watchdog timer.
-5. HTML files render live previews inside a sandboxed iframe.
+# Step 3: Start the server
+npm start
+```
 
-### 6. Save & Download All (.zip)
-1. Click **"Save"** in the top bar (or press **Ctrl+S**): downloads the active file directly to your PC with its exact filename and content.
-2. Click **"More actions -> Download all (.zip)"**: bundles all files in the current workspace into a `.zip` archive using JSZip and triggers a browser download.
+The server starts on port 1234 and automatically serves the built client interface and WebSocket sync service on the same port.
 
----
+## Two-Device Demo in 3 Steps
 
-## Tech Stack & Architecture
+Use these 3 steps to demonstrate real-time collaboration between two computers or devices on the same local network:
 
-- **Frontend**: React 19, Vite, Plain JavaScript (no TypeScript).
-- **Styling**: VS Code Dark+ CSS design system (editor `#1e1e1e`, sidebar `#252526`, top bar `#323233`, status bar `#007acc`, zero emojis).
-- **Fonts**: Self-hosted Inter (UI) and JetBrains Mono (Code/Output) via `@fontsource`.
-- **Editor**: CodeMirror 6 (`@codemirror/state`, `@codemirror/view`, `@codemirror/language`, `@codemirror/commands`).
-- **Languages**: Python, JavaScript, HTML, CSS, JSON, Markdown, C/C++, Java.
-- **Offline Code Execution**: Pyodide (ES Module Web Worker, local assets pre-cached by Workbox PWA), Web Worker JS runner with 10s watchdog timeout, sandboxed iframe HTML preview.
-- **CRDT Sync Engine**: `yjs`, `y-websocket`, `y-indexeddb`, `y-codemirror.next`.
-- **Strict Role Boundaries**:
-  - `client/` (UI, Editor, Workers, Runners): Durgesh
-  - `server/`, `tests/`, `client/src/sync/`: Teammate
+### Step 1: Start the Server (Host Laptop)
+1. Run `npm start` in your terminal.
+2. The terminal displays the local URL (`http://localhost:1234`) and your LAN IP address (for example `http://192.168.1.50:1234` or `http://10.x.x.x:1234`).
 
----
+### Step 2: Host Creates a Room (Device 1)
+1. On the host laptop, open `http://localhost:1234` in your browser.
+2. Enter your name (for example, "Alice"), select "Create Room", and click "Create & Enter Room".
+3. Click "Copy" on the share link (or note the link: `http://<host-ip>:1234/?room=<room-code>`).
 
-## Automated Test Suite
+### Step 3: Peer Joins Over LAN (Device 2)
+1. On a second laptop, phone, or a separate browser profile, open the shared link: `http://<host-ip>:1234/?room=<room-code>`.
+2. Enter a name (for example, "Bob") and click "Join Room".
+3. Both users can now edit together simultaneously:
+   - Moving the mouse displays live colored pointers with names.
+   - Typing displays live colored remote carets and updates text instantly.
+   - Disconnecting either device allows continued offline editing; reconnecting merges all edits with zero lost characters.
 
-Run the full end-to-end verification test suite:
+## Running Tests
+
+Execute the automated test suite covering all 32 verification scenarios:
+
 ```bash
 npm test
 ```
-All 26 comprehensive test scenarios pass cleanly:
-- 15 Sync engine & offline merge scenarios (concurrent lines, dual offline edits, 1000+ edit stress, IndexedDB reload, delete-vs-edit conflicts, flaky Wi-Fi, server crash recovery, file create/delete conflicts, 5000+ line large file benchmark, concurrent proposals, stale proposals, offline proposal reconnect, leader election, proposal revert, non-host permissions).
-- 4 Contract verification scenarios (exact API surface, host/mode live-review semantics, safe user IDs without crypto.randomUUID, room code normalization).
-- 4 Server persistence scenarios (health check endpoint, 4+ simultaneous users, multi-room isolation, disk persistence surviving server restart).
+
+The test suite validates:
+- Real Two-Device LAN Simulation: Live sync, review mode, and offline merge over LAN IP.
+- Concurrent editing, dual offline edits, and 1000+ edit stress tests.
+- Offline IndexedDB persistence and reload recovery.
+- Host leadership election, draft review, and fuzzy patching.
+- Server mid-session restart recovery and malformed packet resilience.
+
+## How Sync Works
+
+OffCode uses Conflict-free Replicated Data Types (CRDTs) powered by Yjs.
+
+1. Deterministic Relative Addressing: Rather than tracking text by absolute character indices (which shift when other users type), every character receives a globally unique, immutable identifier tied to the client ID and a monotonic clock timestamp. Each character references its immediate left and right neighbors.
+2. Offline Editing and Storage: While offline, edits are applied to an in-memory Yjs document and mirrored immediately to browser IndexedDB storage. Edits persist across page refreshes and browser restarts.
+3. State Vectors on Reconnect: When a connection is re-established, the client and server exchange compact state vectors summarizing the edit clocks each side has observed.
+4. Delta Exchange: Only missing update fragments are transmitted over the WebSocket connection.
+5. Automatic Conflict-Free Merge: Yjs deterministically inserts missing characters into their exact relative positions. No central authority is required to resolve conflicts, and no characters are overwritten or lost.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

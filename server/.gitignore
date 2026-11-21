@@ -1,0 +1,5 @@
+data/
+*.ydoc
+*.tmp
+node_modules/
+.env
