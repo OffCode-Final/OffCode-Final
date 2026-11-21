@@ -13,7 +13,8 @@ import {
   getInitialTemplate,
   getFileExtension,
   getLanguageName,
-  getDefaultServerUrl
+  getDefaultServerUrl,
+  resolveHtmlAssets
 } from './utils/helpers'
 
 import JoinScreen from './components/JoinScreen'
@@ -728,8 +729,21 @@ export default function App() {
 
     // 3. HTML Live Preview in Sandboxed Iframe
     if (['html', 'htm'].includes(ext)) {
-      setHtmlContent(code)
+      const getFileContent = (path) => {
+        if (!workspace) return null
+        const text = workspace.getText(path)
+        return text ? text.toString() : null
+      }
+
+      const { html: resolvedHtml, missingFiles } = resolveHtmlAssets(code, activeFile, getFileContent)
+      setHtmlContent(resolvedHtml)
       setIsRunning(false)
+
+      if (missingFiles.length > 0) {
+        missingFiles.forEach((f) => {
+          addOutput('stderr', `${f.raw} not found in this room`)
+        })
+      }
       addOutput('status', `Live HTML preview loaded for ${activeFile}`)
       logEvent('run', `Opened HTML live preview for "${activeFile}"`)
       return
@@ -738,7 +752,7 @@ export default function App() {
     // 4. Other languages
     setIsRunning(false)
     addOutput('stderr', `Running ${ext.toUpperCase()} is not supported offline.`)
-  }, [activeFile, activeYText, addOutput, logEvent])
+  }, [activeFile, activeYText, addOutput, logEvent, workspace])
 
   // Global Keyboard Shortcuts (Ctrl+S for Save, Ctrl+Enter for Run)
   useEffect(() => {

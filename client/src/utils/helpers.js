@@ -214,4 +214,165 @@ export function getDefaultServerUrl() {
   return 'ws://localhost:1234'
 }
 
+/**
+ * Resolves relative file path against a base directory.
+ * Properly ignores '.' and resolves '..' relative to the base directory.
+ */
+export function resolveRelativePath(baseDir, relativePath) {
+  if (!relativePath || typeof relativePath !== 'string') return ''
+  const cleanRel = relativePath.trim().replace(/\\/g, '/')
+  const baseParts = baseDir ? baseDir.replace(/\\/g, '/').split('/').filter(Boolean) : []
+  const relParts = cleanRel.split('/')
+  const resolved = [...baseParts]
+
+  for (const part of relParts) {
+    if (!part || part === '.') continue
+    if (part === '..') {
+      if (resolved.length > 0) {
+        resolved.pop()
+      }
+    } else {
+      resolved.push(part)
+    }
+  }
+  return resolved.join('/')
+}
+
+/**
+ * Gets the directory portion of a file path.
+ */
+export function getDirname(filePath) {
+  if (!filePath || typeof filePath !== 'string') return ''
+  const normalized = filePath.replace(/\\/g, '/')
+  const lastSlash = normalized.lastIndexOf('/')
+  if (lastSlash === -1) return ''
+  return normalized.slice(0, lastSlash)
+}
+
+/**
+ * Resolves relative <link rel="stylesheet" href="..."> and <script src="..."></script>
+ * tags in HTML content by replacing them with inline <style> and <script> tags
+ * containing the current text of the referenced files.
+ * Leaves http(s), protocol-relative, and data URLs untouched.
+ */
+export function resolveHtmlAssets(rawHtml, htmlFileName, getFileContent) {
+  if (!rawHtml || typeof rawHtml !== 'string') {
+    return { html: rawHtml || '', missingFiles: [] }
+  }
+
+  const baseDir = getDirname(htmlFileName)
+  const missingFiles = []
+
+  const isExternalUrl = (url) => {
+    return /^(https?:|\/\/|data:|blob:|#)/i.test(url.trim())
+  }
+
+  // Use DOMParser when available in browser environments
+  if (typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(rawHtml, 'text/html')
+
+      // 1. Process <link rel="stylesheet" href="...">
+      const links = Array.from(doc.querySelectorAll('link[href]'))
+      for (const link of links) {
+        const rel = (link.getAttribute('rel') || '').toLowerCase().trim()
+        if (rel !== 'stylesheet') continue
+
+        const href = link.getAttribute('href')
+        if (!href || isExternalUrl(href)) continue
+
+        const resolved = resolveRelativePath(baseDir, href)
+        const content = getFileContent(resolved)
+
+        if (content !== null && content !== undefined) {
+          const style = doc.createElement('style')
+          style.textContent = content
+          link.replaceWith(style)
+        } else {
+          missingFiles.push({ path: resolved, raw: href })
+        }
+      }
+
+      // 2. Process <script src="...">
+      const scripts = Array.from(doc.querySelectorAll('script[src]'))
+      for (const script of scripts) {
+        const src = script.getAttribute('src')
+        if (!src || isExternalUrl(src)) continue
+
+        const resolved = resolveRelativePath(baseDir, src)
+        const content = getFileContent(resolved)
+
+        if (content !== null && content !== undefined) {
+          const inlineScript = doc.createElement('script')
+          for (const attr of script.attributes) {
+            if (attr.name !== 'src') {
+              inlineScript.setAttribute(attr.name, attr.value)
+            }
+          }
+          inlineScript.textContent = content
+          script.replaceWith(inlineScript)
+        } else {
+          missingFiles.push({ path: resolved, raw: src })
+        }
+      }
+
+      const hasDocType = /<!DOCTYPE\s+html/i.test(rawHtml)
+      const htmlResult = (hasDocType ? '<!DOCTYPE html>\n' : '') + doc.documentElement.outerHTML
+      return { html: htmlResult, missingFiles }
+    } catch (err) {
+      console.warn('DOMParser failed in resolveHtmlAssets, falling back to regex:', err)
+    }
+  }
+
+  // Fallback regex replacement (e.g. in headless environments)
+  let processedHtml = rawHtml
+
+  // Replace <link rel="stylesheet" href="...">
+  processedHtml = processedHtml.replace(
+    /<link\s+([^>]*?)>/gi,
+    (match, attrs) => {
+      const isStylesheet = /\brel=["']stylesheet["']/i.test(attrs)
+      if (!isStylesheet) return match
+
+      const hrefMatch = attrs.match(/\bhref=["']([^"']+)["']/i)
+      if (!hrefMatch) return match
+
+      const href = hrefMatch[1]
+      if (isExternalUrl(href)) return match
+
+      const resolved = resolveRelativePath(baseDir, href)
+      const content = getFileContent(resolved)
+
+      if (content !== null && content !== undefined) {
+        return `<style>\n${content}\n</style>`
+      }
+      missingFiles.push({ path: resolved, raw: href })
+      return match
+    }
+  )
+
+  // Replace <script src="...">...</script>
+  processedHtml = processedHtml.replace(
+    /<script\s+([^>]*?)src=["']([^"']+)["']([^>]*?)>([\s\S]*?)<\/script>/gi,
+    (match, beforeSrc, src, afterSrc) => {
+      if (isExternalUrl(src)) return match
+
+      const resolved = resolveRelativePath(baseDir, src)
+      const content = getFileContent(resolved)
+
+      if (content !== null && content !== undefined) {
+        const remainingAttrs = `${beforeSrc} ${afterSrc}`.trim()
+        const attrStr = remainingAttrs ? ` ${remainingAttrs}` : ''
+        return `<script${attrStr}>\n${content}\n</script>`
+      }
+      missingFiles.push({ path: resolved, raw: src })
+      return match
+    }
+  )
+
+  return { html: processedHtml, missingFiles }
+}
+
+
 
