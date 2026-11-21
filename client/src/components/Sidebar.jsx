@@ -8,7 +8,8 @@ export default function Sidebar({
   onSelectFile,
   onCreateFile,
   onDeleteFile,
-  users = []
+  users = [],
+  isStopped = false
 }) {
   const [isCreating, setIsCreating] = useState(false)
   const [newFileName, setNewFileName] = useState('')
@@ -65,10 +66,13 @@ export default function Sidebar({
           type="button"
           className="btn-icon-subtle"
           onClick={() => {
+            if (isStopped) return
             setIsCreating(true)
             setError('')
           }}
-          title="New file"
+          disabled={isStopped}
+          style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+          title={isStopped ? 'Editing stopped by host' : 'New file'}
         >
           <Plus size={15} />
         </button>
@@ -156,9 +160,12 @@ export default function Sidebar({
                   className="btn-delete-row"
                   onClick={(e) => {
                     e.stopPropagation()
+                    if (isStopped) return
                     setFileToDelete(fileName)
                   }}
-                  title={`Delete ${fileName}`}
+                  disabled={isStopped}
+                  style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+                  title={isStopped ? 'Editing stopped by host' : `Delete ${fileName}`}
                 >
                   <Trash2 size={13} />
                 </button>

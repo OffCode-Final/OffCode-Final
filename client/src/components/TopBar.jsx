@@ -48,7 +48,8 @@ export default function TopBar({
   onOpenPushDraft,
   isChatOpen = false,
   onToggleChat,
-  unreadChatCount = 0
+  unreadChatCount = 0,
+  isStopped = false
 }) {
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
@@ -137,8 +138,8 @@ export default function TopBar({
                 type="button"
                 className="btn-toolbar btn-push-draft-top"
                 onClick={onOpenPushDraft}
-                disabled={!activeFile}
-                title="Push draft changes for host review"
+                disabled={!activeFile || isStopped}
+                title={isStopped ? 'Editing stopped by host' : 'Push draft changes for host review'}
               >
                 <Send size={13} />
                 <span>Push draft</span>
@@ -156,8 +157,8 @@ export default function TopBar({
             type="button"
             className="btn-icon-bar"
             onClick={onUndo}
-            disabled={!canUndo}
-            title={canUndo ? `Undo your edits (Ctrl+Z) [${undoDepth}]` : 'Undo (Ctrl+Z)'}
+            disabled={!canUndo || isStopped}
+            title={isStopped ? 'Editing stopped by host' : (canUndo ? `Undo your edits (Ctrl+Z) [${undoDepth}]` : 'Undo (Ctrl+Z)')}
           >
             <Undo2 size={15} />
           </button>
@@ -165,8 +166,8 @@ export default function TopBar({
             type="button"
             className="btn-icon-bar"
             onClick={onRedo}
-            disabled={!canRedo}
-            title={canRedo ? `Redo your edits (Ctrl+Shift+Z / Ctrl+Y) [${redoDepth}]` : 'Redo (Ctrl+Shift+Z)'}
+            disabled={!canRedo || isStopped}
+            title={isStopped ? 'Editing stopped by host' : (canRedo ? `Redo your edits (Ctrl+Shift+Z / Ctrl+Y) [${redoDepth}]` : 'Redo (Ctrl+Shift+Z)')}
           >
             <Redo2 size={15} />
           </button>

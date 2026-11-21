@@ -6,7 +6,10 @@ export default function PeoplePanel({
   onToggleFollow,
   hostId,
   isHost = false,
-  onTransferHost
+  onTransferHost,
+  onStopUser,
+  onResumeUser,
+  frozenUserIds
 }) {
   return (
     <aside className="people-panel">
@@ -27,6 +30,7 @@ export default function PeoplePanel({
                   u.name?.toLowerCase() === hostId.toLowerCase() ||
                   String(u.clientId) === hostId)
             )
+            const isUserStopped = Boolean(frozenUserIds && (frozenUserIds.has(u.userId) || (u.clientId && frozenUserIds.has(String(u.clientId)))))
 
             return (
               <div
@@ -54,6 +58,21 @@ export default function PeoplePanel({
                     <span className="person-name">{u.name}</span>
                     {u.isYou && <span className="tag-muted">(you)</span>}
                     {isUserHost && <span className="tag-muted">(host)</span>}
+                    {isUserStopped && (
+                      <span
+                        className="tag-stopped"
+                        style={{
+                          background: '#7f1d1d',
+                          color: '#fca5a5',
+                          fontSize: '10px',
+                          padding: '1px 5px',
+                          borderRadius: '3px',
+                          fontWeight: 600
+                        }}
+                      >
+                        Stopped
+                      </span>
+                    )}
                   </div>
 
                   <span className="person-loc">
@@ -64,19 +83,48 @@ export default function PeoplePanel({
                 {!u.isYou && (
                   <div className="person-actions" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     {isHost && (
-                      <button
-                        type="button"
-                        className="btn-flat btn-make-host"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          if (window.confirm(`Make ${u.name} the host?`)) {
-                            if (onTransferHost) onTransferHost(u.userId, u.name)
-                          }
-                        }}
-                        title={`Make ${u.name} the host`}
-                      >
-                        Make host
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="btn-flat btn-stop-resume"
+                          style={{
+                            padding: '2px 6px',
+                            fontSize: '11px',
+                            borderRadius: '3px',
+                            background: isUserStopped ? '#065f46' : '#7f1d1d',
+                            color: '#ffffff',
+                            border: 'none',
+                            cursor: 'pointer'
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (isUserStopped) {
+                              if (onResumeUser) onResumeUser(u.userId)
+                            } else {
+                              if (window.confirm(`Stop ${u.name}'s editing?`)) {
+                                if (onStopUser) onStopUser(u.userId)
+                              }
+                            }
+                          }}
+                          title={isUserStopped ? `Resume ${u.name}'s editing` : `Stop ${u.name} from editing`}
+                        >
+                          {isUserStopped ? 'Resume' : 'Stop'}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn-flat btn-make-host"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (window.confirm(`Make ${u.name} the host?`)) {
+                              if (onTransferHost) onTransferHost(u.userId, u.name)
+                            }
+                          }}
+                          title={`Make ${u.name} the host`}
+                        >
+                          Make host
+                        </button>
+                      </>
                     )}
                     <button
                       type="button"

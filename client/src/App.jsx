@@ -63,6 +63,7 @@ export default function App() {
   const [toasts, setToasts] = useState([])
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [unreadChatCount, setUnreadChatCount] = useState(0)
+  const [frozenUserIds, setFrozenUserIds] = useState(new Set())
 
   const workspaceRef = useRef(null)
   const prevHostRef = useRef(null)
@@ -241,6 +242,12 @@ export default function App() {
               : metaArg?.mode ?? (ws.getMode ? ws.getMode() : 'free')
 
           if (newHost !== undefined && newHost !== null) {
+            // When host role is transferred, clear the frozen state of the new host
+            const frozenMap = ws.ydoc.getMap('frozen')
+            if (frozenMap.has(newHost)) {
+              frozenMap.delete(newHost)
+            }
+
             if (prevHostRef.current !== null && newHost !== prevHostRef.current) {
               const myUid = ws.getUserId ? ws.getUserId() : null
               if (newHost === myUid) {
@@ -319,6 +326,18 @@ export default function App() {
       logEvent('sync', 'Workspace ready and synchronized with server')
     })
 
+    // Listen to frozen users map
+    const frozenMap = ws.ydoc.getMap('frozen')
+    const updateFrozen = () => {
+      const set = new Set()
+      frozenMap.forEach((val, uid) => {
+        if (val) set.add(uid)
+      })
+      setFrozenUserIds(set)
+    }
+    updateFrozen()
+    frozenMap.observe(updateFrozen)
+
     // Subscribe to Undo/Redo stack changes
     const unsubUndoStack = onUndoStackChange((depths) => {
       setUndoDepths({ ...depths })
@@ -333,6 +352,7 @@ export default function App() {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
+      frozenMap.unobserve(updateFrozen)
       unsubStatus()
       unsubFiles()
       unsubUndoStack()
@@ -355,8 +375,28 @@ export default function App() {
   // Host & Review Mode Computation
   const myUserId = workspace?.getUserId ? workspace.getUserId() : null
   const isHost = Boolean(workspace && (hostId && myUserId ? hostId === myUserId : (workspace.isHost && workspace.isHost())))
+  const isCurrentUserStopped = Boolean(!isHost && myUserId && frozenUserIds.has(myUserId))
   const isReviewMode = mode === 'review'
   const isNonHostReview = isReviewMode && !isHost
+
+  // Host Stop & Resume User Handlers
+  const handleStopUser = useCallback((targetUserId) => {
+    if (!workspace || !isHost) return
+    const myUid = workspace.getUserId ? workspace.getUserId() : null
+    if (targetUserId === myUid) return
+    const frozenMap = workspace.ydoc.getMap('frozen')
+    frozenMap.set(targetUserId, true)
+    logEvent('host', `Stopped editing for user ${targetUserId}`)
+    showToast('Stopped editing for collaborator', 'info')
+  }, [workspace, isHost, logEvent, showToast])
+
+  const handleResumeUser = useCallback((targetUserId) => {
+    if (!workspace || !isHost) return
+    const frozenMap = workspace.ydoc.getMap('frozen')
+    frozenMap.delete(targetUserId)
+    logEvent('host', `Resumed editing for user ${targetUserId}`)
+    showToast('Resumed editing for collaborator', 'success')
+  }, [workspace, isHost, logEvent, showToast])
 
   // Chat Sidebar Toggle & Unread Count Tracking
   const handleToggleChat = useCallback(() => {
@@ -435,13 +475,13 @@ export default function App() {
 
   const handlePushDraft = useCallback(
     (message) => {
-      if (!workspace || !workspace.pushDraft || !activeFile) return
+      if (!workspace || !workspace.pushDraft || !activeFile || isCurrentUserStopped) return
       workspace.pushDraft(activeFile, message)
       showToast('Draft proposal submitted for host review.', 'success')
       logEvent('review', `Pushed draft proposal for "${activeFile}"`)
       setIsPushDraftOpen(false)
     },
-    [workspace, activeFile, showToast, logEvent]
+    [workspace, activeFile, isCurrentUserStopped, showToast, logEvent]
   )
 
   const handleAcceptProposal = useCallback(
@@ -486,6 +526,11 @@ export default function App() {
       }
       const ok = workspace.transferHost(targetUserId)
       if (ok) {
+        // Clear frozen state of the new host
+        const frozenMap = workspace.ydoc.getMap('frozen')
+        if (frozenMap.has(targetUserId)) {
+          frozenMap.delete(targetUserId)
+        }
         setHostId(targetUserId)
         logEvent('host', `Transferred host to ${targetName || targetUserId}`)
       } else {
@@ -582,7 +627,7 @@ export default function App() {
   }, [followingUserId, users, activeFile])
 
   const handleCreateFile = (fileName) => {
-    if (!workspace) return
+    if (!workspace || isCurrentUserStopped) return
     const initialContent = getInitialTemplate(fileName)
     const text = workspace.createFile(fileName, initialContent)
     if (text) {
@@ -594,7 +639,7 @@ export default function App() {
   }
 
   const handleDeleteFile = (fileName) => {
-    if (!workspace) return
+    if (!workspace || isCurrentUserStopped) return
     workspace.deleteFile(fileName)
     removeUndoManager(fileName)
     setFiles(workspace.listFiles())
@@ -797,6 +842,7 @@ export default function App() {
       }
 
   const handleUndo = () => {
+    if (isCurrentUserStopped) return
     if (activeUndoManager) {
       activeUndoManager.undo()
       logEvent('undo', `Performed Undo on "${activeCacheKey}"`)
@@ -804,6 +850,7 @@ export default function App() {
   }
 
   const handleRedo = () => {
+    if (isCurrentUserStopped) return
     if (activeUndoManager) {
       activeUndoManager.redo()
       logEvent('redo', `Performed Redo on "${activeCacheKey}"`)
@@ -870,7 +917,29 @@ export default function App() {
         isChatOpen={isChatOpen}
         onToggleChat={handleToggleChat}
         unreadChatCount={unreadChatCount}
+        isStopped={isCurrentUserStopped}
       />
+
+      {/* Stopped by Host Banner */}
+      {isCurrentUserStopped && (
+        <div
+          className="stopped-banner"
+          style={{
+            background: '#7f1d1d',
+            color: '#fef2f2',
+            padding: '8px 16px',
+            fontSize: '13px',
+            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderBottom: '1px solid #991b1b',
+            letterSpacing: '0.2px'
+          }}
+        >
+          The host has stopped your editing.
+        </div>
+      )}
 
       {/* Offline Connection Error Banner */}
       {status === 'offline' && (
@@ -896,6 +965,7 @@ export default function App() {
           onCreateFile={handleCreateFile}
           onDeleteFile={handleDeleteFile}
           users={users}
+          isStopped={isCurrentUserStopped}
         />
 
         {/* Center: CodeMirror 6 Editor with Bottom Output Panel */}
@@ -911,12 +981,14 @@ export default function App() {
             targetScrollLine={targetScrollLine}
             onUserInteraction={handleUserInteraction}
             onCursorChange={setCursorPos}
-            readOnly={isMainReadOnly}
+            readOnly={isMainReadOnly || isCurrentUserStopped}
             isReviewMode={isNonHostReview}
             isDraft={isDraftEditing}
             onSwitchReviewTab={(tab) => setReviewTab(tab)}
             onPushDraft={() => setIsPushDraftOpen(true)}
             onPointersChange={setPointersReceivedCount}
+            isStopped={isCurrentUserStopped}
+            frozenUserIds={frozenUserIds}
           />
 
           {/* Bottom Output & Preview Panel */}
@@ -942,6 +1014,9 @@ export default function App() {
           hostId={hostId}
           isHost={isHost}
           onTransferHost={handleTransferHost}
+          onStopUser={handleStopUser}
+          onResumeUser={handleResumeUser}
+          frozenUserIds={frozenUserIds}
         />
 
         {/* Collapsible Chat Sidebar */}

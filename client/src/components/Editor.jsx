@@ -84,7 +84,9 @@ export default function Editor({
   isDraft = false,
   onSwitchReviewTab,
   onPushDraft,
-  onPointersChange
+  onPointersChange,
+  isStopped = false,
+  frozenUserIds = null
 }) {
   const editorRef = useRef(null)
   const viewRef = useRef(null)
@@ -162,12 +164,12 @@ export default function Editor({
       oneDark,
       vsCodeDarkTheme,
       getLanguageSupport(activeFile),
-      EditorState.readOnly.of(Boolean(readOnly)),
-      EditorView.editable.of(!readOnly),
+      EditorState.readOnly.of(Boolean(readOnly || isStopped)),
+      EditorView.editable.of(!readOnly && !isStopped),
       // Keymap for local undo/redo with Mod-z and Mod-Shift-z / Mod-y
-      keymap.of([...yUndoManagerKeymap, ...defaultKeymap]),
+      keymap.of((readOnly || isStopped) ? defaultKeymap : [...yUndoManagerKeymap, ...defaultKeymap]),
       // Yjs collaboration plugin (Sync + Remote Cursors + Local UndoManager)
-      yCollab(ytext, awareness, { undoManager: readOnly ? false : fileUndoManager }),
+      yCollab(ytext, awareness, { undoManager: (readOnly || isStopped) ? false : fileUndoManager }),
       // Dom event handlers to unhook follow mode on user interaction
       EditorView.domEventHandlers({
         mousedown() {
@@ -303,7 +305,7 @@ export default function Editor({
         viewRef.current = null
       }
     }
-  }, [activeFile, ytext, awareness, readOnly])
+  }, [activeFile, ytext, awareness, readOnly, isStopped])
 
   // Track and filter remote mouse pointers in the same file
   useEffect(() => {
@@ -338,6 +340,14 @@ export default function Editor({
 
           const lastMoved = pointerTimestampsRef.current.get(clientId) || now
           const isFaded = now - lastMoved >= 5000
+          const resolvedUserId = state?.userId || state?.user?.userId || state?.user?.id || `client_${clientId}`
+          const isUserStopped = Boolean(
+            frozenUserIds && (
+              frozenUserIds.has(resolvedUserId) ||
+              (state?.userId && frozenUserIds.has(state.userId)) ||
+              (state?.user?.id && frozenUserIds.has(state.user.id))
+            )
+          )
 
           list.push({
             clientId,
@@ -345,7 +355,8 @@ export default function Editor({
             y: ptr.y,
             name: state?.user?.name || 'Anonymous',
             color: state?.user?.color || '#3b82f6',
-            isFaded
+            isFaded,
+            isStopped: isUserStopped
           })
         } else {
           lastKnownPosRef.current.delete(clientId)
@@ -370,7 +381,7 @@ export default function Editor({
         onPointersChange(0)
       }
     }
-  }, [awareness, activeFile, onPointersChange])
+  }, [awareness, activeFile, onPointersChange, frozenUserIds])
 
   // Scroll to line when jumped or following a peer
   useEffect(() => {
@@ -452,7 +463,8 @@ export default function Editor({
             type="button"
             className="btn-flat btn-primary btn-xs btn-banner-push"
             onClick={onPushDraft}
-            title="Submit draft for host review"
+            disabled={isStopped}
+            title={isStopped ? 'Editing stopped by host' : 'Submit draft for host review'}
           >
             <Send size={12} />
             <span>Push draft</span>
@@ -501,7 +513,7 @@ export default function Editor({
                         color: '#ffffff'
                       }}
                     >
-                      {p.name}
+                      {p.name}{p.isStopped ? ' (Stopped)' : ''}
                     </div>
                   </div>
                 ))}

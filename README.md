@@ -12,6 +12,7 @@ OffCode allows multiple users to edit code together in real time, continue worki
 - Offline-First Architecture: Local edits are continuously persisted to browser IndexedDB; when the connection drops, users continue editing locally, and all edits merge automatically on reconnect with zero lost characters.
 - Per-User Undo and Redo: Undoing edits (Ctrl+Z) only reverts your own changes without reverting or interrupting edits made by peers.
 - Host and Review Mode: The host can switch the room into Review mode, enabling non-host collaborators to work in isolated drafts and submit proposals for visual diff review and fuzzy three-way merging.
+- Host Stop and Resume: The host can stop and resume individual collaborators from editing. Stopped users can still read, scroll, see cursors, chat, and run code. Note: this is application-level coordination and moderation control, not an adversarial cryptographic security boundary.
 - In-Editor Chat Sidebar: Real-time collaborative room chat with unread indicators, host message clearing, and join-time message filtering.
 - Local Code Execution: Run Python (via local offline Pyodide WebAssembly without external network calls), JavaScript (sandboxed Web Worker with watchdog timeout), and HTML live previews.
 - Project Export: Download individual files or bundle the entire project into a ZIP archive.
