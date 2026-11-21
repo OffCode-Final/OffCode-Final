@@ -209,9 +209,11 @@ export function getDefaultServerUrl() {
   }
   if (typeof window !== 'undefined' && window.location) {
     const loc = window.location
-    const proto = loc.protocol === 'https:' ? 'wss:' : 'ws:'
-    const host = loc.hostname || 'localhost'
-    return `${proto}//${host}:1234`
+    const wsProto = loc.protocol === 'https:' ? 'wss:' : 'ws:'
+    if (loc.port === '5173') {
+      return `${wsProto}//${loc.hostname || 'localhost'}:1234`
+    }
+    return `${wsProto}//${loc.host}`
   }
   return 'ws://localhost:1234'
 }

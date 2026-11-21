@@ -78,29 +78,22 @@ export function createSyncServer({
 
     // Health endpoint
     if (pathname === '/health') {
-      let totalConnections = 0;
-      for (const doc of docs.values()) {
-        totalConnections += doc.conns ? doc.conns.size : 0;
-      }
-
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
-        service: 'offcode-sync-server',
-        version: '1.0.0',
-        uptime: process.uptime(),
-        rooms: docs.size,
-        roomsCount: docs.size,
-        clientsCount: totalConnections,
-        memory: process.memoryUsage(),
-        persistenceDir: dataDir,
-        timestamp: new Date().toISOString()
-      }, null, 2));
+        uptime: process.uptime()
+      }));
       return;
     }
 
     // Active rooms status endpoint
     if (pathname === '/rooms') {
+      if (process.env.NODE_ENV === 'production') {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+        return;
+      }
+
       const roomList = [];
       for (const [name, doc] of docs.entries()) {
         roomList.push({
