@@ -10,7 +10,8 @@ import {
   FolderX,
   ChevronRight,
   ChevronDown,
-  Upload
+  Upload,
+  Info
 } from 'lucide-react'
 import { getFileExtension, SUPPORTED_EXTENSIONS } from '../utils/helpers'
 
@@ -137,7 +138,19 @@ export default function Sidebar({
   const getFileIcon = (filename) => {
     const ext = getFileExtension(filename)
     if (['md', 'txt'].includes(ext)) {
-      return <FileText size={14} className="file-icon" />
+      return <FileText size={14} className="file-icon file-icon-md" />
+    }
+    if (ext === 'py') {
+      return <FileCode size={14} className="file-icon file-icon-py" />
+    }
+    if (['js', 'jsx', 'mjs', 'ts', 'tsx'].includes(ext)) {
+      return <FileCode size={14} className="file-icon file-icon-js" />
+    }
+    if (['html', 'htm'].includes(ext)) {
+      return <FileCode size={14} className="file-icon file-icon-html" />
+    }
+    if (['css'].includes(ext)) {
+      return <FileCode size={14} className="file-icon file-icon-css" />
     }
     return <FileCode size={14} className="file-icon" />
   }
@@ -240,8 +253,8 @@ export default function Sidebar({
     <aside className="sidebar">
       {/* Sidebar Header */}
       <div className="sidebar-header">
-        <span className="sidebar-title">FILES</span>
-        <div className="sidebar-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <span className="sidebar-title">EXPLORER</span>
+        <div className="sidebar-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
           {isHost && (
             <>
               <button
@@ -254,6 +267,16 @@ export default function Sidebar({
               >
                 <Upload size={14} />
               </button>
+
+              <span
+                className="btn-icon-subtle info-tooltip-trigger"
+                title="Open folder is a one-time copy; edits do not write back to computer."
+                tabIndex={0}
+                aria-label="Open folder information"
+                style={{ display: 'inline-flex', alignItems: 'center', cursor: 'help', color: 'var(--text-faint)' }}
+              >
+                <Info size={13} />
+              </span>
 
               {files.length > 0 && (
                 <button
@@ -291,28 +314,15 @@ export default function Sidebar({
       </div>
 
       {isHost && (
-        <>
-          <input
-            type="file"
-            ref={folderInputRef}
-            webkitdirectory=""
-            directory=""
-            multiple
-            style={{ display: 'none' }}
-            onChange={handleFolderChange}
-          />
-          <div
-            className="import-note"
-            style={{
-              fontSize: '10px',
-              color: 'var(--text-muted)',
-              padding: '2px 12px 6px 12px',
-              lineHeight: 1.2
-            }}
-          >
-            Open folder is a one-time copy; edits do not write back to computer.
-          </div>
-        </>
+        <input
+          type="file"
+          ref={folderInputRef}
+          webkitdirectory=""
+          directory=""
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleFolderChange}
+        />
       )}
 
       {/* New file input form */}

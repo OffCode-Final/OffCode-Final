@@ -6,13 +6,14 @@ import {
   lineNumbers,
   highlightActiveLineGutter,
   highlightActiveLine,
-  keymap
+  keymap,
+  placeholder
 } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
 import { bracketMatching, foldGutter, indentOnInput, indentUnit, HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
-import { X, Send } from 'lucide-react'
+import { X, Send, FileText, FileCode, Plus } from 'lucide-react'
 
 import { python } from '@codemirror/lang-python'
 import { javascript } from '@codemirror/lang-javascript'
@@ -142,7 +143,8 @@ export default function Editor({
   currentUserName = 'Anonymous',
   currentUserColor = '#6366f1',
   users = [],
-  theme = 'dark'
+  theme = 'dark',
+  onCreateFile
 }) {
   const editorRef = useRef(null)
   const viewRef = useRef(null)
@@ -220,6 +222,7 @@ export default function Editor({
       themeCompartment.of(getEditorTheme(theme)),
       syntaxCompartment.of(getSyntaxTheme(theme)),
       getLanguageSupport(activeFile),
+      placeholder('Start typing, or press Ctrl+Enter to run'),
       EditorState.readOnly.of(Boolean(readOnly || isStopped)),
       EditorView.editable.of(!readOnly && !isStopped),
       // Keymap for local undo/redo with Mod-z and Mod-Shift-z / Mod-y
@@ -500,6 +503,26 @@ export default function Editor({
     }
   }, [targetScrollLine])
 
+  const getTabFileIcon = (filename) => {
+    const ext = getFileExtension(filename)
+    if (['md', 'txt'].includes(ext)) {
+      return <FileText size={13} className="tab-icon file-icon-md" />
+    }
+    if (ext === 'py') {
+      return <FileCode size={13} className="tab-icon file-icon-py" />
+    }
+    if (['js', 'jsx', 'mjs', 'ts', 'tsx'].includes(ext)) {
+      return <FileCode size={13} className="tab-icon file-icon-js" />
+    }
+    if (['html', 'htm'].includes(ext)) {
+      return <FileCode size={13} className="tab-icon file-icon-html" />
+    }
+    if (['css'].includes(ext)) {
+      return <FileCode size={13} className="tab-icon file-icon-css" />
+    }
+    return <FileCode size={13} className="tab-icon" />
+  }
+
   return (
     <main className="editor-area">
       {/* VS Code Style Editor Tabs Bar */}
@@ -514,7 +537,11 @@ export default function Editor({
                 onClick={() => onSelectTab && onSelectTab(fileName)}
                 title={fileName}
               >
+                {getTabFileIcon(fileName)}
                 <span className="editor-tab-name">{fileName}</span>
+                <span className="editor-tab-badge">
+                  {getFileExtension(fileName).toUpperCase() || 'FILE'}
+                </span>
                 {openFiles.length > 1 && (
                   <button
                     type="button"
@@ -576,7 +603,22 @@ export default function Editor({
       {/* Editor Content Canvas */}
       {!activeFile || !ytext ? (
         <div className="editor-empty-state">
-          <p>No file open. Select a file from the sidebar to begin editing.</p>
+          <div className="editor-empty-card">
+            <FileCode size={40} className="editor-empty-icon" />
+            <h3 className="editor-empty-title">No file open</h3>
+            <p className="editor-empty-desc">Select a file from the explorer or create a new file to get started.</p>
+            {onCreateFile && (
+              <button
+                type="button"
+                className="btn-flat btn-primary btn-sm btn-empty-new"
+                onClick={onCreateFile}
+                disabled={isStopped}
+              >
+                <Plus size={14} />
+                <span>New file</span>
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="editor-canvas" ref={editorRef}>

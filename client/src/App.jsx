@@ -1147,6 +1147,10 @@ export default function App() {
             openFiles={openFiles.length > 0 ? openFiles : (activeFile ? [activeFile] : [])}
             onSelectTab={handleSelectTab}
             onCloseTab={handleCloseTab}
+            onCreateFile={() => {
+              const name = window.prompt('Enter file name (e.g. main.py, index.html):', 'untitled.py')
+              if (name && name.trim()) handleCreateFile(name.trim())
+            }}
             ytext={activeYText}
             awareness={workspace.awareness}
             remoteUsersViewingThisFile={remoteUsersInSameFile}
