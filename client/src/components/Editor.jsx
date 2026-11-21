@@ -25,6 +25,7 @@ import { java } from '@codemirror/lang-java'
 
 import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension } from '../utils/helpers'
+import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
 
 // VS Code Dark+ Editor Theme
 const vsCodeDarkTheme = EditorView.theme(
@@ -86,7 +87,12 @@ export default function Editor({
   onPushDraft,
   onPointersChange,
   isStopped = false,
-  frozenUserIds = null
+  frozenUserIds = null,
+  showUserChanges = false,
+  currentUserId = null,
+  currentUserName = 'Anonymous',
+  currentUserColor = '#6366f1',
+  users = []
 }) {
   const editorRef = useRef(null)
   const viewRef = useRef(null)
@@ -170,6 +176,17 @@ export default function Editor({
       keymap.of((readOnly || isStopped) ? defaultKeymap : [...yUndoManagerKeymap, ...defaultKeymap]),
       // Yjs collaboration plugin (Sync + Remote Cursors + Local UndoManager)
       yCollab(ytext, awareness, { undoManager: (readOnly || isStopped) ? false : fileUndoManager }),
+      // User Changes Underlines and Attribution
+      userChangesCompartment.of(
+        createUserChangesExtension({
+          ytext,
+          currentUserId,
+          currentUserName,
+          currentUserColor,
+          users,
+          showUserChanges
+        })
+      ),
       // Dom event handlers to unhook follow mode on user interaction
       EditorView.domEventHandlers({
         mousedown() {
@@ -306,6 +323,28 @@ export default function Editor({
       }
     }
   }, [activeFile, ytext, awareness, readOnly, isStopped])
+
+  // Reconfigure user change highlighting dynamically without destroying the view
+  useEffect(() => {
+    if (!viewRef.current || !ytext) return
+
+    try {
+      viewRef.current.dispatch({
+        effects: userChangesCompartment.reconfigure(
+          createUserChangesExtension({
+            ytext,
+            currentUserId,
+            currentUserName,
+            currentUserColor,
+            users,
+            showUserChanges
+          })
+        )
+      })
+    } catch (err) {
+      console.warn('[Editor] Failed reconfiguring user changes extension:', err)
+    }
+  }, [showUserChanges, users, currentUserId, currentUserName, currentUserColor, ytext])
 
   // Track and filter remote mouse pointers in the same file
   useEffect(() => {

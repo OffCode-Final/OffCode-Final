@@ -15,7 +15,8 @@ import {
   Check,
   GitPullRequest,
   Send,
-  MessageSquare
+  MessageSquare,
+  Highlighter
 } from 'lucide-react'
 import { getFileExtension } from '../utils/helpers'
 
@@ -49,7 +50,9 @@ export default function TopBar({
   isChatOpen = false,
   onToggleChat,
   unreadChatCount = 0,
-  isStopped = false
+  isStopped = false,
+  showUserChanges = false,
+  onToggleShowUserChanges
 }) {
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
@@ -236,6 +239,34 @@ export default function TopBar({
 
           {isMoreOpen && (
             <div className="more-dropdown-menu">
+              <button
+                type="button"
+                className={`dropdown-item btn-toggle-user-changes ${showUserChanges ? 'active' : ''}`}
+                onClick={() => {
+                  if (onToggleShowUserChanges) onToggleShowUserChanges()
+                }}
+                title={showUserChanges ? 'Hide collaborator changes' : 'Show collaborator changes with colored underlines'}
+              >
+                <Highlighter size={14} />
+                <span style={{ flex: 1, textAlign: 'left' }}>Show User Changes</span>
+                <span
+                  className="toggle-indicator-badge"
+                  style={{
+                    fontSize: '10px',
+                    fontWeight: 600,
+                    padding: '1px 6px',
+                    borderRadius: '3px',
+                    background: showUserChanges ? '#047857' : '#374151',
+                    color: showUserChanges ? '#a7f3d0' : '#9ca3af',
+                    marginLeft: '8px'
+                  }}
+                >
+                  {showUserChanges ? 'ON' : 'OFF'}
+                </span>
+              </button>
+
+              <div className="dropdown-divider" />
+
               <button
                 type="button"
                 className="dropdown-item"

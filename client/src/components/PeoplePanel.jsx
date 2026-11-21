@@ -85,30 +85,13 @@ export default function PeoplePanel({
                 {!u.isYou && (
                   <div
                     className="person-actions"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      paddingLeft: '16px',
-                      marginTop: '4px',
-                      flexWrap: 'wrap'
-                    }}
                     onClick={(e) => e.stopPropagation()}
                   >
                     {isHost && (
                       <>
                         <button
                           type="button"
-                          className="btn-flat btn-stop-resume"
-                          style={{
-                            padding: '2px 6px',
-                            fontSize: '11px',
-                            borderRadius: '3px',
-                            background: isUserStopped ? '#065f46' : '#7f1d1d',
-                            color: '#ffffff',
-                            border: 'none',
-                            cursor: 'pointer'
-                          }}
+                          className={`btn-flat btn-stop-resume ${isUserStopped ? 'stopped' : 'active'}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             if (isUserStopped) {

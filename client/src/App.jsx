@@ -64,6 +64,23 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [unreadChatCount, setUnreadChatCount] = useState(0)
   const [frozenUserIds, setFrozenUserIds] = useState(new Set())
+  const [showUserChanges, setShowUserChanges] = useState(() => {
+    try {
+      return window.localStorage.getItem('offcode_show_user_changes') === 'true'
+    } catch (_) {
+      return false
+    }
+  })
+
+  const handleToggleShowUserChanges = useCallback(() => {
+    setShowUserChanges((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem('offcode_show_user_changes', String(next))
+      } catch (_) {}
+      return next
+    })
+  }, [])
 
   const workspaceRef = useRef(null)
   const prevHostRef = useRef(null)
@@ -1041,6 +1058,8 @@ export default function App() {
         onToggleChat={handleToggleChat}
         unreadChatCount={unreadChatCount}
         isStopped={isCurrentUserStopped}
+        showUserChanges={showUserChanges}
+        onToggleShowUserChanges={handleToggleShowUserChanges}
       />
 
       {/* Stopped by Host Banner */}
@@ -1115,6 +1134,11 @@ export default function App() {
             onPointersChange={setPointersReceivedCount}
             isStopped={isCurrentUserStopped}
             frozenUserIds={frozenUserIds}
+            showUserChanges={showUserChanges}
+            currentUserId={workspace?.getUserId ? workspace.getUserId() : session?.userName}
+            currentUserName={session?.userName || 'Anonymous'}
+            currentUserColor={session?.userColor || '#6366f1'}
+            users={users}
           />
 
           {/* Bottom Output & Preview Panel */}
