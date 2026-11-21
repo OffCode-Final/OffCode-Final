@@ -39,7 +39,7 @@ export default function AiKeyModal({ isOpen, onClose, onSaveKey, initialKey = ''
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Key size={16} style={{ color: 'var(--accent-primary)' }} />
-            <h3 className="modal-title">Gemini API Key</h3>
+            <h3 className="modal-title">AI API Key (Gemini / Groq)</h3>
           </div>
           <button
             type="button"
@@ -55,7 +55,7 @@ export default function AiKeyModal({ isOpen, onClose, onSaveKey, initialKey = ''
         <form onSubmit={handleSubmit}>
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <p style={{ margin: 0, fontSize: '12.5px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-              Your Gemini key stays in this browser and is sent only to Google. Selected code and the file are sent to Google.
+              Your API key stays in this browser and is sent only to the AI provider. Selected code and file context are sent directly to the model.
             </p>
 
             <div>
@@ -65,13 +65,13 @@ export default function AiKeyModal({ isOpen, onClose, onSaveKey, initialKey = ''
                 className="modal-input"
                 value={key}
                 onChange={(e) => setKey(e.target.value)}
-                placeholder="Paste your Gemini API key (AIza...)"
+                placeholder="Paste Gemini key (AIza... / AQ...) or Groq key (gsk_...)"
                 required
                 style={{ width: '100%', boxSizing: 'border-box' }}
               />
             </div>
 
-            <div style={{ fontSize: '11.5px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11.5px' }}>
               <a
                 href="https://aistudio.google.com/app/apikey"
                 target="_blank"
@@ -84,7 +84,23 @@ export default function AiKeyModal({ isOpen, onClose, onSaveKey, initialKey = ''
                   textDecoration: 'none'
                 }}
               >
-                <span>Get a free key at Google AI Studio</span>
+                <span>Get a free Gemini key at Google AI Studio</span>
+                <ExternalLink size={11} />
+              </a>
+
+              <a
+                href="https://console.groq.com/keys"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: 'var(--accent-link)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  textDecoration: 'none'
+                }}
+              >
+                <span>Get a free Groq key at Groq Console</span>
                 <ExternalLink size={11} />
               </a>
             </div>

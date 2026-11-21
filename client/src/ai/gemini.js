@@ -1,8 +1,9 @@
-// Gemini API integration for "Improve with AI"
+// AI integration for "Improve with AI" (supports Google Gemini & Groq)
 export const GEMINI_MODEL = 'gemini-3.5-flash-lite'
+export const GROQ_MODEL = 'llama-3.3-70b-versatile'
 
 /**
- * Sends selected code along with file context to Gemini Flash-Lite.
+ * Sends selected code along with file context to Gemini Flash-Lite or Groq.
  * Returns { improved: string, summary: string, changes: string[] }
  */
 export async function improveCodeWithGemini({
@@ -13,8 +14,9 @@ export async function improveCodeWithGemini({
   to,
   signal
 }) {
-  if (!apiKey || !apiKey.trim()) {
-    const err = new Error('No Gemini API key provided. Please set your API key.')
+  const trimmedKey = (apiKey || '').trim()
+  if (!trimmedKey) {
+    const err = new Error('No API key provided. Please set your Gemini or Groq API key.')
     err.isKeyError = true
     throw err
   }
@@ -51,58 +53,83 @@ export async function improveCodeWithGemini({
 
   const prompt = `Full file context:\n\`\`\`\n${contextText}\n\`\`\`\n\nSelected code to improve:\n\`\`\`\n${selectedText}\n\`\`\``
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
-
-  const payload = {
-    systemInstruction: {
-      parts: [{ text: systemInstruction }]
-    },
-    contents: [
-      {
-        parts: [{ text: prompt }]
-      }
-    ],
-    generationConfig: {
-      temperature: 0.2,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        properties: {
-          improved: { type: 'STRING' },
-          summary: { type: 'STRING' },
-          changes: {
-            type: 'ARRAY',
-            items: { type: 'STRING' }
-          }
-        },
-        required: ['improved', 'summary', 'changes']
-      },
-      thinkingConfig: {
-        thinkingBudget: 0
-      }
-    }
-  }
+  const isGroq = trimmedKey.startsWith('gsk_')
 
   const timeoutMs = 20000
   const timeoutController = new AbortController()
   const timer = setTimeout(() => timeoutController.abort(), timeoutMs)
 
-  // Link caller signal if provided
   if (signal) {
     signal.addEventListener('abort', () => timeoutController.abort())
   }
 
   let res
   try {
-    res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey.trim()
-      },
-      body: JSON.stringify(payload),
-      signal: timeoutController.signal
-    })
+    if (isGroq) {
+      // Call Groq API
+      res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${trimmedKey}`
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: `${systemInstruction} Return JSON with keys: "improved" (string), "summary" (string), "changes" (array of up to 4 strings).`
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ]
+        }),
+        signal: timeoutController.signal
+      })
+    } else {
+      // Call Google Gemini API (gemini-3.5-flash-lite)
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
+      const payload = {
+        systemInstruction: {
+          parts: [{ text: systemInstruction }]
+        },
+        contents: [
+          {
+            parts: [{ text: prompt }]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: 'OBJECT',
+            properties: {
+              improved: { type: 'STRING' },
+              summary: { type: 'STRING' },
+              changes: {
+                type: 'ARRAY',
+                items: { type: 'STRING' }
+              }
+            },
+            required: ['improved', 'summary', 'changes']
+          }
+        }
+      }
+
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': trimmedKey
+        },
+        body: JSON.stringify(payload),
+        signal: timeoutController.signal
+      })
+    }
   } catch (err) {
     clearTimeout(timer)
     if (timeoutController.signal.aborted) {
@@ -115,50 +142,25 @@ export async function improveCodeWithGemini({
   }
   clearTimeout(timer)
 
-  // If thinkingConfig causes an issue (400), retry without it
-  if (res.status === 400) {
-    try {
-      const errClone = await res.clone().json()
-      const errMsg = (errClone?.error?.message || '').toLowerCase()
-      if (
-        errMsg.includes('thinking') ||
-        errMsg.includes('budget') ||
-        errMsg.includes('unknown field')
-      ) {
-        delete payload.generationConfig.thinkingConfig
-        const retryTimer = setTimeout(() => timeoutController.abort(), timeoutMs)
-        try {
-          res = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': apiKey.trim()
-            },
-            body: JSON.stringify(payload),
-            signal: timeoutController.signal
-          })
-        } finally {
-          clearTimeout(retryTimer)
-        }
-      }
-    } catch (_) {
-      // ignore parsing error
-    }
-  }
-
   if (!res.ok) {
-    if (res.status === 400 || res.status === 401 || res.status === 403) {
-      const error = new Error('Invalid or missing Gemini API key. Please check or change your API key.')
+    let errMsg = ''
+    try {
+      const errBody = await res.json()
+      errMsg = errBody?.error?.message || errBody?.message || ''
+    } catch (_) {}
+
+    if (res.status === 401 || res.status === 403 || errMsg.toLowerCase().includes('api key')) {
+      const error = new Error(`Invalid API key. Please check or change your API key.`)
       error.isKeyError = true
       throw error
     }
     if (res.status === 404) {
-      throw new Error('AI model name needs updating.')
+      throw new Error('AI model not found or needs updating.')
     }
     if (res.status === 429) {
       throw new Error('Rate limit reached. Please wait a moment and try again.')
     }
-    throw new Error(`AI request failed (${res.status}). Please try again.`)
+    throw new Error(errMsg ? `AI error (${res.status}): ${errMsg}` : `AI request failed with status ${res.status}.`)
   }
 
   let data
@@ -168,9 +170,15 @@ export async function improveCodeWithGemini({
     throw new Error('Empty or invalid response from AI model. Please try again.')
   }
 
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+  let rawText = ''
+  if (isGroq) {
+    rawText = data?.choices?.[0]?.message?.content
+  } else {
+    rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+  }
+
   if (!rawText) {
-    throw new Error('Empty or invalid response from AI model. Please try again.')
+    throw new Error('Empty response from AI model. Please try again.')
   }
 
   try {
@@ -184,6 +192,6 @@ export async function improveCodeWithGemini({
       changes: Array.isArray(parsed.changes) ? parsed.changes.slice(0, 4) : []
     }
   } catch (_) {
-    throw new Error('Empty or invalid response from AI model. Please try again.')
+    throw new Error('Could not parse JSON response from AI model. Please try again.')
   }
 }

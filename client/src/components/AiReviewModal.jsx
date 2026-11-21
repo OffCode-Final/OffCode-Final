@@ -95,7 +95,7 @@ export default function AiReviewModal({
                 Analyzing file context and improving selection...
               </p>
               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                Gemini 3.5 Flash-Lite
+                Gemini 3.5 Flash-Lite / Groq Llama 3.3
               </span>
             </div>
           )}
