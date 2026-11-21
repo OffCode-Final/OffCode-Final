@@ -1048,7 +1048,8 @@ button:disabled {
 
 /* Collaborative Remote Cursors (y-codemirror.next) */
 .cm-ySelection {
-  opacity: 0.35;
+  opacity: 0.18;
+  border-radius: 2px;
 }
 .cm-ySelectionCaret {
   position: relative;
@@ -1059,17 +1060,19 @@ button:disabled {
 .cm-ySelectionCaretDot {
   display: inline-block;
   position: absolute;
-  top: -1.25em;
+  top: -1.35em;
   left: -2px;
   font-size: 11px;
   font-family: var(--font-ui);
-  padding: 1px 4px;
-  border-radius: 2px;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
   color: #ffffff;
   white-space: nowrap;
   pointer-events: none;
   font-weight: 500;
   line-height: 1.2;
+  box-shadow: var(--shadow-sm);
+  transition: opacity 0.3s ease;
 }
 
 /* ==========================================================================
@@ -1255,7 +1258,8 @@ button:disabled {
   left: 0;
   pointer-events: none;
   user-select: none;
-  transition: transform 0.05s linear, opacity 0.3s ease;
+  transform: translate3d(0, 0, 0);
+  transition: transform 60ms linear, opacity 0.3s ease;
   will-change: transform, opacity;
   z-index: 20;
   opacity: 1;
@@ -1267,23 +1271,36 @@ button:disabled {
 
 .remote-pointer-arrow {
   display: block;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
 .remote-pointer-badge {
   position: absolute;
-  left: 10px;
-  top: 10px;
+  left: 11px;
+  top: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-family: var(--font-ui);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
-  line-height: 1;
-  padding: 2px 5px;
-  border-radius: 2px;
+  line-height: 1.2;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs);
   white-space: nowrap;
   pointer-events: none;
   user-select: none;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-sm);
+}
+
+.pointer-tag-stopped {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--color-danger);
 }
 .btn-follow:hover {
   color: var(--text-main);

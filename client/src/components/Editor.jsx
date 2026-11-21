@@ -635,8 +635,8 @@ export default function Editor({
                     }}
                   >
                     <svg
-                      width="14"
-                      height="14"
+                      width="15"
+                      height="15"
                       viewBox="0 0 16 16"
                       fill="none"
                       className="remote-pointer-arrow"
@@ -644,8 +644,8 @@ export default function Editor({
                       <path
                         d="M0 0 L5 15 L8 9 L14 8 Z"
                         fill={p.color}
-                        stroke="var(--bg-editor)"
-                        strokeWidth="1.5"
+                        stroke="rgba(255, 255, 255, 0.9)"
+                        strokeWidth="1.2"
                         strokeLinejoin="round"
                       />
                     </svg>
@@ -656,7 +656,8 @@ export default function Editor({
                         color: '#ffffff'
                       }}
                     >
-                      {p.name}{p.isStopped ? ' (Stopped)' : ''}
+                      <span>{p.name}</span>
+                      {p.isStopped && <span className="pointer-tag-stopped">Stopped</span>}
                     </div>
                   </div>
                 ))}
