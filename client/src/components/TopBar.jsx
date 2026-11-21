@@ -18,7 +18,9 @@ import {
   MessageSquare,
   Highlighter,
   Sun,
-  Moon
+  Moon,
+  Crown,
+  Loader2
 } from 'lucide-react'
 import { getFileExtension } from '../utils/helpers'
 
@@ -61,6 +63,7 @@ export default function TopBar({
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
   const moreRef = useRef(null)
+  const moreButtonRef = useRef(null)
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -72,6 +75,28 @@ export default function TopBar({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  // Keyboard navigation for dropdown
+  const handleDropdownKeyDown = (e) => {
+    if (e.key === 'Escape') {
+      setIsMoreOpen(false)
+      moreButtonRef.current?.focus()
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      const items = moreRef.current?.querySelectorAll('.dropdown-item')
+      if (!items || items.length === 0) return
+      const currentIndex = Array.from(items).indexOf(document.activeElement)
+      const nextIndex = (currentIndex + 1) % items.length
+      items[nextIndex]?.focus()
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      const items = moreRef.current?.querySelectorAll('.dropdown-item')
+      if (!items || items.length === 0) return
+      const currentIndex = Array.from(items).indexOf(document.activeElement)
+      const prevIndex = (currentIndex - 1 + items.length) % items.length
+      items[prevIndex]?.focus()
+    }
+  }
 
   const handleCopyLink = () => {
     const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`
@@ -94,21 +119,36 @@ export default function TopBar({
       {/* Left: Project title & Room identifier */}
       <div className="topbar-left">
         <div className="app-brand">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="brand-logo-icon">
+            <path d="M8 6L3 12L8 18" stroke="var(--accent-primary)" />
+            <path d="M16 6L21 12L16 18" stroke="var(--accent-primary)" />
+            <path d="M14 9A4 4 0 0 0 9.5 13" stroke="var(--text-muted)" />
+            <path d="M10 15A4 4 0 0 0 14.5 11" stroke="var(--text-muted)" />
+          </svg>
           <span className="brand-name">OffCode</span>
           <span className="brand-separator">/</span>
-          <span className="room-name" title={`Room code: ${roomId}`}>
-            {roomId}
-          </span>
+          <button
+            type="button"
+            className="btn-room-badge"
+            onClick={handleCopyLink}
+            title={copied ? "Copied invite link!" : `Room: ${roomId} (click to copy link)`}
+          >
+            <span className="room-name">{roomId}</span>
+            {copied ? <Check size={11} className="room-copy-icon" /> : <Copy size={11} className="room-copy-icon" />}
+          </button>
         </div>
 
         {/* Host Mode Switch & Review Controls */}
         {isHost ? (
           <div className="topbar-mode-group">
-            <span className="host-tag">Host</span>
-            <div className="mode-switch">
+            <span className="host-tag"><Crown size={11} /> Host</span>
+            <div className="topbar-mode-segmented" role="tablist">
+              <div className={`mode-segmented-indicator ${mode === 'review' ? 'review' : 'live'}`} />
               <button
                 type="button"
-                className={`btn-mode-tab ${mode === 'free' || mode === 'live' ? 'active' : ''}`}
+                role="tab"
+                aria-selected={mode === 'free' || mode === 'live'}
+                className={`mode-segmented-tab ${mode === 'free' || mode === 'live' ? 'active' : ''}`}
                 onClick={() => onSetMode && onSetMode('live')}
                 title="Live Mode: Direct concurrent editing"
               >
@@ -116,7 +156,9 @@ export default function TopBar({
               </button>
               <button
                 type="button"
-                className={`btn-mode-tab ${mode === 'review' ? 'active' : ''}`}
+                role="tab"
+                aria-selected={mode === 'review'}
+                className={`mode-segmented-tab ${mode === 'review' ? 'active' : ''}`}
                 onClick={() => onSetMode && onSetMode('review')}
                 title="Review Mode: Collaborators work in drafts"
               >
@@ -130,7 +172,7 @@ export default function TopBar({
               onClick={onOpenReviewDrawer}
               title="Open Proposals Review & Diff"
             >
-              <GitPullRequest size={14} />
+              <GitPullRequest size={13} />
               <span>Proposals</span>
               {pendingProposalsCount > 0 && (
                 <span className="badge-count">{pendingProposalsCount}</span>
@@ -156,16 +198,16 @@ export default function TopBar({
         )}
       </div>
 
-      {/* Right: Undo/Redo icon buttons, Run, Save, More dropdown */}
+      {/* Right: Grouped button actions with dividers */}
       <div className="topbar-right">
-        {/* Undo / Redo icon buttons */}
-        <div className="icon-actions-group">
+        {/* Group 1: Undo / Redo */}
+        <div className="topbar-group">
           <button
             type="button"
             className="btn-icon-bar"
             onClick={onUndo}
             disabled={!canUndo || isStopped}
-            title={isStopped ? 'Editing stopped by host' : (canUndo ? `Undo your edits (Ctrl+Z) [${undoDepth}]` : 'Undo (Ctrl+Z)')}
+            title={isStopped ? 'Editing stopped by host' : (canUndo ? `Undo  Ctrl+Z (${undoDepth})` : 'Undo  Ctrl+Z')}
           >
             <Undo2 size={15} />
           </button>
@@ -174,198 +216,213 @@ export default function TopBar({
             className="btn-icon-bar"
             onClick={onRedo}
             disabled={!canRedo || isStopped}
-            title={isStopped ? 'Editing stopped by host' : (canRedo ? `Redo your edits (Ctrl+Shift+Z / Ctrl+Y) [${redoDepth}]` : 'Redo (Ctrl+Shift+Z)')}
+            title={isStopped ? 'Editing stopped by host' : (canRedo ? `Redo  Ctrl+Y (${redoDepth})` : 'Redo  Ctrl+Y')}
           >
             <Redo2 size={15} />
           </button>
         </div>
 
-        {/* Run / Stop Code */}
-        {isRunning ? (
-          <button
-            type="button"
-            className="btn-flat btn-danger btn-stop-top"
-            onClick={onStopCode}
-            title="Stop running execution"
-          >
-            <Square size={13} />
-            <span>Stop</span>
-          </button>
-        ) : (
-          <button
-            type="button"
-            className="btn-flat btn-primary btn-run"
-            onClick={onRunCode}
-            disabled={!canRun}
-            title={runTooltip}
-          >
-            <Play size={13} />
-            <span>Run</span>
-          </button>
-        )}
+        <div className="topbar-divider" />
 
-        {/* Save Current File */}
-        <button
-          type="button"
-          className="btn-flat btn-secondary btn-save"
-          onClick={onSaveCurrentFile}
-          disabled={!activeFile}
-          title={`Save "${activeFile || 'current file'}" to computer (Ctrl+S)`}
-        >
-          <Save size={13} />
-          <span>Save</span>
-        </button>
-
-        {/* Chat Sidebar Toggle */}
-        <button
-          type="button"
-          className={`btn-flat btn-secondary btn-chat-toggle ${isChatOpen ? 'active' : ''}`}
-          onClick={onToggleChat}
-          title={isChatOpen ? 'Close chat' : (unreadChatCount > 0 ? `Open chat (${unreadChatCount} unread)` : 'Open chat')}
-        >
-          <MessageSquare size={13} />
-          <span>Chat</span>
-          {unreadChatCount > 0 && !isChatOpen && (
-            <span className="badge-unread-count">{unreadChatCount}</span>
+        {/* Group 2: Run & Save */}
+        <div className="topbar-group">
+          {isRunning ? (
+            <button
+              type="button"
+              className="btn-flat btn-danger btn-stop-top"
+              onClick={onStopCode}
+              title="Stop running execution"
+            >
+              <Loader2 size={13} className="spin-icon" />
+              <span>Stop</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn-flat btn-primary btn-run"
+              onClick={onRunCode}
+              disabled={!canRun}
+              title={runTooltip}
+            >
+              <Play size={13} />
+              <span>Run</span>
+            </button>
           )}
-        </button>
 
-        {/* Theme Toggle Button */}
-        <button
-          type="button"
-          className="btn-icon-bar btn-theme-toggle"
-          onClick={onToggleTheme}
-          title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-        >
-          {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-        </button>
-
-        {/* More Actions Dropdown Menu */}
-        <div className="more-menu-wrapper" ref={moreRef}>
           <button
             type="button"
-            className={`btn-icon-bar btn-more ${isMoreOpen ? 'active' : ''}`}
-            onClick={() => setIsMoreOpen(!isMoreOpen)}
-            title="More actions"
+            className="btn-flat btn-secondary btn-save"
+            onClick={onSaveCurrentFile}
+            disabled={!activeFile}
+            title={`Save "${activeFile || 'current file'}" to computer (Ctrl+S)`}
           >
-            <MoreVertical size={16} />
+            <Save size={13} />
+            <span>Save</span>
+          </button>
+        </div>
+
+        <div className="topbar-divider" />
+
+        {/* Group 3: Chat, Theme, More */}
+        <div className="topbar-group">
+          <button
+            type="button"
+            className={`btn-flat btn-secondary btn-chat-toggle ${isChatOpen ? 'active' : ''}`}
+            onClick={onToggleChat}
+            title={isChatOpen ? 'Close chat' : (unreadChatCount > 0 ? `Open chat (${unreadChatCount} unread)` : 'Open chat')}
+          >
+            <MessageSquare size={13} />
+            <span>Chat</span>
+            {unreadChatCount > 0 && !isChatOpen && (
+              <span className="badge-unread-count">{unreadChatCount}</span>
+            )}
           </button>
 
-          {isMoreOpen && (
-            <div className="more-dropdown-menu">
-              <button
-                type="button"
-                className="dropdown-item"
-                onClick={() => {
-                  if (onToggleTheme) onToggleTheme()
-                  setIsMoreOpen(false)
-                }}
-              >
-                {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
-                <span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
-              </button>
+          <button
+            type="button"
+            className="btn-icon-bar btn-theme-toggle"
+            onClick={onToggleTheme}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
 
-              <button
-                type="button"
-                className={`dropdown-item btn-toggle-user-changes ${showUserChanges ? 'active' : ''}`}
-                onClick={() => {
-                  if (onToggleShowUserChanges) onToggleShowUserChanges()
-                }}
-                title={showUserChanges ? 'Hide collaborator changes' : 'Show collaborator changes with colored underlines'}
-              >
-                <Highlighter size={14} />
-                <span style={{ flex: 1, textAlign: 'left' }}>Show User Changes</span>
-                <span
-                  className="toggle-indicator-badge"
-                  style={{
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    padding: '1px 6px',
-                    borderRadius: '3px',
-                    background: showUserChanges ? 'var(--color-success-bg)' : 'var(--bg-active-row)',
-                    color: showUserChanges ? 'var(--color-success)' : 'var(--text-muted)',
-                    marginLeft: '8px'
+          <div className="more-menu-wrapper" ref={moreRef} onKeyDown={handleDropdownKeyDown}>
+            <button
+              ref={moreButtonRef}
+              type="button"
+              className={`btn-icon-bar btn-more ${isMoreOpen ? 'active' : ''}`}
+              onClick={() => setIsMoreOpen(!isMoreOpen)}
+              title="More actions"
+              aria-haspopup="true"
+              aria-expanded={isMoreOpen}
+            >
+              <MoreVertical size={16} />
+            </button>
+
+            {isMoreOpen && (
+              <div className="more-dropdown-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item"
+                  onClick={() => {
+                    if (onToggleTheme) onToggleTheme()
+                    setIsMoreOpen(false)
                   }}
                 >
-                  {showUserChanges ? 'ON' : 'OFF'}
-                </span>
-              </button>
+                  {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
+                  <span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
+                </button>
 
-              <div className="dropdown-divider" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={`dropdown-item btn-toggle-user-changes ${showUserChanges ? 'active' : ''}`}
+                  onClick={() => {
+                    if (onToggleShowUserChanges) onToggleShowUserChanges()
+                  }}
+                  title={showUserChanges ? 'Hide collaborator changes' : 'Show collaborator changes with colored underlines'}
+                >
+                  <Highlighter size={14} />
+                  <span style={{ flex: 1, textAlign: 'left' }}>Show User Changes</span>
+                  <span
+                    className="toggle-indicator-badge"
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      padding: '1px 6px',
+                      borderRadius: 'var(--radius-xs)',
+                      background: showUserChanges ? 'var(--color-success-bg)' : 'var(--bg-active-row)',
+                      color: showUserChanges ? 'var(--color-success)' : 'var(--text-muted)',
+                      marginLeft: '8px'
+                    }}
+                  >
+                    {showUserChanges ? 'ON' : 'OFF'}
+                  </span>
+                </button>
 
-              <button
-                type="button"
-                className="dropdown-item"
-                onClick={() => {
-                  onDownloadAllZip()
-                  setIsMoreOpen(false)
-                }}
-              >
-                <Download size={14} />
-                <span>Download all (.zip)</span>
-              </button>
+                <div className="dropdown-divider" />
 
-              <button
-                type="button"
-                className="dropdown-item"
-                onClick={() => {
-                  onToggleDebug()
-                  setIsMoreOpen(false)
-                }}
-              >
-                <Terminal size={14} />
-                <span>Debug panel</span>
-              </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item"
+                  onClick={() => {
+                    onDownloadAllZip()
+                    setIsMoreOpen(false)
+                  }}
+                >
+                  <Download size={14} />
+                  <span>Download all (.zip)</span>
+                </button>
 
-              <button
-                type="button"
-                className="dropdown-item"
-                onClick={() => {
-                  onToggleOnline()
-                  setIsMoreOpen(false)
-                }}
-              >
-                {status === 'offline' ? (
-                  <>
-                    <Wifi size={14} />
-                    <span>Go online</span>
-                  </>
-                ) : (
-                  <>
-                    <WifiOff size={14} />
-                    <span>Go offline</span>
-                  </>
-                )}
-              </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item"
+                  onClick={() => {
+                    onToggleDebug()
+                    setIsMoreOpen(false)
+                  }}
+                >
+                  <Terminal size={14} />
+                  <span>Debug panel</span>
+                </button>
 
-              <div className="dropdown-divider" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item"
+                  onClick={() => {
+                    onToggleOnline()
+                    setIsMoreOpen(false)
+                  }}
+                >
+                  {status === 'offline' ? (
+                    <>
+                      <Wifi size={14} />
+                      <span>Go online</span>
+                    </>
+                  ) : (
+                    <>
+                      <WifiOff size={14} />
+                      <span>Go offline</span>
+                    </>
+                  )}
+                </button>
 
-              <button
-                type="button"
-                className="dropdown-item"
-                onClick={() => {
-                  handleCopyLink()
-                  setIsMoreOpen(false)
-                }}
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-                <span>{copied ? 'Link copied' : 'Copy room link'}</span>
-              </button>
+                <div className="dropdown-divider" />
 
-              <button
-                type="button"
-                className="dropdown-item text-danger"
-                onClick={() => {
-                  setIsMoreOpen(false)
-                  onLeaveRoom()
-                }}
-              >
-                <LogOut size={14} />
-                <span>Exit room</span>
-              </button>
-            </div>
-          )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item"
+                  onClick={() => {
+                    handleCopyLink()
+                    setIsMoreOpen(false)
+                  }}
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{copied ? 'Link copied' : 'Copy room link'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item text-danger"
+                  onClick={() => {
+                    setIsMoreOpen(false)
+                    onLeaveRoom()
+                  }}
+                >
+                  <LogOut size={14} />
+                  <span>Exit room</span>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </header>
