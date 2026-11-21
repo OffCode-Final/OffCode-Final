@@ -255,31 +255,32 @@ body, #root {
    ========================================================================== */
 
 button {
-  font-family: inherit;
-  font-size: 12px;
+  font-family: var(--font-ui);
+  font-size: 13px;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: background-color 0.1s ease;
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
   user-select: none;
 }
 
 .btn-flat {
   padding: 4px 10px;
   border: 1px solid transparent;
-  font-weight: 400;
+  font-weight: 500;
+  border-radius: var(--radius-md);
 }
 
 .btn-primary {
-  background-color: var(--accent-btn);
+  background-color: var(--accent-button);
   color: #ffffff;
   border-color: transparent;
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--accent-btn-hover);
+  background-color: var(--accent-button-hover);
 }
 
 .btn-secondary {
@@ -288,26 +289,29 @@ button {
   border: 1px solid var(--border-color);
 }
 .btn-secondary:hover:not(:disabled) {
-  background-color: var(--bg-hover-row);
+  background-color: var(--bg-hover);
 }
 
 .btn-danger {
-  background-color: var(--state-danger-bg);
-  color: #ffffff;
-  border: 1px solid var(--state-danger);
+  background-color: var(--color-danger-bg);
+  color: var(--color-danger);
+  border: 1px solid var(--color-danger);
 }
 .btn-danger:hover:not(:disabled) {
-  background-color: #7a2727;
+  background-color: var(--color-danger);
+  color: #ffffff;
 }
 
 .btn-xs {
   padding: 2px 6px;
   font-size: 11px;
+  border-radius: var(--radius-sm);
 }
 
 .btn-sm {
   padding: 3px 8px;
   font-size: 12px;
+  border-radius: var(--radius-sm);
 }
 
 .btn-icon-subtle {
@@ -315,7 +319,7 @@ button {
   border: none;
   color: var(--text-muted);
   padding: 4px;
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
 }
 .btn-icon-subtle:hover {
   color: var(--text-main);
@@ -333,10 +337,16 @@ button:disabled {
   background-color: var(--bg-input);
   border: 1px solid var(--border-color);
   color: var(--text-main);
-  border-radius: 2px;
-  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  padding: 6px 10px;
   outline: none;
   width: 100%;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.text-input:focus, textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
 }
 .text-input:focus {
   border-color: var(--accent-statusbar);
@@ -565,8 +575,9 @@ button:disabled {
 
 .sidebar-title {
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--text-muted);
 }
 
@@ -868,8 +879,9 @@ button:disabled {
 
 .people-title {
   font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--text-muted);
 }
 
