@@ -206,20 +206,26 @@ export default function ChatPanel({
             <span>No messages yet.</span>
           </div>
         ) : (
-          visibleMessages.map((msg) => (
-            <div key={msg.id || `${msg.userId}-${msg.time}`} className="chat-message-item">
-              <div className="chat-message-meta">
-                <span
-                  className="chat-message-author"
-                  style={{ color: msg.color || 'var(--text-color)' }}
-                >
-                  {msg.name}
-                </span>
-                <span className="chat-message-time">{formatChatTime(msg)}</span>
+          visibleMessages.map((msg) => {
+            const isOwn = Boolean(myUserId && msg.userId === myUserId)
+            return (
+              <div
+                key={msg.id || `${msg.userId}-${msg.time}`}
+                className={`chat-message-item ${isOwn ? 'own-message' : ''}`}
+              >
+                <div className="chat-message-meta">
+                  <span
+                    className="chat-message-author"
+                    style={{ color: msg.color || 'var(--text-color)' }}
+                  >
+                    {msg.name}{isOwn ? ' (you)' : ''}
+                  </span>
+                  <span className="chat-message-time">{formatChatTime(msg)}</span>
+                </div>
+                <div className="chat-message-text">{msg.text}</div>
               </div>
-              <div className="chat-message-text">{msg.text}</div>
-            </div>
-          ))
+            )
+          })
         )}
         <div ref={messagesEndRef} />
       </div>

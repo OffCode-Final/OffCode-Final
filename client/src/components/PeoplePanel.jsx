@@ -47,30 +47,20 @@ export default function PeoplePanel({
                     : `${u.name} is browsing`
                 }
               >
-                <div className="person-row-top" style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                <div className="person-row-top">
                   {/* 8px solid colored dot representing user color */}
                   <span
                     className="person-dot"
                     style={{ backgroundColor: u.color }}
                   />
 
-                  <div className="person-info" style={{ minWidth: 0, flex: 1 }}>
-                    <div className="person-name-line" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span className="person-name" style={{ fontWeight: 500 }}>{u.name}</span>
+                  <div className="person-info">
+                    <div className="person-name-line">
+                      <span className="person-name">{u.name}</span>
                       {u.isYou && <span className="tag-muted">(you)</span>}
-                      {isUserHost && <span className="tag-muted">(host)</span>}
+                      {isUserHost && <span className="tag-muted host-tag-pill">host</span>}
                       {isUserStopped && (
-                        <span
-                          className="tag-stopped"
-                          style={{
-                            background: 'var(--color-danger-bg)',
-                            color: 'var(--color-danger)',
-                            fontSize: '10px',
-                            padding: '1px 5px',
-                            borderRadius: 'var(--radius-xs)',
-                            fontWeight: 600
-                          }}
-                        >
+                        <span className="tag-stopped">
                           Stopped
                         </span>
                       )}
@@ -91,7 +81,7 @@ export default function PeoplePanel({
                       <>
                         <button
                           type="button"
-                          className={`btn-flat btn-stop-resume ${isUserStopped ? 'stopped' : 'active'}`}
+                          className={`btn-ghost-action btn-stop-resume ${isUserStopped ? 'stopped' : 'active'}`}
                           onClick={(e) => {
                             e.stopPropagation()
                             if (isUserStopped) {
@@ -109,7 +99,7 @@ export default function PeoplePanel({
 
                         <button
                           type="button"
-                          className="btn-flat btn-make-host"
+                          className="btn-ghost-action btn-make-host"
                           onClick={(e) => {
                             e.stopPropagation()
                             if (window.confirm(`Make ${u.name} the host?`)) {
@@ -124,7 +114,7 @@ export default function PeoplePanel({
                     )}
                     <button
                       type="button"
-                      className={`btn-flat btn-follow ${isFollowing ? 'active' : ''}`}
+                      className={`btn-ghost-action btn-follow ${isFollowing ? 'active' : ''}`}
                       onClick={(e) => {
                         e.stopPropagation()
                         if (onToggleFollow) onToggleFollow(u.clientId)
