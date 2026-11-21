@@ -37,7 +37,7 @@ export default function StatusBar({
 
   return (
     <footer className="status-bar">
-      <div className="status-bar-left">
+      <div className={`status-bar-left ${status === 'offline' ? 'offline' : ''}`}>
         <button
           type="button"
           className="status-bar-item status-bar-btn"
@@ -45,7 +45,7 @@ export default function StatusBar({
           title={status === 'offline' ? 'Click to connect and sync' : 'Click to go offline'}
         >
           <span
-            className="status-indicator-dot"
+            className={`status-indicator-dot ${status === 'connecting' ? 'pulse' : ''}`}
             style={{ backgroundColor: getStatusColor() }}
           />
           {status === 'offline' ? (
@@ -57,8 +57,8 @@ export default function StatusBar({
         </button>
 
         {isHost && (
-          <span className="status-bar-item" title="You are the room host">
-            <Crown size={12} className="status-icon" />
+          <span className="status-bar-item status-bar-host-badge" title="You are the room host">
+            <Crown size={11} className="status-icon" />
             <span>Host</span>
           </span>
         )}

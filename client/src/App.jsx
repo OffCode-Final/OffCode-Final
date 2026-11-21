@@ -146,6 +146,15 @@ export default function App() {
     }, 4000)
   }, [])
 
+  // Dynamic document title
+  useEffect(() => {
+    if (session?.roomId) {
+      document.title = `OffCode - ${session.roomId}`
+    } else {
+      document.title = 'OffCode — Collaborative Code Editor'
+    }
+  }, [session?.roomId])
+
   // Join workspace
   const handleJoin = ({ userName, roomId, userColor }) => {
     updateUrlRoom(roomId)

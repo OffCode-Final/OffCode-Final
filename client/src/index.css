@@ -1357,17 +1357,19 @@ button:disabled {
 }
 
 /* ==========================================================================
-   BOTTOM STATUS BAR (VS Code Blue Status Bar)
+   BOTTOM STATUS BAR (Neutral Surface, Linear / VS Code Aesthetic)
    ========================================================================== */
 
 .status-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 22px;
-  background-color: var(--accent-statusbar);
-  color: #ffffff;
+  height: 24px;
+  background-color: var(--bg-topbar);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border-color);
   padding: 0 10px;
+  font-family: var(--font-ui);
   font-size: 11px;
   user-select: none;
   flex-shrink: 0;
@@ -1379,34 +1381,59 @@ button:disabled {
   height: 100%;
 }
 
+.status-bar-left.offline {
+  background-color: var(--color-warning-bg);
+  border-radius: var(--radius-xs);
+  padding: 0 4px;
+}
+
 .status-bar-item {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 0 6px;
+  padding: 0 8px;
   height: 100%;
-  font-size: 11px;
+  color: var(--text-muted);
 }
 
 .status-bar-btn {
   background: transparent;
   border: none;
-  color: #ffffff;
   cursor: pointer;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  transition: all var(--transition-fast);
 }
+
 .status-bar-btn:hover {
-  background-color: rgba(255, 255, 255, 0.15);
+  background-color: var(--bg-hover-row);
+  color: var(--text-bright);
 }
 
 .status-indicator-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-pill);
   flex-shrink: 0;
 }
 
+.status-indicator-dot.pulse {
+  animation: statusPulse 1.4s infinite ease-in-out;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}
+
+.status-bar-host-badge {
+  color: var(--color-success);
+  font-weight: 500;
+}
+
 .status-icon {
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
 /* ==========================================================================
