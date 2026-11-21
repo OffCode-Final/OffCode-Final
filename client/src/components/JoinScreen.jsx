@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, Users, WifiOff, GitPullRequest, Copy, Check } from 'lucide-react'
 import { USER_COLORS, getRandomColor, getInitialRoomFromUrl, copyToClipboard } from '../utils/helpers'
 
 export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
@@ -9,6 +9,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const [userColor, setUserColor] = useState(USER_COLORS[0].hex)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const generateRandomRoom = () => {
     return `room-${Math.floor(1000 + Math.random() * 9000)}`
@@ -83,6 +84,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
       return
     }
 
+    setIsSubmitting(true)
     localStorage.setItem('offcode_user_name', cleanName)
     onJoin({
       userName: cleanName,
@@ -110,21 +112,37 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
           </button>
         </div>
       )}
+
       <div className="join-card">
+        {/* Brand Header */}
         <div className="join-header">
-          <h2>OffCode</h2>
+          <div className="join-brand-row">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="brand-logo-icon">
+              <path d="M8 6L3 12L8 18" stroke="var(--accent-primary)" />
+              <path d="M16 6L21 12L16 18" stroke="var(--accent-primary)" />
+              <path d="M14 9A4 4 0 0 0 9.5 13" stroke="var(--text-muted)" />
+              <path d="M10 15A4 4 0 0 0 14.5 11" stroke="var(--text-muted)" />
+            </svg>
+            <h2>OffCode</h2>
+          </div>
           <p className="join-subtitle">
-            Multiplayer code editor with offline sync.
+            Collaborative code editor that works offline.
           </p>
+          <div className="join-feature-chips">
+            <span className="join-chip"><Users size={12} /> Live cursors</span>
+            <span className="join-chip"><WifiOff size={12} /> Works offline</span>
+            <span className="join-chip"><GitPullRequest size={12} /> Review mode</span>
+          </div>
         </div>
 
-        {/* Tab Toggle: Create Room vs Join Room */}
-        <div className="join-mode-tabs" role="tablist">
+        {/* Segmented Control: Create Room vs Join Room */}
+        <div className="join-segmented-control" role="tablist">
+          <div className={`join-segmented-indicator ${tab}`} />
           <button
             type="button"
             role="tab"
             aria-selected={tab === 'create'}
-            className={`join-mode-tab ${tab === 'create' ? 'active' : ''}`}
+            className={`join-segmented-tab ${tab === 'create' ? 'active' : ''}`}
             onClick={() => handleTabChange('create')}
           >
             Create Room
@@ -133,7 +151,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
             type="button"
             role="tab"
             aria-selected={tab === 'join'}
-            className={`join-mode-tab ${tab === 'join' ? 'active' : ''}`}
+            className={`join-segmented-tab ${tab === 'join' ? 'active' : ''}`}
             onClick={() => handleTabChange('join')}
           >
             Join Room
@@ -200,7 +218,17 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
                   onClick={handleCopyLink}
                   style={{ flexShrink: 0 }}
                 >
-                  {copied ? 'Copied' : 'Copy'}
+                  {copied ? (
+                    <>
+                      <Check size={12} />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={12} />
+                      <span>Copy</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -229,10 +257,26 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
             </div>
           </div>
 
-          <button type="submit" className="btn-flat btn-primary btn-join">
-            {tab === 'create' ? 'Create & Enter Room' : 'Join Room'}
+          <button type="submit" className="btn-flat btn-primary btn-join" disabled={isSubmitting}>
+            {isSubmitting ? 'Connecting...' : (tab === 'create' ? 'Create & Enter Room' : 'Join Room')}
           </button>
         </form>
+
+        {/* Footer line with connection hint and theme toggle */}
+        <div className="join-footer">
+          <span className="join-footer-hint">Direct peer sync via local WebSocket</span>
+          {onToggleTheme && (
+            <button
+              type="button"
+              className="btn-theme-toggle-link"
+              onClick={onToggleTheme}
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            >
+              {theme === 'dark' ? <Sun size={12} /> : <Moon size={12} />}
+              <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )
