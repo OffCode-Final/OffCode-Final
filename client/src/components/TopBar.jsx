@@ -20,7 +20,9 @@ import {
   Sun,
   Moon,
   Crown,
-  Loader2
+  Loader2,
+  Folder,
+  Users
 } from 'lucide-react'
 import { getFileExtension } from '../utils/helpers'
 
@@ -58,7 +60,9 @@ export default function TopBar({
   showUserChanges = false,
   onToggleShowUserChanges,
   theme = 'dark',
-  onToggleTheme
+  onToggleTheme,
+  onToggleMobileSidebar,
+  onToggleMobilePeople
 }) {
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
@@ -118,6 +122,15 @@ export default function TopBar({
     <header className="topbar">
       {/* Left: Project title & Room identifier */}
       <div className="topbar-left">
+        <button
+          type="button"
+          className="btn-icon-bar btn-mobile-nav"
+          onClick={onToggleMobileSidebar}
+          title="Toggle Explorer"
+          aria-label="Toggle Explorer"
+        >
+          <Folder size={15} />
+        </button>
         <div className="app-brand">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="brand-logo-icon">
             <path d="M8 6L3 12L8 18" stroke="var(--accent-primary)" />
@@ -286,6 +299,16 @@ export default function TopBar({
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           >
             {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+          </button>
+
+          <button
+            type="button"
+            className="btn-icon-bar btn-mobile-people"
+            onClick={onToggleMobilePeople}
+            title="Toggle Collaborators"
+            aria-label="Toggle Collaborators"
+          >
+            <Users size={15} />
           </button>
 
           <div className="more-menu-wrapper" ref={moreRef} onKeyDown={handleDropdownKeyDown}>

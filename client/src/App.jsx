@@ -64,6 +64,8 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [unreadChatCount, setUnreadChatCount] = useState(0)
   const [frozenUserIds, setFrozenUserIds] = useState(new Set())
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
+  const [isMobilePeopleOpen, setIsMobilePeopleOpen] = useState(false)
   const [showUserChanges, setShowUserChanges] = useState(() => {
     try {
       return window.localStorage.getItem('offcode_show_user_changes') === 'true'
@@ -595,6 +597,7 @@ export default function App() {
   const handleSelectFile = (fileName) => {
     setActiveFile(fileName)
     setOpenFiles((prev) => (prev.includes(fileName) ? prev : [...prev, fileName]))
+    setIsMobileSidebarOpen(false)
     if (followingUserId) {
       setFollowingUserId(null)
     }
@@ -623,6 +626,7 @@ export default function App() {
         setActiveFile(targetUser.currentFile)
       }
       setTargetScrollLine(targetUser.currentLine || 1)
+      setIsMobilePeopleOpen(false)
       logEvent(
         'editor',
         `Jumped to ${targetUser.name}'s view in "${targetUser.currentFile}" (Ln ${targetUser.currentLine || 1})`
@@ -1096,6 +1100,8 @@ export default function App() {
         onToggleShowUserChanges={handleToggleShowUserChanges}
         theme={theme}
         onToggleTheme={handleToggleTheme}
+        onToggleMobileSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
+        onToggleMobilePeople={() => setIsMobilePeopleOpen((prev) => !prev)}
       />
 
       {/* Stopped by Host Banner */}
@@ -1135,19 +1141,32 @@ export default function App() {
 
       {/* Main Workspace Body */}
       <div className="workspace-body">
+        {/* Backdrop for mobile drawer overlays */}
+        {(isMobileSidebarOpen || isMobilePeopleOpen) && (
+          <div
+            className="mobile-drawer-backdrop"
+            onClick={() => {
+              setIsMobileSidebarOpen(false)
+              setIsMobilePeopleOpen(false)
+            }}
+          />
+        )}
+
         {/* Left Sidebar: File explorer */}
-        <Sidebar
-          files={files}
-          activeFile={activeFile}
-          onSelectFile={handleSelectFile}
-          onCreateFile={handleCreateFile}
-          onDeleteFile={handleDeleteFile}
-          onClearAllFiles={handleClearAllFiles}
-          users={users}
-          isStopped={isCurrentUserStopped}
-          isHost={isHost}
-          onImportFolder={handleImportFolder}
-        />
+        <div className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''}`}>
+          <Sidebar
+            files={files}
+            activeFile={activeFile}
+            onSelectFile={handleSelectFile}
+            onCreateFile={handleCreateFile}
+            onDeleteFile={handleDeleteFile}
+            onClearAllFiles={handleClearAllFiles}
+            users={users}
+            isStopped={isCurrentUserStopped}
+            isHost={isHost}
+            onImportFolder={handleImportFolder}
+          />
+        </div>
 
         {/* Center: CodeMirror 6 Editor with Bottom Output Panel */}
         <div className="editor-and-output-column">
@@ -1196,19 +1215,21 @@ export default function App() {
         </div>
 
         {/* Right: People Panel */}
-        <PeoplePanel
-          users={users}
-          activeFile={activeFile}
-          onJumpToUser={handleJumpToUser}
-          followingUserId={followingUserId}
-          onToggleFollow={handleToggleFollow}
-          hostId={hostId}
-          isHost={isHost}
-          onTransferHost={handleTransferHost}
-          onStopUser={handleStopUser}
-          onResumeUser={handleResumeUser}
-          frozenUserIds={frozenUserIds}
-        />
+        <div className={`people-panel-container ${isMobilePeopleOpen ? 'mobile-open' : ''}`}>
+          <PeoplePanel
+            users={users}
+            activeFile={activeFile}
+            onJumpToUser={handleJumpToUser}
+            followingUserId={followingUserId}
+            onToggleFollow={handleToggleFollow}
+            hostId={hostId}
+            isHost={isHost}
+            onTransferHost={handleTransferHost}
+            onStopUser={handleStopUser}
+            onResumeUser={handleResumeUser}
+            frozenUserIds={frozenUserIds}
+          />
+        </div>
 
         {/* Collapsible Chat Sidebar */}
         <ChatPanel
