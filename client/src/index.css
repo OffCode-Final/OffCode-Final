@@ -1204,6 +1204,7 @@ button:disabled {
   align-items: center;
   gap: 5px;
   min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .person-name {
@@ -1213,7 +1214,8 @@ button:disabled {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .person-row:hover .person-name {

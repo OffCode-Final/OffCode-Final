@@ -23,6 +23,12 @@ export class FilePersistence {
   }
 
   bindState(docName, ydoc) {
+    if (!fs.existsSync(this.dataDir)) {
+      try {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+      } catch (_) {}
+    }
+
     const filePath = this.getFilePath(docName);
     if (fs.existsSync(filePath)) {
       try {
@@ -60,6 +66,12 @@ export class FilePersistence {
     if (this.pendingSaves.has(docName)) {
       clearTimeout(this.pendingSaves.get(docName).timeout);
       this.pendingSaves.delete(docName);
+    }
+
+    if (!fs.existsSync(this.dataDir)) {
+      try {
+        fs.mkdirSync(this.dataDir, { recursive: true });
+      } catch (_) {}
     }
 
     const filePath = this.getFilePath(docName);

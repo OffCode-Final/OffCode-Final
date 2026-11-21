@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: offcode
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm install --include=dev --prefix client && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 20.18.0
