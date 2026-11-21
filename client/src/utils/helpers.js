@@ -25,7 +25,8 @@ export const SUPPORTED_EXTENSIONS = [
   'md',
   'c',
   'cpp',
-  'java'
+  'java',
+  'txt'
 ]
 
 export function getRandomColor() {
@@ -124,11 +125,12 @@ export function updateUrlRoom(room) {
  * Downloads a single file with exact filename and text content
  */
 export function downloadFile(filename, content) {
+  const safeName = (filename || 'file.txt').replace(/\//g, '_')
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = filename
+  a.download = safeName
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

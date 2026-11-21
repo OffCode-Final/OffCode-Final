@@ -647,6 +647,95 @@ export default function App() {
     logEvent('file', `Deleted file "${fileName}"`)
   }
 
+  // Import folder of files into workspace (one-time copy)
+  const handleImportFolder = useCallback(
+    async (fileList) => {
+      if (!workspace || !isHost || isCurrentUserStopped) return
+      if (!fileList || fileList.length === 0) return
+
+      const allowedExts = ['html', 'css', 'js', 'json', 'md', 'py', 'c', 'cpp', 'java', 'txt']
+      const candidates = []
+
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i]
+        const relPath = file.webkitRelativePath
+          ? file.webkitRelativePath.split('/').slice(1).join('/')
+          : file.name
+
+        if (!relPath) continue
+
+        // Check ignored folders (node_modules, .git)
+        const parts = relPath.split('/')
+        if (parts.some((p) => p === 'node_modules' || p.startsWith('.git'))) {
+          continue
+        }
+
+        // Check extension
+        const ext = getFileExtension(relPath)
+        if (!ext || !allowedExts.includes(ext)) {
+          continue
+        }
+
+        // Check size (skip files over 1 MB)
+        if (file.size > 1024 * 1024) {
+          continue
+        }
+
+        candidates.push({ file, relPath })
+      }
+
+      if (candidates.length === 0) {
+        showToast('No supported text files found in selected folder.', 'danger')
+        return
+      }
+
+      let toImport = candidates
+      if (toImport.length > 200) {
+        toImport = toImport.slice(0, 200)
+        showToast('Folder exceeds 200 files. Importing first 200 files.', 'info')
+      }
+
+      let importedCount = 0
+      for (const item of toImport) {
+        const { file, relPath } = item
+        try {
+          const content = await file.text()
+          const currentFiles = workspace.listFiles()
+          if (currentFiles.includes(relPath)) {
+            const confirmed = window.confirm(`File "${relPath}" already exists. Overwrite with imported file?`)
+            if (!confirmed) continue
+            const ytext = workspace.getText(relPath)
+            if (ytext) {
+              workspace.ydoc.transact(() => {
+                ytext.delete(0, ytext.length)
+                ytext.insert(0, content)
+              })
+              importedCount++
+            }
+          } else {
+            workspace.createFile(relPath, content)
+            importedCount++
+          }
+        } catch (err) {
+          console.warn(`Failed reading file "${relPath}":`, err)
+        }
+      }
+
+      if (importedCount > 0) {
+        const allFiles = workspace.listFiles()
+        setFiles(allFiles)
+        if (allFiles.includes('index.html')) {
+          setActiveFile('index.html')
+        } else if (toImport.length > 0 && allFiles.includes(toImport[0].relPath)) {
+          setActiveFile(toImport[0].relPath)
+        }
+        logEvent('file', `Imported ${importedCount} files from folder`)
+        showToast(`Imported ${importedCount} files into room.`, 'success')
+      }
+    },
+    [workspace, isHost, isCurrentUserStopped, showToast, logEvent]
+  )
+
   // Save current file to disk
   const handleSaveCurrentFile = useCallback(() => {
     if (!activeFile || !activeYText) return
@@ -966,6 +1055,8 @@ export default function App() {
           onDeleteFile={handleDeleteFile}
           users={users}
           isStopped={isCurrentUserStopped}
+          isHost={isHost}
+          onImportFolder={handleImportFolder}
         />
 
         {/* Center: CodeMirror 6 Editor with Bottom Output Panel */}
