@@ -28,6 +28,9 @@ import ReviewDrawer from './components/ReviewDrawer'
 import PushDraftModal from './components/PushDraftModal'
 import StatusBar from './components/StatusBar'
 import ChatPanel, { getChatJoinedAt, getMessageTime } from './components/ChatPanel'
+import { improveCodeWithGemini } from './ai/gemini'
+import AiKeyModal from './components/AiKeyModal'
+import AiReviewModal from './components/AiReviewModal'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -73,6 +76,23 @@ export default function App() {
       return false
     }
   })
+
+  // AI Assist State
+  const [aiKey, setAiKey] = useState(() => {
+    try {
+      return window.localStorage.getItem('offcode-gemini-key') || ''
+    } catch (_) {
+      return ''
+    }
+  })
+  const [isAiKeyModalOpen, setIsAiKeyModalOpen] = useState(false)
+  const [pendingAiImprove, setPendingAiImprove] = useState(null)
+  const [isAiReviewOpen, setIsAiReviewOpen] = useState(false)
+  const [isAiLoading, setIsAiLoading] = useState(false)
+  const [aiError, setAiError] = useState(null)
+  const [aiResult, setAiResult] = useState(null)
+  const [aiTarget, setAiTarget] = useState(null)
+  const aiAbortControllerRef = useRef(null)
 
   // OffCode Dual Theme State (dark/light)
   const [theme, setTheme] = useState(() => {
@@ -566,6 +586,122 @@ export default function App() {
     },
     [workspace, showToast, logEvent]
   )
+
+  // AI Assist Logic
+  const executeAiImprovement = useCallback(async (keyToUse, target) => {
+    setIsAiReviewOpen(true)
+    setIsAiLoading(true)
+    setAiError(null)
+    setAiResult(null)
+    setAiTarget(target)
+
+    if (aiAbortControllerRef.current) {
+      aiAbortControllerRef.current.abort()
+    }
+    const controller = new AbortController()
+    aiAbortControllerRef.current = controller
+
+    try {
+      const res = await improveCodeWithGemini({
+        apiKey: keyToUse,
+        fullText: target.fullText,
+        selectedText: target.selectedText,
+        from: target.from,
+        to: target.to,
+        signal: controller.signal
+      })
+      setAiResult(res)
+      setIsAiLoading(false)
+    } catch (err) {
+      if (controller.signal.aborted) {
+        setIsAiReviewOpen(false)
+        setIsAiLoading(false)
+        return
+      }
+      setAiError(err)
+      setIsAiLoading(false)
+    }
+  }, [])
+
+  const handleSaveAiKey = useCallback((newKey) => {
+    try {
+      window.localStorage.setItem('offcode-gemini-key', newKey)
+    } catch (_) {}
+    setAiKey(newKey)
+    showToast('Gemini API key saved', 'success')
+
+    if (pendingAiImprove) {
+      const target = pendingAiImprove
+      setPendingAiImprove(null)
+      executeAiImprovement(newKey, target)
+    }
+  }, [pendingAiImprove, showToast, executeAiImprovement])
+
+  const handleRemoveAiKey = useCallback(() => {
+    try {
+      window.localStorage.removeItem('offcode-gemini-key')
+    } catch (_) {}
+    setAiKey('')
+    showToast('Removed Gemini API key', 'info')
+  }, [showToast])
+
+  const handleTriggerAi = useCallback((target) => {
+    let currentKey = aiKey
+    if (!currentKey) {
+      try {
+        currentKey = window.localStorage.getItem('offcode-gemini-key') || ''
+      } catch (_) {}
+    }
+
+    if (!currentKey) {
+      setPendingAiImprove(target)
+      setIsAiKeyModalOpen(true)
+      return
+    }
+
+    executeAiImprovement(currentKey, target)
+  }, [aiKey, executeAiImprovement])
+
+  const handleCancelOrRejectAi = useCallback(() => {
+    if (aiAbortControllerRef.current) {
+      aiAbortControllerRef.current.abort()
+      aiAbortControllerRef.current = null
+    }
+    setIsAiReviewOpen(false)
+    setIsAiLoading(false)
+    setAiError(null)
+    setAiResult(null)
+    setAiTarget(null)
+  }, [])
+
+  const handleAcceptAi = useCallback(() => {
+    if (!aiTarget || !aiResult?.improved) return
+    const { view, from, to, selectedText } = aiTarget
+
+    try {
+      const currentRangeText = view.state.sliceDoc(from, to)
+      if (currentRangeText !== selectedText) {
+        showToast('The selected code changed while AI was working. Please try again.', 'error')
+        handleCancelOrRejectAi()
+        return
+      }
+
+      view.dispatch({
+        changes: {
+          from,
+          to,
+          insert: aiResult.improved
+        },
+        selection: { anchor: from + aiResult.improved.length }
+      })
+      showToast('AI improvements applied', 'success')
+      logEvent('editor', 'Applied AI improvement to selected code')
+    } catch (_) {
+      showToast('Failed to apply changes', 'error')
+    }
+
+    handleCancelOrRejectAi()
+  }, [aiTarget, aiResult, showToast, logEvent, handleCancelOrRejectAi])
 
   const handleTransferHost = useCallback(
     (targetUserId, targetName) => {
@@ -1102,6 +1238,9 @@ export default function App() {
         onToggleTheme={handleToggleTheme}
         onToggleMobileSidebar={() => setIsMobileSidebarOpen((prev) => !prev)}
         onToggleMobilePeople={() => setIsMobilePeopleOpen((prev) => !prev)}
+        onOpenAiKeyModal={() => setIsAiKeyModalOpen(true)}
+        onRemoveAiKey={handleRemoveAiKey}
+        hasAiKey={Boolean(aiKey)}
       />
 
       {/* Stopped by Host Banner */}
@@ -1199,6 +1338,8 @@ export default function App() {
             currentUserColor={session?.userColor || '#6366f1'}
             users={users}
             theme={theme}
+            onImproveWithAi={handleTriggerAi}
+            isOffline={status === 'offline'}
           />
 
           {/* Bottom Output & Preview Panel */}
@@ -1271,6 +1412,29 @@ export default function App() {
         onClose={() => setIsPushDraftOpen(false)}
         onSubmit={handlePushDraft}
         fileName={activeFile}
+      />
+
+      {/* Gemini AI Key Modal */}
+      <AiKeyModal
+        isOpen={isAiKeyModalOpen}
+        onClose={() => {
+          setIsAiKeyModalOpen(false)
+          setPendingAiImprove(null)
+        }}
+        onSaveKey={handleSaveAiKey}
+        initialKey={aiKey}
+      />
+
+      {/* Gemini AI Review & Diff Modal */}
+      <AiReviewModal
+        isOpen={isAiReviewOpen}
+        isLoading={isAiLoading}
+        error={aiError}
+        result={aiResult}
+        originalText={aiTarget?.selectedText || ''}
+        onAccept={handleAcceptAi}
+        onReject={handleCancelOrRejectAi}
+        onOpenKeyModal={() => setIsAiKeyModalOpen(true)}
       />
 
       {/* Live Toast Notifications */}
