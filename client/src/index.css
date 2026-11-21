@@ -2540,6 +2540,44 @@ button:disabled {
   letter-spacing: 0.5px;
 }
 
+/* AI Sparkle Tooltip & Button */
+.cm-tooltip:has(.cm-ai-sparkle-btn) {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  margin-top: -6px;
+  z-index: 100 !important;
+}
+
+.cm-ai-sparkle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background-color: var(--accent-button);
+  color: #ffffff;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  padding: 0;
+  transition: transform var(--transition-fast), background-color var(--transition-fast);
+}
+
+.cm-ai-sparkle-btn:hover:not(:disabled) {
+  transform: scale(1.1);
+  background-color: var(--accent-hover);
+}
+
+.cm-ai-sparkle-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: var(--bg-hover-row);
+  color: var(--text-muted);
+}
+
 /* ==========================================================================
    RESPONSIVE DESIGN & MOBILE DRAWER OVERLAYS
    ========================================================================== */

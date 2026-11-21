@@ -22,7 +22,9 @@ import {
   Crown,
   Loader2,
   Folder,
-  Users
+  Users,
+  Key,
+  Trash2
 } from 'lucide-react'
 import { getFileExtension } from '../utils/helpers'
 
@@ -62,7 +64,10 @@ export default function TopBar({
   theme = 'dark',
   onToggleTheme,
   onToggleMobileSidebar,
-  onToggleMobilePeople
+  onToggleMobilePeople,
+  onOpenAiKeyModal,
+  onRemoveAiKey,
+  hasAiKey = false
 }) {
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
@@ -365,6 +370,36 @@ export default function TopBar({
                     {showUserChanges ? 'ON' : 'OFF'}
                   </span>
                 </button>
+
+                <div className="dropdown-divider" />
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item"
+                  onClick={() => {
+                    setIsMoreOpen(false)
+                    if (onOpenAiKeyModal) onOpenAiKeyModal()
+                  }}
+                >
+                  <Key size={14} />
+                  <span>Change AI key</span>
+                </button>
+
+                {hasAiKey && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="dropdown-item text-danger"
+                    onClick={() => {
+                      setIsMoreOpen(false)
+                      if (onRemoveAiKey) onRemoveAiKey()
+                    }}
+                  >
+                    <Trash2 size={14} />
+                    <span>Remove AI key</span>
+                  </button>
+                )}
 
                 <div className="dropdown-divider" />
 
