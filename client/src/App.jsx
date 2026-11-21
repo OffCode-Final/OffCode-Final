@@ -642,10 +642,36 @@ export default function App() {
     if (!workspace || isCurrentUserStopped) return
     workspace.deleteFile(fileName)
     removeUndoManager(fileName)
-    setFiles(workspace.listFiles())
+    const remaining = workspace.listFiles()
+    setFiles(remaining)
     setOpenFiles((prev) => prev.filter((f) => f !== fileName))
+    if (activeFile === fileName) {
+      setActiveFile(remaining.length > 0 ? remaining[0] : null)
+    }
     logEvent('file', `Deleted file "${fileName}"`)
   }
+
+  // Remove all files / close folder from workspace
+  const handleClearAllFiles = useCallback(() => {
+    if (!workspace || !isHost || isCurrentUserStopped) return
+    const currentFiles = workspace.listFiles()
+    if (currentFiles.length === 0) return
+
+    const confirmed = window.confirm(
+      'Remove all files from the workspace? This will delete all files and close the current folder.'
+    )
+    if (!confirmed) return
+
+    for (const f of currentFiles) {
+      workspace.deleteFile(f)
+      removeUndoManager(f)
+    }
+    setFiles([])
+    setOpenFiles([])
+    setActiveFile(null)
+    logEvent('file', 'Removed all files from workspace')
+    showToast('Removed all files from workspace.', 'info')
+  }, [workspace, isHost, isCurrentUserStopped, removeUndoManager, logEvent, showToast])
 
   // Import folder of files into workspace (one-time copy)
   const handleImportFolder = useCallback(
@@ -689,6 +715,24 @@ export default function App() {
         return
       }
 
+      // If workspace already contains files, confirm with user before replacing previous folder/files
+      const currentFiles = workspace.listFiles()
+      if (currentFiles.length > 0) {
+        const confirmed = window.confirm(
+          'Opening a new folder will replace all current files in the workspace. Are you sure you want to erase existing files and import this folder?'
+        )
+        if (!confirmed) {
+          return
+        }
+
+        // Clear previous files and undo managers
+        for (const oldFile of currentFiles) {
+          workspace.deleteFile(oldFile)
+          removeUndoManager(oldFile)
+        }
+        setOpenFiles([])
+      }
+
       let toImport = candidates
       if (toImport.length > 200) {
         toImport = toImport.slice(0, 200)
@@ -700,22 +744,8 @@ export default function App() {
         const { file, relPath } = item
         try {
           const content = await file.text()
-          const currentFiles = workspace.listFiles()
-          if (currentFiles.includes(relPath)) {
-            const confirmed = window.confirm(`File "${relPath}" already exists. Overwrite with imported file?`)
-            if (!confirmed) continue
-            const ytext = workspace.getText(relPath)
-            if (ytext) {
-              workspace.ydoc.transact(() => {
-                ytext.delete(0, ytext.length)
-                ytext.insert(0, content)
-              })
-              importedCount++
-            }
-          } else {
-            workspace.createFile(relPath, content)
-            importedCount++
-          }
+          workspace.createFile(relPath, content)
+          importedCount++
         } catch (err) {
           console.warn(`Failed reading file "${relPath}":`, err)
         }
@@ -726,14 +756,18 @@ export default function App() {
         setFiles(allFiles)
         if (allFiles.includes('index.html')) {
           setActiveFile('index.html')
+          setOpenFiles(['index.html'])
         } else if (toImport.length > 0 && allFiles.includes(toImport[0].relPath)) {
           setActiveFile(toImport[0].relPath)
+          setOpenFiles([toImport[0].relPath])
+        } else {
+          setActiveFile(allFiles.length > 0 ? allFiles[0] : null)
         }
         logEvent('file', `Imported ${importedCount} files from folder`)
         showToast(`Imported ${importedCount} files into room.`, 'success')
       }
     },
-    [workspace, isHost, isCurrentUserStopped, showToast, logEvent]
+    [workspace, isHost, isCurrentUserStopped, showToast, logEvent, removeUndoManager]
   )
 
   // Save current file to disk
@@ -1053,6 +1087,7 @@ export default function App() {
           onSelectFile={handleSelectFile}
           onCreateFile={handleCreateFile}
           onDeleteFile={handleDeleteFile}
+          onClearAllFiles={handleClearAllFiles}
           users={users}
           isStopped={isCurrentUserStopped}
           isHost={isHost}

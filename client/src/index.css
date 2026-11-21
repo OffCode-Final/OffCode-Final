@@ -702,11 +702,13 @@ button:disabled {
 
 .person-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 10px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 10px;
   cursor: pointer;
-  height: 32px;
+  min-height: 36px;
+  height: auto;
 }
 .person-row:hover {
   background-color: var(--bg-hover-row);

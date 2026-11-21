@@ -7,6 +7,7 @@ import {
   AlertCircle,
   Folder,
   FolderOpen,
+  FolderX,
   ChevronRight,
   ChevronDown,
   Upload
@@ -46,6 +47,7 @@ export default function Sidebar({
   onSelectFile,
   onCreateFile,
   onDeleteFile,
+  onClearAllFiles,
   users = [],
   isStopped = false,
   isHost = false,
@@ -241,16 +243,34 @@ export default function Sidebar({
         <span className="sidebar-title">FILES</span>
         <div className="sidebar-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           {isHost && (
-            <button
-              type="button"
-              className="btn-icon-subtle btn-open-folder"
-              onClick={handleOpenFolderClick}
-              disabled={isStopped}
-              style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
-              title={isStopped ? 'Editing stopped by host' : 'Open folder (one-time copy)'}
-            >
-              <Upload size={14} />
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn-icon-subtle btn-open-folder"
+                onClick={handleOpenFolderClick}
+                disabled={isStopped}
+                style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+                title={isStopped ? 'Editing stopped by host' : 'Open folder (one-time copy)'}
+              >
+                <Upload size={14} />
+              </button>
+
+              {files.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-icon-subtle btn-clear-all-files"
+                  onClick={() => {
+                    if (isStopped) return
+                    if (onClearAllFiles) onClearAllFiles()
+                  }}
+                  disabled={isStopped}
+                  style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+                  title={isStopped ? 'Editing stopped by host' : 'Remove all files / close folder'}
+                >
+                  <FolderX size={14} />
+                </button>
+              )}
+            </>
           )}
 
           <button
