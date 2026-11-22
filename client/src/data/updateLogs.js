@@ -2,19 +2,51 @@
  * OffCode Update Logs (Changelog) Data
  * 
  * Each release contains:
- * - version: String (e.g., 'v1.0')
+ * - version: String (e.g., 'v1.1')
  * - releaseDate: String (e.g., 'November 2026')
  * - title: String
  * - isCurrent: Boolean
- * - logs: Array of strings or { item: string, detail: string } formatted as 1-line summaries.
+ * - logs: Array of { item: string, detail: string } formatted as 1-line summaries.
  */
 
 export const UPDATE_LOGS = [
   {
+    version: 'v1.1',
+    title: 'Room Lifecycle, Security & PWA Auto-Reload',
+    releaseDate: 'November 2026',
+    isCurrent: true,
+    logs: [
+      {
+        item: 'Blank Canvas Initial State',
+        detail: 'Stripped all boilerplate starter templates; new files now open completely blank and ready to code.'
+      },
+      {
+        item: 'Ephemeral Room Memory Wipe',
+        detail: 'Automatic purge of chats, files, proposals, server disk data, and IndexedDB caches when a room is emptied.'
+      },
+      {
+        item: 'Live Room Polling',
+        detail: 'Background room existence check every 2.5s on the Join screen without requiring manual page refresh.'
+      },
+      {
+        item: 'Instant PWA Auto-Reload',
+        detail: 'Configured Workbox auto-reloading (skipWaiting) so users receive new app deployments instantly without Ctrl+F5.'
+      },
+      {
+        item: 'In-App Update Logs',
+        detail: 'One-click Changelog viewer in the top-right toolbar to track all feature releases and version notes.'
+      },
+      {
+        item: 'Room Security & Protection',
+        detail: 'Real-time room validation and password authentication to safeguard private collaborative sessions.'
+      }
+    ]
+  },
+  {
     version: 'v1.0',
     title: 'OffCode Core Platform Release',
     releaseDate: 'November 2026',
-    isCurrent: true,
+    isCurrent: false,
     logs: [
       {
         item: 'Real-time Multiplayer Sync',

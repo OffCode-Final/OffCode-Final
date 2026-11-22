@@ -3,6 +3,8 @@ import { X, History, Sparkles, CheckCircle2 } from 'lucide-react'
 import { UPDATE_LOGS } from '../data/updateLogs'
 
 export default function UpdateLogsModal({ isOpen, onClose }) {
+  const currentVersion = UPDATE_LOGS[0]?.version || 'v1.1'
+
   useEffect(() => {
     if (!isOpen) return
 
@@ -83,7 +85,7 @@ export default function UpdateLogsModal({ isOpen, onClose }) {
         <div className="update-logs-footer">
           <div className="update-logs-footer-info">
             <CheckCircle2 size={13} className="text-success" />
-            <span>OffCode v1.0 • All features verified & active</span>
+            <span>OffCode {currentVersion} • All features verified & active</span>
           </div>
           <button type="button" className="btn-flat btn-primary" onClick={onClose}>
             Done
