@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import { getFileExtension } from '../utils/helpers'
 import UpdateLogsModal from './UpdateLogsModal'
+import { UPDATE_LOGS } from '../data/updateLogs'
 import AnimatedLogo from './AnimatedLogo'
 
 export default function TopBar({
@@ -75,6 +76,7 @@ export default function TopBar({
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
   const [isUpdateLogsOpen, setIsUpdateLogsOpen] = useState(false)
+  const currentVersion = UPDATE_LOGS[0]?.version || 'v1.1'
   const moreRef = useRef(null)
   const moreButtonRef = useRef(null)
 
@@ -298,11 +300,11 @@ export default function TopBar({
             type="button"
             className={`btn-flat btn-secondary btn-update-logs ${isUpdateLogsOpen ? 'active' : ''}`}
             onClick={() => setIsUpdateLogsOpen(!isUpdateLogsOpen)}
-            title="View update logs (v1.0)"
+            title={`View update logs (${currentVersion})`}
           >
             <History size={13} />
             <span>Updates</span>
-            <span className="badge-update-tag">v1.0</span>
+            <span className="badge-update-tag">{currentVersion}</span>
           </button>
 
           <button
@@ -422,7 +424,7 @@ export default function TopBar({
                   }}
                 >
                   <History size={14} />
-                  <span>Update logs (v1.0)</span>
+                  <span>Update logs ({currentVersion})</span>
                 </button>
 
                 <button
