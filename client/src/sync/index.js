@@ -138,6 +138,7 @@ export function createWorkspace({
   roomId = 'default',
   userName = 'Anonymous',
   userColor = '#6366f1',
+  password = '',
   userId = null,
   serverUrl = null,
   WebSocketPolyfill = null,
@@ -222,7 +223,8 @@ export function createWorkspace({
   // 2. WebSocket Provider Setup
   const wsOptions = {
     connect: true,
-    maxBackoffTime: 2500
+    maxBackoffTime: 2500,
+    params: password ? { pass: password } : {}
   };
   if (WebSocketPolyfill) {
     wsOptions.WebSocketPolyfill = WebSocketPolyfill;

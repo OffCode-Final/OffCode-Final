@@ -179,9 +179,9 @@ export default function App() {
   }, [session?.roomId])
 
   // Join workspace
-  const handleJoin = ({ userName, roomId, userColor }) => {
+  const handleJoin = ({ userName, roomId, userColor, password = '' }) => {
     updateUrlRoom(roomId)
-    setSession({ userName, roomId, userColor })
+    setSession({ userName, roomId, userColor, password })
     logEvent('session', `Joined room "${roomId}" as ${userName}`)
   }
 
@@ -266,11 +266,12 @@ export default function App() {
   useEffect(() => {
     if (!session) return
 
-    const { roomId, userName, userColor } = session
+    const { roomId, userName, userColor, password } = session
     const ws = createWorkspace({
       roomId,
       userName,
       userColor,
+      password,
       serverUrl: getDefaultServerUrl()
     })
     workspaceRef.current = ws

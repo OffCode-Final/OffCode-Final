@@ -193,7 +193,8 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
       onJoin({
         userName: cleanName,
         roomId: cleanRoom,
-        userColor
+        userColor,
+        password: roomPassword.trim()
       })
     } catch (err) {
       console.error('Error entering room:', err)
