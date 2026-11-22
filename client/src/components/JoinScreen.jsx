@@ -1,15 +1,16 @@
 import { useState, useEffect } from 'react'
 import { Sun, Moon, Users, WifiOff, GitPullRequest, Copy, Check } from 'lucide-react'
-import { USER_COLORS, getRandomColor, getInitialRoomFromUrl, copyToClipboard } from '../utils/helpers'
+import { getRandomColor, getInitialRoomFromUrl, copyToClipboard } from '../utils/helpers'
 
 export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const [tab, setTab] = useState('join') // 'create' | 'join'
   const [userName, setUserName] = useState('')
   const [roomId, setRoomId] = useState('')
-  const [userColor, setUserColor] = useState(USER_COLORS[0].hex)
+  const [userColor, setUserColor] = useState(() => getRandomColor().hex)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [roomStatus, setRoomStatus] = useState(null) // { checking: boolean, exists: boolean, activeUsers: number }
 
   const generateRandomRoom = () => {
     return `room-${Math.floor(1000 + Math.random() * 9000)}`
@@ -50,6 +51,50 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
     // Randomize avatar color
     setUserColor(getRandomColor().hex)
   }, [])
+
+  // Debounced room existence check
+  useEffect(() => {
+    const clean = (roomId || '').trim().toLowerCase()
+    if (!clean) {
+      setRoomStatus(null)
+      return
+    }
+
+    let isCurrent = true
+    const timer = setTimeout(async () => {
+      try {
+        setRoomStatus((prev) => (prev ? { ...prev, checking: true } : { checking: true, exists: null }))
+
+        let httpBase = ''
+        if (typeof window !== 'undefined' && window.location) {
+          if (window.location.port === '5173') {
+            httpBase = `http://${window.location.hostname || 'localhost'}:1234`
+          }
+        }
+
+        const res = await fetch(`${httpBase}/api/room-check/${encodeURIComponent(clean)}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (isCurrent) {
+            setRoomStatus({
+              checking: false,
+              exists: Boolean(data.exists),
+              activeUsers: data.activeUsers || 0
+            })
+          }
+        } else {
+          if (isCurrent) setRoomStatus(null)
+        }
+      } catch (_) {
+        if (isCurrent) setRoomStatus(null)
+      }
+    }, 250)
+
+    return () => {
+      isCurrent = false
+      clearTimeout(timer)
+    }
+  }, [roomId])
 
   const handleTabChange = (newTab) => {
     setTab(newTab)
@@ -204,6 +249,48 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
               placeholder={tab === 'create' ? 'e.g. room-7429' : 'Paste room code or join existing'}
               maxLength={32}
             />
+
+            {/* Room Status Feedback & Comment */}
+            {roomId.trim() && roomStatus && !roomStatus.checking && (
+              <div
+                className={`room-status-badge ${roomStatus.exists ? 'status-exists' : 'status-not-created'}`}
+                style={{
+                  marginTop: '8px',
+                  padding: '7px 11px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  lineHeight: '1.45',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                  backgroundColor: roomStatus.exists ? 'rgba(5, 150, 105, 0.12)' : 'rgba(217, 119, 6, 0.12)',
+                  border: `1px solid ${roomStatus.exists ? 'rgba(5, 150, 105, 0.3)' : 'rgba(217, 119, 6, 0.3)'}`,
+                  color: roomStatus.exists ? 'var(--color-success, #10b981)' : 'var(--color-warning, #f59e0b)'
+                }}
+              >
+                {tab === 'join' ? (
+                  roomStatus.exists ? (
+                    <span>
+                      ✓ <strong>Room found:</strong> Active with {roomStatus.activeUsers} collaborator{roomStatus.activeUsers === 1 ? '' : 's'} online.
+                    </span>
+                  ) : (
+                    <span>
+                      ℹ️ <strong>Room is not created yet</strong> — you can still join and it will be created automatically.
+                    </span>
+                  )
+                ) : (
+                  roomStatus.exists ? (
+                    <span>
+                      ⚠️ <strong>Room is already created</strong> — you can still enter to collaborate or generate a new code.
+                    </span>
+                  ) : (
+                    <span>
+                      ✓ <strong>Room code available</strong> — ready to create.
+                    </span>
+                  )
+                )}
+              </div>
+            )}
           </div>
 
           {/* Share Link Preview with Copy Button */}
@@ -233,29 +320,6 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
               </div>
             </div>
           )}
-
-          <div className="form-group">
-            <label>Cursor & Presence Color</label>
-            <div className="color-palette">
-              {USER_COLORS.map((c) => (
-                <button
-                  key={c.hex}
-                  type="button"
-                  className={`color-swatch ${userColor === c.hex ? 'selected' : ''}`}
-                  style={{ backgroundColor: c.hex }}
-                  onClick={() => setUserColor(c.hex)}
-                  title={c.name}
-                />
-              ))}
-              <button
-                type="button"
-                className="btn-flat btn-secondary btn-xs"
-                onClick={() => setUserColor(getRandomColor().hex)}
-              >
-                Random
-              </button>
-            </div>
-          </div>
 
           <button type="submit" className="btn-flat btn-primary btn-join" disabled={isSubmitting}>
             {isSubmitting ? 'Connecting...' : (tab === 'create' ? 'Create & Enter Room' : 'Join Room')}
