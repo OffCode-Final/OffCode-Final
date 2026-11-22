@@ -247,6 +247,21 @@ export default function App() {
       } catch (_) {}
     }
 
+    // Wipe all room-specific localStorage keys (chat history timestamps, user data)
+    if (typeof window !== 'undefined' && window.localStorage && currentRoom) {
+      try {
+        const cleanRoom = currentRoom.trim().toLowerCase()
+        const keysToRemove = []
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const k = window.localStorage.key(i)
+          if (k && (k.includes(cleanRoom) || k.startsWith(`chatJoinedAt:${cleanRoom}`))) {
+            keysToRemove.push(k)
+          }
+        }
+        keysToRemove.forEach((k) => window.localStorage.removeItem(k))
+      } catch (_) {}
+    }
+
     handleLeaveRoom()
   }
 

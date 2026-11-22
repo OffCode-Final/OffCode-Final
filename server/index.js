@@ -237,6 +237,15 @@ export function createSyncServer({
       const inMemoryDoc = docs.get(roomName);
       if (inMemoryDoc) {
         try {
+          inMemoryDoc.getMap('files').clear();
+          inMemoryDoc.getMap('drafts').clear();
+          inMemoryDoc.getMap('draftBases').clear();
+          inMemoryDoc.getMap('proposals').clear();
+          inMemoryDoc.getMap('meta').clear();
+          const chatArr = inMemoryDoc.getArray('chat');
+          if (chatArr && chatArr.length > 0) {
+            chatArr.delete(0, chatArr.length);
+          }
           inMemoryDoc.destroy();
         } catch (_) {}
         docs.delete(roomName);

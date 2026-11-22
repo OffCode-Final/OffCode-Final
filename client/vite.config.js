@@ -17,6 +17,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons.svg', 'pyodide/**/*'],
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,wasm,data,zip}'],
         maximumFileSizeToCacheInBytes: 50 * 1024 * 1024 // 50MB limit to precache Pyodide wasm & data files
       },

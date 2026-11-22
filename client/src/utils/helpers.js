@@ -77,30 +77,9 @@ export function getLanguageName(filename) {
   }
 }
 
-export function getInitialTemplate(filename) {
-  const ext = getFileExtension(filename)
-  switch (ext) {
-    case 'py':
-      return `# Python Script\ndef main():\n    print("Hello from Python in OffCode!")\n\nif __name__ == "__main__":\n    main()\n`
-    case 'js':
-      return `// JavaScript\nfunction hello() {\n  console.log("Hello from JavaScript in OffCode!");\n}\n\nhello();\n`
-    case 'html':
-      return `<!DOCTYPE html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <title>Live Preview</title>\n  <style>\n    body { font-family: sans-serif; background: #1e1e1e; color: #cccccc; padding: 24px; }\n    h1 { color: #4fc1ff; font-size: 20px; }\n  </style>\n</head>\n<body>\n  <h1>Live HTML Preview</h1>\n  <p>Edit this file to see live preview updates instantly.</p>\n</body>\n</html>\n`
-    case 'css':
-      return `/* Stylesheet */\nbody {\n  margin: 0;\n  padding: 0;\n  background-color: #1e1e1e;\n  color: #cccccc;\n  font-family: system-ui, sans-serif;\n}\n`
-    case 'json':
-      return `{\n  "name": "offcode-project",\n  "version": "1.0.0",\n  "description": "Collaborative offline code workspace",\n  "features": ["crdt", "offline", "per-user-undo"]\n}\n`
-    case 'md':
-      return `# Project Notes\n\nWelcome to OffCode.\n- Real-time CRDT sync\n- Offline merge\n- Per-user undo (Ctrl+Z)\n`
-    case 'cpp':
-      return `#include <iostream>\n\nint main() {\n    std::cout << "Hello from C++ in OffCode!" << std::endl;\n    return 0;\n}\n`
-    case 'c':
-      return `#include <stdio.h>\n\nint main() {\n    printf("Hello from C in OffCode!\\n");\n    return 0;\n}\n`
-    case 'java':
-      return `public class Main {\n    public static void main(String[] args) {\n        System.out.println("Hello from Java in OffCode!");\n    }\n}\n`
-    default:
-      return `// ${filename}\n`
-  }
+export function getInitialTemplate(_filename) {
+  // Returns clean, empty file content without welcoming or boilerplate code
+  return ''
 }
 
 export function getInitialRoomFromUrl() {

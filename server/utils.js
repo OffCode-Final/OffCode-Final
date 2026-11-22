@@ -131,6 +131,17 @@ const closeConn = (doc, conn) => {
     );
     if (doc.conns.size === 0) {
       if (process.env.NODE_ENV !== 'test') {
+        try {
+          doc.getMap('files').clear();
+          doc.getMap('drafts').clear();
+          doc.getMap('draftBases').clear();
+          doc.getMap('proposals').clear();
+          doc.getMap('meta').clear();
+          const chatArr = doc.getArray('chat');
+          if (chatArr && chatArr.length > 0) {
+            chatArr.delete(0, chatArr.length);
+          }
+        } catch (_) {}
         if (persistence !== null && typeof persistence.deleteDoc === 'function') {
           persistence.deleteDoc(doc.name);
         }
@@ -140,7 +151,7 @@ const closeConn = (doc, conn) => {
         try {
           doc.destroy();
         } catch (_) {}
-        console.log(`[Persistence] Room "${doc.name}" completely shut down and files deleted (0 clients remaining)`);
+        console.log(`[Persistence] Room "${doc.name}" completely shut down and all files/chat deleted (0 clients remaining)`);
       } else if (persistence !== null) {
         persistence.writeState(doc.name, doc).then(() => {
           doc.destroy();

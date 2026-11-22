@@ -409,10 +409,7 @@ export function createWorkspace({
       if (host === currentUserId || !host) {
         const defaultFile = new Y.Text();
         files.set('main.js', defaultFile);
-        defaultFile.insert(
-          0,
-          `// Welcome to OffCode!\n// Collaborative editing that works offline.\n\nfunction helloWorld() {\n  console.log("Hello from ${userName || 'User'}!");\n}\n\nhelloWorld();\n`
-        );
+        defaultFile.insert(0, '');
         trackFile('main.js', defaultFile);
       }
     }
@@ -468,7 +465,11 @@ export function createWorkspace({
     if (!cleanName) return null;
 
     if (files.has(cleanName)) {
-      return getText(cleanName);
+      const existing = getText(cleanName);
+      if (existing && existing.length === 0 && initialContent) {
+        existing.insert(0, initialContent);
+      }
+      return existing;
     }
 
     const ytext = new Y.Text();

@@ -53,7 +53,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
     setUserColor(getRandomColor().hex)
   }, [])
 
-  // Debounced room existence check
+  // Real-time polling & debounced room existence check (polls every 2.5s)
   useEffect(() => {
     const clean = (roomId || '').trim().toLowerCase()
     if (!clean) {
@@ -62,9 +62,12 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
     }
 
     let isCurrent = true
-    const timer = setTimeout(async () => {
+
+    const doCheck = async (showSpinner = false) => {
       try {
-        setRoomStatus((prev) => (prev ? { ...prev, checking: true } : { checking: true, exists: null }))
+        if (showSpinner) {
+          setRoomStatus((prev) => (prev ? { ...prev, checking: true } : { checking: true, exists: null }))
+        }
 
         let httpBase = ''
         if (typeof window !== 'undefined' && window.location) {
@@ -90,11 +93,15 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
       } catch (_) {
         if (isCurrent) setRoomStatus(null)
       }
-    }, 250)
+    }
+
+    const timer = setTimeout(() => doCheck(true), 250)
+    const pollInterval = setInterval(() => doCheck(false), 2500)
 
     return () => {
       isCurrent = false
       clearTimeout(timer)
+      clearInterval(pollInterval)
     }
   }, [roomId])
 
