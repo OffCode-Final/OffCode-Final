@@ -30,6 +30,7 @@ import {
 import { getFileExtension } from '../utils/helpers'
 import UpdateLogsModal from './UpdateLogsModal'
 import { UPDATE_LOGS } from '../data/updateLogs'
+import AnimatedLogo from './AnimatedLogo'
 
 export default function TopBar({
   roomId,
@@ -142,13 +143,7 @@ export default function TopBar({
           <Folder size={15} />
         </button>
         <div className="app-brand">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="brand-logo-icon">
-            <path d="M8 6L3 12L8 18" stroke="var(--accent-primary)" />
-            <path d="M16 6L21 12L16 18" stroke="var(--accent-primary)" />
-            <path d="M14 9A4 4 0 0 0 9.5 13" stroke="var(--text-muted)" />
-            <path d="M10 15A4 4 0 0 0 14.5 11" stroke="var(--text-muted)" />
-          </svg>
-          <span className="brand-name">OffCode</span>
+          <AnimatedLogo size={76} animated={false} className="topbar-logo" />
           <span className="brand-separator">/</span>
           <button
             type="button"

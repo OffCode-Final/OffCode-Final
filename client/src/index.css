@@ -37,6 +37,7 @@
   /* Text & Typography */
   --text-main: #e6e8eb;
   --text-bright: #ffffff;
+  --text: #ffffff;
   --text-muted: #8b93a1;
   --text-faint: #5c6572;
 
@@ -114,6 +115,7 @@
   /* Text & Typography */
   --text-main: #14181f;
   --text-bright: #000000;
+  --text: #000000;
   --text-muted: #5b6472;
   --text-faint: #8a93a1;
 
@@ -2912,6 +2914,19 @@ button:disabled {
   font-size: 12px;
   color: var(--text-muted);
 }
+
+.topbar-logo {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+@media (max-width: 480px) {
+  .topbar-logo {
+    width: 64px !important;
+  }
+}
+
 
 
 

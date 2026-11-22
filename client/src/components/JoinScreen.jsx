@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Sun, Moon, Users, WifiOff, GitPullRequest, Copy, Check, Lock } from 'lucide-react'
 import { getRandomColor, getInitialRoomFromUrl, copyToClipboard } from '../utils/helpers'
+import AnimatedLogo from './AnimatedLogo'
 
 export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const [tab, setTab] = useState('join') // 'create' | 'join'
@@ -234,13 +235,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
         {/* Brand Header */}
         <div className="join-header">
           <div className="join-brand-row">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="brand-logo-icon">
-              <path d="M8 6L3 12L8 18" stroke="var(--accent-primary)" />
-              <path d="M16 6L21 12L16 18" stroke="var(--accent-primary)" />
-              <path d="M14 9A4 4 0 0 0 9.5 13" stroke="var(--text-muted)" />
-              <path d="M10 15A4 4 0 0 0 14.5 11" stroke="var(--text-muted)" />
-            </svg>
-            <h2>OffCode</h2>
+            <AnimatedLogo size={210} animated={true} />
           </div>
           <p className="join-subtitle">
             Collaborative code editor that works offline.
