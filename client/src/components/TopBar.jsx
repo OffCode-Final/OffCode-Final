@@ -24,9 +24,11 @@ import {
   Folder,
   Users,
   Key,
-  Trash2
+  Trash2,
+  History
 } from 'lucide-react'
 import { getFileExtension } from '../utils/helpers'
+import UpdateLogsModal from './UpdateLogsModal'
 
 export default function TopBar({
   roomId,
@@ -71,6 +73,7 @@ export default function TopBar({
 }) {
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
+  const [isUpdateLogsOpen, setIsUpdateLogsOpen] = useState(false)
   const moreRef = useRef(null)
   const moreButtonRef = useRef(null)
 
@@ -281,7 +284,7 @@ export default function TopBar({
 
         <div className="topbar-divider" />
 
-        {/* Group 3: Chat, Theme, More */}
+        {/* Group 3: Chat, Updates, Theme, More */}
         <div className="topbar-group">
           <button
             type="button"
@@ -294,6 +297,17 @@ export default function TopBar({
             {unreadChatCount > 0 && !isChatOpen && (
               <span className="badge-unread-count">{unreadChatCount}</span>
             )}
+          </button>
+
+          <button
+            type="button"
+            className={`btn-flat btn-secondary btn-update-logs ${isUpdateLogsOpen ? 'active' : ''}`}
+            onClick={() => setIsUpdateLogsOpen(!isUpdateLogsOpen)}
+            title="View update logs (v1.0)"
+          >
+            <History size={13} />
+            <span>Updates</span>
+            <span className="badge-update-tag">v1.0</span>
           </button>
 
           <button
@@ -408,6 +422,19 @@ export default function TopBar({
                   role="menuitem"
                   className="dropdown-item"
                   onClick={() => {
+                    setIsUpdateLogsOpen(true)
+                    setIsMoreOpen(false)
+                  }}
+                >
+                  <History size={14} />
+                  <span>Update logs (v1.0)</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item"
+                  onClick={() => {
                     onDownloadAllZip()
                     setIsMoreOpen(false)
                   }}
@@ -483,6 +510,13 @@ export default function TopBar({
           </div>
         </div>
       </div>
+
+      {isUpdateLogsOpen && (
+        <UpdateLogsModal
+          isOpen={isUpdateLogsOpen}
+          onClose={() => setIsUpdateLogsOpen(false)}
+        />
+      )}
     </header>
   )
 }
