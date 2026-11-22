@@ -78,10 +78,54 @@ export function createSyncServer({
 
     // Health endpoint
     if (pathname === '/health') {
+      let totalClients = 0;
+      for (const doc of docs.values()) {
+        totalClients += doc.conns ? doc.conns.size : 0;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
-        uptime: process.uptime()
+        service: 'offcode-sync-server',
+        uptime: process.uptime(),
+        rooms: docs.size,
+        roomsCount: docs.size,
+        clientsCount: totalClients,
+        memory: process.memoryUsage()
+      }));
+      return;
+    }
+
+    // Room existence check endpoint: /api/room-check/:roomId
+    if (pathname.startsWith('/api/room-check/')) {
+      const rawRoom = pathname.slice('/api/room-check/'.length);
+      const roomName = decodeURIComponent(rawRoom).trim().toLowerCase();
+      if (!roomName) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Room name required', exists: false }));
+        return;
+      }
+
+      const inMemoryDoc = docs.get(roomName);
+      const hasActiveConnections = inMemoryDoc && inMemoryDoc.conns ? inMemoryDoc.conns.size > 0 : false;
+      const activeUsers = inMemoryDoc && inMemoryDoc.awareness ? inMemoryDoc.awareness.getStates().size : 0;
+
+      let hasDiskData = false;
+      try {
+        if (persistence && typeof persistence.getFilePath === 'function') {
+          const filePath = persistence.getFilePath(roomName);
+          hasDiskData = fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
+        }
+      } catch (_) {}
+
+      const exists = Boolean(hasActiveConnections || hasDiskData || (inMemoryDoc && (hasActiveConnections || activeUsers > 0)));
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        room: roomName,
+        exists,
+        activeUsers,
+        hasActiveConnections,
+        hasDiskData
       }));
       return;
     }

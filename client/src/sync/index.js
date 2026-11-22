@@ -5,6 +5,44 @@ import DiffMatchPatch from 'diff-match-patch';
 
 const dmp = new DiffMatchPatch();
 
+// Curated distinct color palette for collaborator cursors and awareness presence
+export const PALETTE_COLORS = [
+  '#0284c7', // Sky Blue
+  '#059669', // Emerald
+  '#7c3aed', // Purple
+  '#e11d48', // Rose
+  '#d97706', // Amber
+  '#4f46e5', // Indigo
+  '#0d9488', // Teal
+  '#c026d3', // Fuchsia
+  '#ea580c', // Orange
+  '#0891b2', // Cyan
+  '#16a34a', // Green
+  '#9333ea', // Violet
+];
+
+export function pickNonConflictingColor(usedColors = new Set(), preferred = null) {
+  if (preferred && !usedColors.has(String(preferred).trim().toLowerCase())) {
+    return preferred;
+  }
+  const available = PALETTE_COLORS.filter(
+    (c) => !usedColors.has(c.toLowerCase())
+  );
+  if (available.length > 0) {
+    const idx = Math.floor(Math.random() * available.length);
+    return available[idx];
+  }
+  // If palette is fully occupied, generate a distinct random HSL
+  for (let i = 0; i < 30; i++) {
+    const hue = Math.floor(Math.random() * 360);
+    const candidate = `hsl(${hue}, 75%, 45%)`;
+    if (!usedColors.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+  return `hsl(${Math.floor(Math.random() * 360)}, 70%, 50%)`;
+}
+
 /**
  * Derives the WebSocket sync server URL automatically:
  * 1. VITE_SYNC_SERVER_URL environment variable takes highest priority.
@@ -193,12 +231,50 @@ export function createWorkspace({
   const provider = new WebsocketProvider(effectiveServerUrl, cleanRoomId, ydoc, wsOptions);
   const awareness = provider.awareness;
 
+  // Initial random non-conflicting color
+  let activeColor = userColor || PALETTE_COLORS[Math.floor(Math.random() * PALETTE_COLORS.length)];
+
   // Set local awareness state
   awareness.setLocalStateField('user', {
     name: userName || 'Anonymous',
-    color: userColor || '#6366f1',
+    color: activeColor,
     id: currentUserId
   });
+
+  // Ensure cursor color is never identical to another active user in the same room
+  const ensureUniqueColor = () => {
+    const states = awareness.getStates();
+    const myClientId = ydoc.clientID;
+    const remoteColors = new Set();
+    let collision = false;
+
+    states.forEach((state, clientId) => {
+      if (clientId !== myClientId && state?.user?.color) {
+        const peerColor = String(state.user.color).trim().toLowerCase();
+        remoteColors.add(peerColor);
+        if (peerColor === String(activeColor).trim().toLowerCase()) {
+          // If collision occurs, peer with lower client ID keeps color; higher client ID yields
+          if (myClientId >= clientId) {
+            collision = true;
+          }
+        }
+      }
+    });
+
+    if (collision) {
+      const nextColor = pickNonConflictingColor(remoteColors);
+      if (nextColor !== activeColor) {
+        activeColor = nextColor;
+        const curUser = awareness.getLocalState()?.user || {};
+        awareness.setLocalStateField('user', {
+          ...curUser,
+          color: nextColor
+        });
+      }
+    }
+  };
+
+  awareness.on('change', ensureUniqueColor);
 
   // Track provider connection status
   provider.on('status', (event) => {
