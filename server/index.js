@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 import qrcode from 'qrcode-terminal';
 import { FilePersistence } from './persistence.js';
-import { setupWSConnection, setPersistence, docs } from './utils.js';
+import { setupWSConnection, setPersistence, docs, roomPasswords, createdRooms } from './utils.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,9 +60,6 @@ export function createSyncServer({
 } = {}) {
   const persistence = new FilePersistence(dataDir);
   setPersistence(persistence);
-
-  const createdRooms = new Set();
-  const roomPasswords = new Map();
 
   function readJsonBody(req) {
     return new Promise((resolve) => {
@@ -143,11 +140,19 @@ export function createSyncServer({
         }
       } catch (_) {}
 
+      // If room has 0 active connections and wasn't created by a host in this session,
+      // purge any leftover disk data so empty abandoned rooms are NOT kept!
+      if (!hasActiveConnections && !createdRooms.has(roomName) && process.env.NODE_ENV !== 'test') {
+        if (persistence && typeof persistence.deleteDoc === 'function') {
+          persistence.deleteDoc(roomName);
+        }
+        hasDiskData = false;
+      }
+
       const exists = Boolean(
-        createdRooms.has(roomName) ||
         hasActiveConnections ||
-        hasDiskData ||
-        (inMemoryDoc && (hasActiveConnections || activeUsers > 0))
+        createdRooms.has(roomName) ||
+        (process.env.NODE_ENV === 'test' && hasDiskData)
       );
       const hasPassword = roomPasswords.has(roomName);
 

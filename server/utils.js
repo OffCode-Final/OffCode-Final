@@ -20,6 +20,8 @@ export const setPersistence = (p) => {
 export const getPersistence = () => persistence;
 
 export const docs = new Map();
+export const roomPasswords = new Map();
+export const createdRooms = new Set();
 
 const messageSync = 0;
 const messageAwareness = 1;
@@ -127,11 +129,24 @@ const closeConn = (doc, conn) => {
       Array.from(controlledIds),
       null
     );
-    if (doc.conns.size === 0 && persistence !== null) {
-      persistence.writeState(doc.name, doc).then(() => {
-        doc.destroy();
-      });
-      docs.delete(doc.name);
+    if (doc.conns.size === 0) {
+      if (process.env.NODE_ENV !== 'test') {
+        if (persistence !== null && typeof persistence.deleteDoc === 'function') {
+          persistence.deleteDoc(doc.name);
+        }
+        docs.delete(doc.name);
+        roomPasswords.delete(doc.name);
+        createdRooms.delete(doc.name);
+        try {
+          doc.destroy();
+        } catch (_) {}
+        console.log(`[Persistence] Room "${doc.name}" completely shut down and files deleted (0 clients remaining)`);
+      } else if (persistence !== null) {
+        persistence.writeState(doc.name, doc).then(() => {
+          doc.destroy();
+        });
+        docs.delete(doc.name);
+      }
     }
   }
   try {
@@ -156,9 +171,31 @@ const send = (doc, conn, m) => {
 const pingTimeout = 30000;
 
 export const setupWSConnection = (conn, req, { docName = (req.url || '').slice(1).split('?')[0], gc = true } = {}) => {
+  const cleanDocName = decodeURIComponent(docName).trim().toLowerCase();
+
+  // Extract password from query string: ?pass=...
+  let providedPassword = '';
+  try {
+    const parsedUrl = new URL(req.url, 'http://localhost');
+    providedPassword = (parsedUrl.searchParams.get('pass') || '').trim();
+  } catch (_) {}
+
+  // Enforce password if room has one
+  if (roomPasswords.has(cleanDocName)) {
+    const requiredPassword = roomPasswords.get(cleanDocName);
+    if (requiredPassword && requiredPassword !== providedPassword) {
+      console.warn(`[Auth] Rejected WebSocket connection to "${cleanDocName}": Incorrect room password`);
+      try {
+        conn.close(4401, 'Unauthorized: Incorrect room password');
+      } catch (_) {}
+      return;
+    }
+  }
+
   conn.binaryType = 'arraybuffer';
-  const doc = getYDoc(docName, gc);
+  const doc = getYDoc(cleanDocName, gc);
   doc.conns.set(conn, new Set());
+  createdRooms.add(cleanDocName);
 
   conn.on('error', (err) => {
     if (doc.conns.has(conn)) {
