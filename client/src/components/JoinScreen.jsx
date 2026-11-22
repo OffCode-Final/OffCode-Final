@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
-import { Sun, Moon, Users, WifiOff, GitPullRequest, Copy, Check } from 'lucide-react'
+import { Sun, Moon, Users, WifiOff, GitPullRequest, Copy, Check, Lock } from 'lucide-react'
 import { getRandomColor, getInitialRoomFromUrl, copyToClipboard } from '../utils/helpers'
 
 export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const [tab, setTab] = useState('join') // 'create' | 'join'
   const [userName, setUserName] = useState('')
   const [roomId, setRoomId] = useState('')
+  const [roomPassword, setRoomPassword] = useState('')
   const [userColor, setUserColor] = useState(() => getRandomColor().hex)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [roomStatus, setRoomStatus] = useState(null) // { checking: boolean, exists: boolean, activeUsers: number }
+  const [roomStatus, setRoomStatus] = useState(null) // { checking: boolean, exists: boolean, hasPassword: boolean, activeUsers: number }
 
   const generateRandomRoom = () => {
     return `room-${Math.floor(1000 + Math.random() * 9000)}`
@@ -79,6 +80,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
             setRoomStatus({
               checking: false,
               exists: Boolean(data.exists),
+              hasPassword: Boolean(data.hasPassword),
               activeUsers: data.activeUsers || 0
             })
           }
@@ -99,6 +101,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const handleTabChange = (newTab) => {
     setTab(newTab)
     setError('')
+    setRoomPassword('')
     if (newTab === 'create' && !roomId) {
       setRoomId(generateRandomRoom())
     }
@@ -115,7 +118,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
     }
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     const cleanName = userName.trim()
     const cleanRoom = roomId.trim()
@@ -129,13 +132,74 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
       return
     }
 
+    let httpBase = ''
+    if (typeof window !== 'undefined' && window.location) {
+      if (window.location.port === '5173') {
+        httpBase = `http://${window.location.hostname || 'localhost'}:1234`
+      }
+    }
+
     setIsSubmitting(true)
-    localStorage.setItem('offcode_user_name', cleanName)
-    onJoin({
-      userName: cleanName,
-      roomId: cleanRoom,
-      userColor
-    })
+    setError('')
+
+    try {
+      if (tab === 'join') {
+        // Strict check: Room must exist before joining
+        const checkRes = await fetch(`${httpBase}/api/room-check/${encodeURIComponent(cleanRoom)}`)
+        const checkData = checkRes.ok ? await checkRes.json() : null
+
+        if (!checkData || !checkData.exists) {
+          setError('Room has not been created yet. Please switch to Create Room to create it.')
+          setIsSubmitting(false)
+          return
+        }
+
+        // If room is password protected, verify password
+        if (checkData.hasPassword) {
+          if (!roomPassword.trim()) {
+            setError('This room is password-protected. Please enter the room password.')
+            setIsSubmitting(false)
+            return
+          }
+
+          const verifyRes = await fetch(`${httpBase}/api/rooms/verify-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              room: cleanRoom,
+              password: roomPassword.trim()
+            })
+          })
+          const verifyData = verifyRes.ok ? await verifyRes.json() : null
+          if (!verifyData || !verifyData.valid) {
+            setError('Incorrect room password. Please try again.')
+            setIsSubmitting(false)
+            return
+          }
+        }
+      } else if (tab === 'create') {
+        // Register room on server with optional password
+        await fetch(`${httpBase}/api/rooms/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room: cleanRoom,
+            password: roomPassword.trim()
+          })
+        })
+      }
+
+      localStorage.setItem('offcode_user_name', cleanName)
+      onJoin({
+        userName: cleanName,
+        roomId: cleanRoom,
+        userColor
+      })
+    } catch (err) {
+      console.error('Error entering room:', err)
+      setError('Connection check failed. Please try again.')
+      setIsSubmitting(false)
+    }
   }
 
   const cleanRoomForShare = (roomId || '').trim()
@@ -271,17 +335,17 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
                 {tab === 'join' ? (
                   roomStatus.exists ? (
                     <span>
-                      ✓ <strong>Room found:</strong> Active with {roomStatus.activeUsers} collaborator{roomStatus.activeUsers === 1 ? '' : 's'} online.
+                      ✓ <strong>Room found:</strong> Active with {roomStatus.activeUsers} collaborator{roomStatus.activeUsers === 1 ? '' : 's'} online.{roomStatus.hasPassword ? ' (Password required)' : ''}
                     </span>
                   ) : (
                     <span>
-                      ℹ️ <strong>Room is not created yet</strong> — you can still join and it will be created automatically.
+                      ⚠️ <strong>Room has not been created yet.</strong> Please create the room first.
                     </span>
                   )
                 ) : (
                   roomStatus.exists ? (
                     <span>
-                      ⚠️ <strong>Room is already created</strong> — you can still enter to collaborate or generate a new code.
+                      ⚠️ <strong>Room is already created</strong> — you can join it or choose a new code.
                     </span>
                   ) : (
                     <span>
@@ -292,6 +356,51 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
               </div>
             )}
           </div>
+
+          {/* Room Password Field for Create Room (Optional) */}
+          {tab === 'create' && (
+            <div className="form-group">
+              <label htmlFor="create-room-password" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Lock size={13} style={{ color: 'var(--accent-primary)' }} />
+                Room Password (Optional)
+              </label>
+              <input
+                id="create-room-password"
+                type="password"
+                className="text-input"
+                value={roomPassword}
+                onChange={(e) => setRoomPassword(e.target.value)}
+                placeholder="Optional password to protect this room"
+                maxLength={32}
+              />
+              <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
+                If set, collaborators must enter this password to join.
+              </span>
+            </div>
+          )}
+
+          {/* Room Password Field for Join Room (Required when room is protected) */}
+          {tab === 'join' && roomStatus?.hasPassword && (
+            <div className="form-group">
+              <label htmlFor="join-room-password" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Lock size={13} style={{ color: 'var(--color-warning, #f59e0b)' }} />
+                Room Password (Required)
+              </label>
+              <input
+                id="join-room-password"
+                type="password"
+                className="text-input"
+                value={roomPassword}
+                onChange={(e) => {
+                  setRoomPassword(e.target.value)
+                  setError('')
+                }}
+                placeholder="Enter password set by room host"
+                maxLength={32}
+                autoFocus
+              />
+            </div>
+          )}
 
           {/* Share Link Preview with Copy Button */}
           {shareUrl && (
@@ -321,9 +430,20 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
             </div>
           )}
 
-          <button type="submit" className="btn-flat btn-primary btn-join" disabled={isSubmitting}>
-            {isSubmitting ? 'Connecting...' : (tab === 'create' ? 'Create & Enter Room' : 'Join Room')}
-          </button>
+          {tab === 'join' && roomStatus && !roomStatus.exists ? (
+            <button
+              type="button"
+              className="btn-flat btn-primary btn-join"
+              onClick={() => handleTabChange('create')}
+              style={{ backgroundColor: 'var(--color-warning, #d97706)', borderColor: 'var(--color-warning, #d97706)' }}
+            >
+              Room Not Created — Click to Create Room
+            </button>
+          ) : (
+            <button type="submit" className="btn-flat btn-primary btn-join" disabled={isSubmitting}>
+              {isSubmitting ? 'Connecting...' : (tab === 'create' ? 'Create & Enter Room' : 'Join Room')}
+            </button>
+          )}
         </form>
 
         {/* Footer line with connection hint and theme toggle */}

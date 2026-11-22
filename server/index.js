@@ -61,10 +61,34 @@ export function createSyncServer({
   const persistence = new FilePersistence(dataDir);
   setPersistence(persistence);
 
-  const server = http.createServer((req, res) => {
+  const createdRooms = new Set();
+  const roomPasswords = new Map();
+
+  function readJsonBody(req) {
+    return new Promise((resolve) => {
+      let body = '';
+      req.on('data', (chunk) => {
+        body += chunk;
+        if (body.length > 1e6) {
+          req.destroy();
+          resolve(null);
+        }
+      });
+      req.on('end', () => {
+        try {
+          resolve(body ? JSON.parse(body) : {});
+        } catch (_) {
+          resolve(null);
+        }
+      });
+      req.on('error', () => resolve(null));
+    });
+  }
+
+  const server = http.createServer(async (req, res) => {
     // Global CORS headers for cross-origin access
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, HEAD');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS, HEAD');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
     if (req.method === 'OPTIONS') {
@@ -111,21 +135,117 @@ export function createSyncServer({
 
       let hasDiskData = false;
       try {
-        if (persistence && typeof persistence.getFilePath === 'function') {
+        if (persistence && typeof persistence.hasDoc === 'function') {
+          hasDiskData = persistence.hasDoc(roomName);
+        } else if (persistence && typeof persistence.getFilePath === 'function') {
           const filePath = persistence.getFilePath(roomName);
           hasDiskData = fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
         }
       } catch (_) {}
 
-      const exists = Boolean(hasActiveConnections || hasDiskData || (inMemoryDoc && (hasActiveConnections || activeUsers > 0)));
+      const exists = Boolean(
+        createdRooms.has(roomName) ||
+        hasActiveConnections ||
+        hasDiskData ||
+        (inMemoryDoc && (hasActiveConnections || activeUsers > 0))
+      );
+      const hasPassword = roomPasswords.has(roomName);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         room: roomName,
         exists,
+        hasPassword,
         activeUsers,
         hasActiveConnections,
         hasDiskData
+      }));
+      return;
+    }
+
+    // Explicit room creation with optional password: POST /api/rooms/create
+    if (req.method === 'POST' && pathname === '/api/rooms/create') {
+      const data = await readJsonBody(req);
+      if (!data || !data.room || typeof data.room !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Room name required' }));
+        return;
+      }
+      const roomName = data.room.trim().toLowerCase();
+      createdRooms.add(roomName);
+      if (data.password && typeof data.password === 'string' && data.password.trim()) {
+        roomPasswords.set(roomName, data.password.trim());
+      } else {
+        roomPasswords.delete(roomName);
+      }
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: true,
+        room: roomName,
+        hasPassword: roomPasswords.has(roomName)
+      }));
+      return;
+    }
+
+    // Verify room password: POST /api/rooms/verify-password
+    if (req.method === 'POST' && pathname === '/api/rooms/verify-password') {
+      const data = await readJsonBody(req);
+      if (!data || !data.room || typeof data.room !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Room name required', valid: false }));
+        return;
+      }
+      const roomName = data.room.trim().toLowerCase();
+      if (!roomPasswords.has(roomName)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ valid: true }));
+        return;
+      }
+
+      const expected = roomPasswords.get(roomName);
+      const provided = (data.password || '').trim();
+      if (expected === provided) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ valid: true }));
+      } else {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ valid: false, error: 'Incorrect room password' }));
+      }
+      return;
+    }
+
+    // Shutdown room completely and delete files: DELETE /api/rooms/:roomId or POST /api/rooms/shutdown/:roomId
+    if (
+      (req.method === 'DELETE' && pathname.startsWith('/api/rooms/')) ||
+      (req.method === 'POST' && pathname.startsWith('/api/rooms/shutdown/'))
+    ) {
+      const prefix = pathname.startsWith('/api/rooms/shutdown/') ? '/api/rooms/shutdown/' : '/api/rooms/';
+      const rawRoom = pathname.slice(prefix.length);
+      const roomName = decodeURIComponent(rawRoom).trim().toLowerCase();
+      if (!roomName) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Room name required' }));
+        return;
+      }
+
+      const inMemoryDoc = docs.get(roomName);
+      if (inMemoryDoc) {
+        try {
+          inMemoryDoc.destroy();
+        } catch (_) {}
+        docs.delete(roomName);
+      }
+      if (persistence && typeof persistence.deleteDoc === 'function') {
+        persistence.deleteDoc(roomName);
+      }
+      createdRooms.delete(roomName);
+      roomPasswords.delete(roomName);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: true,
+        message: `Room "${roomName}" shut down and all room files deleted.`
       }));
       return;
     }

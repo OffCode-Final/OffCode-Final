@@ -92,6 +92,7 @@ export default function App() {
   const [aiError, setAiError] = useState(null)
   const [aiResult, setAiResult] = useState(null)
   const [aiTarget, setAiTarget] = useState(null)
+  const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false)
   const aiAbortControllerRef = useRef(null)
 
   // OffCode Dual Theme State (dark/light)
@@ -210,6 +211,43 @@ export default function App() {
     setOpenFiles([])
     setUsers([])
     updateUrlRoom('')
+  }
+
+  // Triggered when user clicks Leave Room in TopBar: show warning first
+  const handleRequestLeaveRoom = () => {
+    setIsLeaveModalOpen(true)
+  }
+
+  // Confirmed leave: shuts down room completely if empty & deletes all room files
+  const executeLeaveRoom = async () => {
+    setIsLeaveModalOpen(false)
+    const currentRoom = session?.roomId
+    const isLastUser = users.length <= 1
+
+    if (currentRoom && isLastUser) {
+      try {
+        let httpBase = ''
+        if (typeof window !== 'undefined' && window.location) {
+          if (window.location.port === '5173') {
+            httpBase = `http://${window.location.hostname || 'localhost'}:1234`
+          }
+        }
+        await fetch(`${httpBase}/api/rooms/shutdown/${encodeURIComponent(currentRoom)}`, {
+          method: 'POST'
+        })
+      } catch (err) {
+        console.warn('Error requesting room shutdown:', err)
+      }
+    }
+
+    // Wipe IndexedDB cached files for this room
+    if (typeof window !== 'undefined' && window.indexedDB && currentRoom) {
+      try {
+        window.indexedDB.deleteDatabase(`offcode-${currentRoom.trim().toLowerCase()}`)
+      } catch (_) {}
+    }
+
+    handleLeaveRoom()
   }
 
   // Auto-track opened tabs
@@ -1215,7 +1253,7 @@ export default function App() {
         redoDepth={activeDepths.redo}
         showDebug={showDebug}
         onToggleDebug={() => setShowDebug(!showDebug)}
-        onLeaveRoom={handleLeaveRoom}
+        onLeaveRoom={handleRequestLeaveRoom}
         onSaveCurrentFile={handleSaveCurrentFile}
         onDownloadAllZip={handleDownloadAllZip}
         activeFile={activeFile}
@@ -1465,6 +1503,87 @@ export default function App() {
         pendingProposalsCount={pendingCount}
         pointersReceivedCount={pointersReceivedCount}
       />
+
+      {/* Leave Room & Shutdown Warning Modal */}
+      {isLeaveModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setIsLeaveModalOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: '16px'
+          }}
+        >
+          <div
+            className="modal-dialog"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '440px',
+              width: '100%',
+              backgroundColor: 'var(--bg-editor, #1e1e1e)',
+              border: '1px solid var(--border-color, #333)',
+              borderRadius: '8px',
+              padding: '24px',
+              boxShadow: '0 12px 32px rgba(0, 0, 0, 0.5)'
+            }}
+          >
+            <h3
+              style={{
+                margin: '0 0 12px 0',
+                fontSize: '16px',
+                color: 'var(--color-danger, #ef4444)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              ⚠️ Leave Room & Shutdown Warning
+            </h3>
+            <p style={{ fontSize: '13.5px', lineHeight: '1.5', margin: '0 0 18px 0', color: 'var(--text-main, #ccc)' }}>
+              {users.length <= 1 ? (
+                <>
+                  You are currently the <strong>only person</strong> in this room.
+                  <br /><br />
+                  Leaving will <strong>completely shut down this room</strong> and all files in this room will be <strong>permanently deleted</strong>.
+                </>
+              ) : (
+                <>
+                  There are currently <strong>{users.length} collaborators</strong> in this room.
+                  <br /><br />
+                  If all collaborators leave, this room will be shut down and all its files deleted from the server.
+                </>
+              )}
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button
+                type="button"
+                className="btn-flat btn-secondary btn-sm"
+                onClick={() => setIsLeaveModalOpen(false)}
+              >
+                Stay in Room
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-sm"
+                style={{
+                  backgroundColor: 'var(--color-danger, #ef4444)',
+                  borderColor: 'var(--color-danger, #ef4444)',
+                  color: '#ffffff'
+                }}
+                onClick={executeLeaveRoom}
+              >
+                Confirm & Leave Room
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

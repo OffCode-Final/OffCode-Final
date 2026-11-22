@@ -108,4 +108,31 @@ export class FilePersistence {
     }
     console.log('[Persistence] All room documents safely flushed to disk.');
   }
+
+  hasDoc(docName) {
+    const filePath = this.getFilePath(docName);
+    try {
+      return fs.existsSync(filePath) && fs.statSync(filePath).size > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  deleteDoc(docName) {
+    const filePath = this.getFilePath(docName);
+    if (this.pendingSaves.has(docName)) {
+      clearTimeout(this.pendingSaves.get(docName).timeout);
+      this.pendingSaves.delete(docName);
+    }
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`[Persistence] Deleted room data from disk: "${docName}"`);
+        return true;
+      }
+    } catch (err) {
+      console.error(`[Persistence] Error deleting room "${docName}":`, err);
+    }
+    return false;
+  }
 }
