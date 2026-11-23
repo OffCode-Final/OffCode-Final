@@ -48,11 +48,17 @@ export default function PeoplePanel({
                 }
               >
                 <div className="person-row-top">
-                  {/* 8px solid colored dot representing user color */}
-                  <span
-                    className="person-dot"
-                    style={{ backgroundColor: u.color }}
-                  />
+                  {/* 28px initial-letter avatar with presence ring */}
+                  <div className="person-avatar-wrap">
+                    <div
+                      className="person-avatar"
+                      style={{ backgroundColor: u.color || 'var(--accent-primary)' }}
+                      aria-hidden="true"
+                    >
+                      {(u.name || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <span className="person-presence-ring" />
+                  </div>
 
                   <div className="person-info">
                     <div className="person-name-line">

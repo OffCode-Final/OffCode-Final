@@ -226,6 +226,7 @@ export default function TopBar({
             onClick={onUndo}
             disabled={!canUndo || isStopped}
             title={isStopped ? 'Editing stopped by host' : (canUndo ? `Undo  Ctrl+Z (${undoDepth})` : 'Undo  Ctrl+Z')}
+            aria-label="Undo"
           >
             <Undo2 size={15} />
           </button>
@@ -235,6 +236,7 @@ export default function TopBar({
             onClick={onRedo}
             disabled={!canRedo || isStopped}
             title={isStopped ? 'Editing stopped by host' : (canRedo ? `Redo  Ctrl+Y (${redoDepth})` : 'Redo  Ctrl+Y')}
+            aria-label="Redo"
           >
             <Redo2 size={15} />
           </button>

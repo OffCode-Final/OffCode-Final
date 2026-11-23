@@ -1,8 +1,91 @@
 import { useState, useEffect, useRef } from 'react'
-import { Sun, Moon, Users, WifiOff, GitPullRequest, Copy, Check, Lock } from 'lucide-react'
-import { getRandomColor, getInitialRoomFromUrl, copyToClipboard } from '../utils/helpers'
+import { Sun, Moon, Lock, Copy, Check } from 'lucide-react'
+import {
+  siTypescript,
+  siJavascript,
+  siPython,
+  siRust,
+  siGo,
+  siCplusplus,
+  siC,
+  siOpenjdk,
+  siPhp,
+  siRuby
+} from 'simple-icons'
+import { getRandomColor, getInitialRoomFromUrl, copyToClipboard, USER_COLORS } from '../utils/helpers'
 import AnimatedLogo from './AnimatedLogo'
-import LogoBackground from './LogoBackground'
+
+const SUPPORTED_LANG_MARKS = [
+  { name: 'TypeScript', short: 'TS', icon: siTypescript, hex: '3178C6' },
+  { name: 'JavaScript', short: 'JS', icon: siJavascript, hex: 'F7DF1E' },
+  { name: 'Python', short: 'Python', icon: siPython, hex: '3776AB' },
+  { name: 'Rust', short: 'Rust', icon: siRust, hex: 'DEA584' },
+  { name: 'Go', short: 'Go', icon: siGo, hex: '00ADD8' },
+  { name: 'C++', short: 'C++', icon: siCplusplus, hex: '00599C' },
+  { name: 'C', short: 'C', icon: siC, hex: 'A8B9CC' },
+  { name: 'Java', short: 'Java', icon: siOpenjdk, hex: 'ED8B00' },
+  { name: 'PHP', short: 'PHP', icon: siPhp, hex: '777BB4' },
+  { name: 'Ruby', short: 'Ruby', icon: siRuby, hex: 'CC342D' }
+]
+
+function LiveTypingDemo() {
+  const [typedAsha, setTypedAsha] = useState('connect(room);')
+  const [typedDev, setTypedDev] = useState('editor.merge(peers);')
+
+  useEffect(() => {
+    let step = 0
+    const ashaSteps = ['connect', 'connect(room)', 'connect(room);']
+    const devSteps = ['editor', 'editor.merge', 'editor.merge(peers);']
+    const timer = setInterval(() => {
+      step = (step + 1) % 6
+      if (step < 3) {
+        setTypedAsha(ashaSteps[step])
+      } else {
+        setTypedDev(devSteps[step - 3])
+      }
+    }, 1100)
+    return () => clearInterval(timer)
+  }, [])
+
+  return (
+    <div className="join-live-demo" aria-hidden="true">
+      <div className="demo-window-header">
+        <span className="demo-dot" />
+        <span className="demo-dot" />
+        <span className="demo-dot" />
+        <span className="demo-filename">workspace.ts</span>
+      </div>
+      <div className="demo-code-body">
+        <div className="demo-line">
+          <span className="demo-num">1</span>
+          <span className="demo-kw">export function</span> <span className="demo-fn">syncSession</span>(room: <span className="demo-type">string</span>) &#123;
+        </div>
+        <div className="demo-line">
+          <span className="demo-num">2</span>
+          <span className="demo-indent" />
+          <span className="demo-kw">const</span> session = <span className="demo-val">{typedAsha}</span>
+          <span className="demo-cursor demo-cursor-asha">
+            <span className="demo-cursor-caret" />
+            <span className="demo-cursor-tag">Asha</span>
+          </span>
+        </div>
+        <div className="demo-line">
+          <span className="demo-num">3</span>
+          <span className="demo-indent" />
+          <span className="demo-kw">return</span> <span className="demo-val">{typedDev}</span>
+          <span className="demo-cursor demo-cursor-dev">
+            <span className="demo-cursor-caret" />
+            <span className="demo-cursor-tag">Dev</span>
+          </span>
+        </div>
+        <div className="demo-line">
+          <span className="demo-num">4</span>
+          &#125;
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const cardRef = useRef(null)
@@ -14,14 +97,13 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [roomStatus, setRoomStatus] = useState(null) // { checking: boolean, exists: boolean, hasPassword: boolean, activeUsers: number }
+  const [roomStatus, setRoomStatus] = useState(null)
 
   const generateRandomRoom = () => {
     return `room-${Math.floor(1000 + Math.random() * 9000)}`
   }
 
   useEffect(() => {
-    // If ?as=<name> is provided in URL, prioritize it
     const params = new URLSearchParams(window.location.search)
     const asParam = params.get('as')
     const roomParam = params.get('room')
@@ -51,12 +133,9 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
         setTab('create')
       }
     }
-
-    // Randomize avatar color
-    setUserColor(getRandomColor().hex)
   }, [])
 
-  // Real-time polling & debounced room existence check (polls every 2.5s)
+  // Real-time polling room existence check
   useEffect(() => {
     const clean = (roomId || '').trim().toLowerCase()
     if (!clean) {
@@ -154,7 +233,6 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
 
     try {
       if (tab === 'join') {
-        // Strict check: Room must exist before joining
         const checkRes = await fetch(`${httpBase}/api/room-check/${encodeURIComponent(cleanRoom)}`)
         const checkData = checkRes.ok ? await checkRes.json() : null
 
@@ -164,7 +242,6 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
           return
         }
 
-        // If room is password protected, verify password
         if (checkData.hasPassword) {
           if (!roomPassword.trim()) {
             setError('This room is password-protected. Please enter the room password.')
@@ -188,7 +265,6 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
           }
         }
       } else if (tab === 'create') {
-        // Register room on server with optional password
         await fetch(`${httpBase}/api/rooms/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -219,8 +295,6 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
 
   return (
     <div className="join-container">
-      <LogoBackground cardRef={cardRef} />
-
       {onToggleTheme && (
         <div className="join-theme-corner">
           <button
@@ -230,252 +304,288 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
             title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           >
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
           </button>
         </div>
       )}
 
-      <div ref={cardRef} className="join-card">
-        {/* Brand Header */}
-        <div className="join-header">
-          <div className="join-brand-row">
-            <AnimatedLogo size={210} animated={true} />
+      <div className="join-layout-grid">
+        {/* Left Column: Brand Hero & Editorial Demo */}
+        <section className="join-hero-left">
+          <div className="join-brand-wrapper">
+            <AnimatedLogo size={180} animated={true} />
           </div>
-          <p className="join-subtitle">
-            Collaborative code editor that works offline.
+
+          <h1 className="join-editorial-headline">
+            Write code together. <em>Even offline.</em>
+          </h1>
+
+          <p className="join-editorial-sub">
+            Edit the same files with your team in real time. Keep typing when the Wi-Fi drops. Your edits merge when you reconnect.
           </p>
-          <div className="join-feature-chips">
-            <span className="join-chip"><Users size={12} /> Live cursors</span>
-            <span className="join-chip"><WifiOff size={12} /> Works offline</span>
-            <span className="join-chip"><GitPullRequest size={12} /> Review mode</span>
-          </div>
-        </div>
 
-        {/* Segmented Control: Create Room vs Join Room */}
-        <div className="join-segmented-control" role="tablist">
-          <div className={`join-segmented-indicator ${tab}`} />
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'create'}
-            className={`join-segmented-tab ${tab === 'create' ? 'active' : ''}`}
-            onClick={() => handleTabChange('create')}
-          >
-            Create Room
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'join'}
-            className={`join-segmented-tab ${tab === 'join' ? 'active' : ''}`}
-            onClick={() => handleTabChange('join')}
-          >
-            Join Room
-          </button>
-        </div>
+          <ul className="join-features-list">
+            <li className="join-feature-item">
+              <span className="join-feature-bullet" aria-hidden="true">{'{ }'}</span>
+              <span>Live multiplayer editing with per-user undo and cursor awareness</span>
+            </li>
+            <li className="join-feature-item">
+              <span className="join-feature-bullet" aria-hidden="true">{'{ }'}</span>
+              <span>Conflict-free offline merge that safely synchronizes on reconnect</span>
+            </li>
+            <li className="join-feature-item">
+              <span className="join-feature-bullet" aria-hidden="true">{'{ }'}</span>
+              <span>Host review mode with isolated drafts, side-by-side diffs, and Python runtime</span>
+            </li>
+          </ul>
 
-        {error && <div className="alert-error">{error}</div>}
+          <LiveTypingDemo />
 
-        <form onSubmit={handleSubmit} className="join-form">
-          <div className="form-group">
-            <label htmlFor="user-name">Your Name</label>
-            <input
-              id="user-name"
-              type="text"
-              className="text-input"
-              value={userName}
-              onChange={(e) => {
-                setUserName(e.target.value)
-                setError('')
-              }}
-              placeholder="e.g. Alice"
-              maxLength={24}
-              autoFocus
-            />
-          </div>
-
-          <div className="form-group">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <label htmlFor="room-id" style={{ margin: 0 }}>Room Code</label>
-              {tab === 'create' && (
-                <button
-                  type="button"
-                  className="btn-flat btn-secondary btn-xs"
-                  onClick={() => setRoomId(generateRandomRoom())}
-                  style={{ fontSize: '11px', padding: '1px 6px' }}
+          <div className="join-supports-row">
+            <span className="join-supports-label">Supports</span>
+            <div className="join-supports-icons" role="list" aria-label="Supported programming languages">
+              {SUPPORTED_LANG_MARKS.map((lang) => (
+                <div
+                  key={lang.name}
+                  className="join-lang-badge"
+                  title={lang.name}
+                  style={{ '--brand-color': `#${lang.hex}` }}
                 >
-                  Generate New
-                </button>
-              )}
+                  <svg
+                    role="img"
+                    viewBox="0 0 24 24"
+                    width="13"
+                    height="13"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d={lang.icon.path} />
+                  </svg>
+                  <span className="join-lang-text">{lang.short}</span>
+                </div>
+              ))}
             </div>
-            <input
-              id="room-id"
-              type="text"
-              className="text-input"
-              value={roomId}
-              onChange={(e) => {
-                setRoomId(e.target.value)
-                setError('')
-              }}
-              placeholder={tab === 'create' ? 'e.g. room-7429' : 'Paste room code or join existing'}
-              maxLength={32}
-            />
+          </div>
+        </section>
 
-            {/* Room Status Feedback & Comment */}
-            {roomId.trim() && roomStatus && !roomStatus.checking && (
-              <div
-                className={`room-status-badge ${roomStatus.exists ? 'status-exists' : 'status-not-created'}`}
-                style={{
-                  marginTop: '8px',
-                  padding: '7px 11px',
-                  borderRadius: '6px',
-                  fontSize: '12px',
-                  lineHeight: '1.45',
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '8px',
-                  backgroundColor: roomStatus.exists ? 'rgba(5, 150, 105, 0.12)' : 'rgba(217, 119, 6, 0.12)',
-                  border: `1px solid ${roomStatus.exists ? 'rgba(5, 150, 105, 0.3)' : 'rgba(217, 119, 6, 0.3)'}`,
-                  color: roomStatus.exists ? 'var(--color-success, #10b981)' : 'var(--color-warning, #f59e0b)'
-                }}
-              >
-                {tab === 'join' ? (
-                  roomStatus.exists ? (
-                    <span>
-                      ✓ <strong>Room found:</strong> Active with {roomStatus.activeUsers} collaborator{roomStatus.activeUsers === 1 ? '' : 's'} online.{roomStatus.hasPassword ? ' (Password required)' : ''}
-                    </span>
-                  ) : (
-                    <span>
-                      ⚠️ <strong>Room has not been created yet.</strong> Please create the room first.
-                    </span>
-                  )
-                ) : (
-                  roomStatus.exists ? (
-                    <span>
-                      ⚠️ <strong>Room is already created</strong> — you can join it or choose a new code.
-                    </span>
-                  ) : (
-                    <span>
-                      ✓ <strong>Room code available</strong> — ready to create.
-                    </span>
-                  )
-                )}
-              </div>
-            )}
+        {/* Right Column: Interactive Card */}
+        <div ref={cardRef} className="join-card">
+          <div className="join-card-header">
+            <span className="join-card-kicker">Workspace Access</span>
+            <h2 className="join-card-title">{tab === 'create' ? 'Create a room' : 'Join a room'}</h2>
           </div>
 
-          {/* Room Password Field for Create Room (Optional) */}
-          {tab === 'create' && (
-            <div className="form-group">
-              <label htmlFor="create-room-password" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Lock size={13} style={{ color: 'var(--accent-primary)' }} />
-                Room Password (Optional)
-              </label>
-              <input
-                id="create-room-password"
-                type="password"
-                className="text-input"
-                value={roomPassword}
-                onChange={(e) => setRoomPassword(e.target.value)}
-                placeholder="Optional password to protect this room"
-                maxLength={32}
-              />
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginTop: '2px' }}>
-                If set, collaborators must enter this password to join.
-              </span>
-            </div>
-          )}
+          <div className="join-segmented-control" role="tablist">
+            <div className={`join-segmented-indicator ${tab}`} />
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'create'}
+              className={`join-segmented-tab ${tab === 'create' ? 'active' : ''}`}
+              onClick={() => handleTabChange('create')}
+            >
+              Create Room
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'join'}
+              className={`join-segmented-tab ${tab === 'join' ? 'active' : ''}`}
+              onClick={() => handleTabChange('join')}
+            >
+              Join Room
+            </button>
+          </div>
 
-          {/* Room Password Field for Join Room (Required when room is protected) */}
-          {tab === 'join' && roomStatus?.hasPassword && (
+          {error && <div className="alert-error" role="alert">{error}</div>}
+
+          <form onSubmit={handleSubmit} className="join-form">
             <div className="form-group">
-              <label htmlFor="join-room-password" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                <Lock size={13} style={{ color: 'var(--color-warning, #f59e0b)' }} />
-                Room Password (Required)
-              </label>
+              <label htmlFor="user-name">Your Name</label>
               <input
-                id="join-room-password"
-                type="password"
+                id="user-name"
+                type="text"
                 className="text-input"
-                value={roomPassword}
+                value={userName}
                 onChange={(e) => {
-                  setRoomPassword(e.target.value)
+                  setUserName(e.target.value)
                   setError('')
                 }}
-                placeholder="Enter password set by room host"
-                maxLength={32}
+                placeholder="e.g. Alice"
+                maxLength={24}
+                autoComplete="name"
+                spellCheck={false}
                 autoFocus
               />
             </div>
-          )}
 
-          {/* Share Link Preview with Copy Button */}
-          {shareUrl && (
             <div className="form-group">
-              <label>Share Link</label>
-              <div className="share-link-box">
-                <span className="share-link-text">{shareUrl}</span>
-                <button
-                  type="button"
-                  className="btn-flat btn-secondary btn-xs"
-                  onClick={handleCopyLink}
-                  style={{ flexShrink: 0 }}
-                >
-                  {copied ? (
-                    <>
-                      <Check size={12} />
-                      <span>Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={12} />
-                      <span>Copy</span>
-                    </>
-                  )}
-                </button>
+              <label>Cursor Color</label>
+              <div className="join-color-swatches" role="radiogroup" aria-label="Collaborator cursor color">
+                {USER_COLORS.map((c) => {
+                  const isSelected = userColor.toLowerCase() === c.hex.toLowerCase()
+                  return (
+                    <button
+                      key={c.hex}
+                      type="button"
+                      role="radio"
+                      aria-checked={isSelected}
+                      className={`join-color-swatch ${isSelected ? 'selected' : ''}`}
+                      style={{ backgroundColor: c.hex }}
+                      onClick={() => setUserColor(c.hex)}
+                      title={c.name}
+                      aria-label={`Select cursor color ${c.name}`}
+                    />
+                  )
+                })}
               </div>
             </div>
-          )}
 
-          {tab === 'join' && roomStatus && !roomStatus.exists ? (
-            <button
-              type="button"
-              className="btn-flat btn-primary btn-join"
-              onClick={() => handleTabChange('create')}
-              style={{ backgroundColor: 'var(--color-warning, #d97706)', borderColor: 'var(--color-warning, #d97706)' }}
-            >
-              Room Not Created — Click to Create Room
-            </button>
-          ) : (
-            <button type="submit" className="btn-flat btn-primary btn-join" disabled={isSubmitting}>
-              {isSubmitting ? 'Connecting...' : (tab === 'create' ? 'Create & Enter Room' : 'Join Room')}
-            </button>
-          )}
-        </form>
+            <div className="form-group">
+              <div className="room-label-row">
+                <label htmlFor="room-id">Room Code</label>
+                {tab === 'create' && (
+                  <button
+                    type="button"
+                    className="btn-flat btn-secondary btn-xs"
+                    onClick={() => setRoomId(generateRandomRoom())}
+                  >
+                    Generate New
+                  </button>
+                )}
+              </div>
+              <input
+                id="room-id"
+                type="text"
+                className="text-input"
+                value={roomId}
+                onChange={(e) => {
+                  setRoomId(e.target.value)
+                  setError('')
+                }}
+                placeholder={tab === 'create' ? 'e.g. room-7429' : 'Paste room code'}
+                maxLength={32}
+                autoComplete="off"
+                spellCheck={false}
+              />
 
-        {/* Footer line with connection hint and theme toggle */}
-        <div className="join-footer">
-          <span className="join-footer-hint">Direct peer sync via local WebSocket</span>
-          {onToggleTheme && (
-            <button
-              type="button"
-              className="btn-theme-toggle-link"
-              onClick={onToggleTheme}
-              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            >
-              {theme === 'dark' ? <Sun size={12} /> : <Moon size={12} />}
-              <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
-            </button>
-          )}
-        </div>
+              {roomId.trim() && roomStatus && !roomStatus.checking && (
+                <div
+                  className={`room-status-badge ${roomStatus.exists ? 'status-exists' : 'status-not-created'}`}
+                >
+                  {tab === 'join' ? (
+                    roomStatus.exists ? (
+                      <span>
+                        Room found: active with {roomStatus.activeUsers} collaborator{roomStatus.activeUsers === 1 ? '' : 's'}.{roomStatus.hasPassword ? ' Password required.' : ''}
+                      </span>
+                    ) : (
+                      <span>
+                        Room has not been created yet. Please create it first.
+                      </span>
+                    )
+                  ) : (
+                    roomStatus.exists ? (
+                      <span>
+                        Room is already created — you can join it or pick another code.
+                      </span>
+                    ) : (
+                      <span>
+                        Room code available — ready to create.
+                      </span>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
 
-        {/* Crawlable SEO About Block */}
-        <div className="join-seo-block">
-          <h1 className="join-seo-title">OffCode</h1>
-          <p className="join-seo-text">
-            OffCode is a real-time collaborative code editor that works completely offline.
-            Collaborate with live multiplayer editing, offline merge, per-user undo, and in-browser Python execution.
-          </p>
+            {tab === 'create' && (
+              <div className="form-group">
+                <label htmlFor="create-room-password" className="label-with-icon">
+                  <Lock size={12} />
+                  <span>Room Password (Optional)</span>
+                </label>
+                <input
+                  id="create-room-password"
+                  type="password"
+                  className="text-input"
+                  value={roomPassword}
+                  onChange={(e) => setRoomPassword(e.target.value)}
+                  placeholder="Optional password to protect this room"
+                  maxLength={32}
+                  autoComplete="new-password"
+                  spellCheck={false}
+                />
+              </div>
+            )}
+
+            {tab === 'join' && roomStatus?.hasPassword && (
+              <div className="form-group">
+                <label htmlFor="join-room-password" className="label-with-icon">
+                  <Lock size={12} />
+                  <span>Room Password (Required)</span>
+                </label>
+                <input
+                  id="join-room-password"
+                  type="password"
+                  className="text-input"
+                  value={roomPassword}
+                  onChange={(e) => {
+                    setRoomPassword(e.target.value)
+                    setError('')
+                  }}
+                  placeholder="Enter room password"
+                  maxLength={32}
+                  autoComplete="current-password"
+                  spellCheck={false}
+                  autoFocus
+                />
+              </div>
+            )}
+
+            {shareUrl && (
+              <div className="form-group">
+                <label>Share Link</label>
+                <div className="share-link-box">
+                  <span className="share-link-text">{shareUrl}</span>
+                  <button
+                    type="button"
+                    className="btn-flat btn-secondary btn-xs"
+                    onClick={handleCopyLink}
+                  >
+                    {copied ? (
+                      <>
+                        <Check size={12} />
+                        <span>Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={12} />
+                        <span>Copy</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {tab === 'join' && roomStatus && !roomStatus.exists ? (
+              <button
+                type="button"
+                className="btn-flat btn-primary btn-join btn-warning"
+                onClick={() => handleTabChange('create')}
+              >
+                Room Not Created — Switch to Create
+              </button>
+            ) : (
+              <button type="submit" className="btn-flat btn-primary btn-join" disabled={isSubmitting}>
+                {isSubmitting ? 'Connecting…' : (tab === 'create' ? 'Create & Enter Room' : 'Join Room')}
+              </button>
+            )}
+          </form>
+
+          <footer className="join-footer">
+            <span className="join-footer-hint">Synced through your room server. Keeps working offline.</span>
+          </footer>
         </div>
       </div>
     </div>

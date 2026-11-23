@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { createWorkspace } from './sync/index.js'
 import {
   getUndoManager,
@@ -14,7 +15,8 @@ import {
   getFileExtension,
   getLanguageName,
   getDefaultServerUrl,
-  resolveHtmlAssets
+  resolveHtmlAssets,
+  SUPPORTED_EXTENSIONS
 } from './utils/helpers'
 
 import JoinScreen from './components/JoinScreen'
@@ -112,7 +114,7 @@ export default function App() {
       document.documentElement.setAttribute('data-theme', theme)
       window.localStorage.setItem('offcode-theme', theme)
       const meta = document.querySelector('meta[name="theme-color"]')
-      if (meta) meta.setAttribute('content', theme === 'dark' ? '#0f1115' : '#f6f7f9')
+      if (meta) meta.setAttribute('content', theme === 'dark' ? '#0B0C0F' : '#F5F2EB')
     } catch (_) {}
   }, [theme])
 
@@ -920,7 +922,7 @@ export default function App() {
       if (!workspace || !isHost || isCurrentUserStopped) return
       if (!fileList || fileList.length === 0) return
 
-      const allowedExts = ['html', 'css', 'js', 'json', 'md', 'py', 'c', 'cpp', 'java', 'txt']
+      const allowedExts = SUPPORTED_EXTENSIONS
       const candidates = []
 
       for (let i = 0; i < fileList.length; i++) {
@@ -1489,7 +1491,7 @@ export default function App() {
 
       {/* Live Toast Notifications */}
       {toasts.length > 0 && (
-        <div className="toast-container">
+        <div className="toast-container" aria-live="polite" aria-atomic="true">
           {toasts.map((t) => (
             <div key={t.id} className={`toast-message toast-${t.type}`}>
               {t.text}
@@ -1555,7 +1557,8 @@ export default function App() {
                 gap: '8px'
               }}
             >
-              ⚠️ Leave Room & Shutdown Warning
+              <AlertTriangle size={16} />
+              <span>Leave Room & Shutdown Warning</span>
             </h3>
             <p style={{ fontSize: '13.5px', lineHeight: '1.5', margin: '0 0 18px 0', color: 'var(--text-main, #ccc)' }}>
               {users.length <= 1 ? (

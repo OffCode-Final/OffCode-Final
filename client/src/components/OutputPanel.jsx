@@ -49,7 +49,7 @@ export default function OutputPanel({
             )}
           </div>
 
-          {isRunning && <span className="running-text">Executing...</span>}
+          {isRunning && <span className="running-text">Executing…</span>}
         </div>
 
         <div className="output-header-right">
@@ -117,6 +117,17 @@ export default function OutputPanel({
             )}
           </div>
         )}
+      </div>
+
+      {/* Exit-time / status footer */}
+      <div className="output-footer">
+        <span className="output-footer-status">
+          {isRunning
+            ? 'Executing…'
+            : outputs.length > 0
+            ? `Process finished at ${outputs[outputs.length - 1]?.timestamp || ''}`
+            : 'Console ready'}
+        </span>
       </div>
     </div>
   )
