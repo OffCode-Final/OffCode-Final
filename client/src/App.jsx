@@ -438,10 +438,6 @@ export default function App() {
       if (initialFiles.length > 0) {
         setActiveFile((prev) => prev || initialFiles[0])
       }
-      // Claim host if no host is set or current host is inactive
-      if (ws.claimHost) {
-        ws.claimHost()
-      }
       const initialHost = ws.getHost ? ws.getHost() : null
       if (initialHost) {
         prevHostRef.current = initialHost

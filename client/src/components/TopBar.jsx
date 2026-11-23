@@ -345,19 +345,6 @@ export default function TopBar({
                 <button
                   type="button"
                   role="menuitem"
-                  className="dropdown-item"
-                  onClick={() => {
-                    if (onToggleTheme) onToggleTheme()
-                    setIsMoreOpen(false)
-                  }}
-                >
-                  {theme === 'dark' ? <Sun size={14} /> : <Moon size={14} />}
-                  <span>{theme === 'dark' ? 'Light theme' : 'Dark theme'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  role="menuitem"
                   className={`dropdown-item btn-toggle-user-changes ${showUserChanges ? 'active' : ''}`}
                   onClick={() => {
                     if (onToggleShowUserChanges) onToggleShowUserChanges()
@@ -413,19 +400,6 @@ export default function TopBar({
                 )}
 
                 <div className="dropdown-divider" />
-
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="dropdown-item"
-                  onClick={() => {
-                    setIsUpdateLogsOpen(true)
-                    setIsMoreOpen(false)
-                  }}
-                >
-                  <History size={14} />
-                  <span>Update logs ({currentVersion})</span>
-                </button>
 
                 <button
                   type="button"
