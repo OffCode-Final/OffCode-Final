@@ -58,6 +58,7 @@ export default function Sidebar({
   const [isCreating, setIsCreating] = useState(false)
   const [newFileName, setNewFileName] = useState('')
   const [fileToDelete, setFileToDelete] = useState(null)
+  const [isConfirmRemoveAllOpen, setIsConfirmRemoveAllOpen] = useState(false)
   const [error, setError] = useState('')
   const [expandedFolders, setExpandedFolders] = useState(() => new Set())
   const folderInputRef = useRef(null)
@@ -88,8 +89,49 @@ export default function Sidebar({
     })
   }
 
-  const handleOpenFolderClick = () => {
+  const handleOpenFolderClick = async () => {
     if (isStopped) return
+    if (typeof window !== 'undefined' && window.showDirectoryPicker) {
+      try {
+        const dirHandle = await window.showDirectoryPicker()
+        const filesList = []
+        let skippedCount = 0
+
+        async function scanDir(dir, prefix = '') {
+          for await (const entry of dir.values()) {
+            const relPath = prefix ? `${prefix}/${entry.name}` : entry.name
+            if (entry.kind === 'directory') {
+              if (entry.name === 'node_modules' || entry.name.startsWith('.git') || entry.name === '.DS_Store') {
+                skippedCount++
+                continue
+              }
+              await scanDir(entry, relPath)
+            } else if (entry.kind === 'file') {
+              const file = await entry.getFile()
+              if (file.size > 1024 * 1024) {
+                skippedCount++
+                continue
+              }
+              try {
+                const text = await file.text()
+                filesList.push({ file, relPath, text })
+              } catch (_) {
+                skippedCount++
+              }
+            }
+          }
+        }
+
+        await scanDir(dirHandle)
+        if (onImportFolder) {
+          onImportFolder(filesList, skippedCount)
+        }
+        return
+      } catch (err) {
+        if (err.name === 'AbortError') return
+        console.warn('showDirectoryPicker fallback:', err)
+      }
+    }
     folderInputRef.current?.click()
   }
 
@@ -280,37 +322,33 @@ export default function Sidebar({
         </div>
 
         <div className="sidebar-header-actions">
-          {isHost && (
-            <>
-              <button
-                type="button"
-                className="btn-icon-subtle btn-open-folder"
-                onClick={handleOpenFolderClick}
-                disabled={isStopped}
-                style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
-                title={isStopped ? 'Editing stopped by host' : 'Import folder'}
-                aria-label="Import folder"
-              >
-                <Upload size={14} strokeWidth={1.75} />
-              </button>
+          <button
+            type="button"
+            className="btn-icon-subtle btn-open-folder"
+            onClick={handleOpenFolderClick}
+            disabled={isStopped}
+            style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+            title={isStopped ? 'Editing stopped by host' : 'Open folder (imports files)'}
+            aria-label="Open folder"
+          >
+            <FolderOpen size={14} strokeWidth={1.75} />
+          </button>
 
-              {files.length > 0 && (
-                <button
-                  type="button"
-                  className="btn-icon-subtle btn-clear-all-files"
-                  onClick={() => {
-                    if (isStopped) return
-                    if (onClearAllFiles) onClearAllFiles()
-                  }}
-                  disabled={isStopped}
-                  style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
-                  title={isStopped ? 'Editing stopped by host' : 'Remove all files'}
-                  aria-label="Remove all files"
-                >
-                  <FolderX size={14} strokeWidth={1.75} />
-                </button>
-              )}
-            </>
+          {files.length > 0 && (
+            <button
+              type="button"
+              className="btn-icon-subtle btn-clear-all-files"
+              onClick={() => {
+                if (isStopped) return
+                setIsConfirmRemoveAllOpen(true)
+              }}
+              disabled={isStopped}
+              style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+              title={isStopped ? 'Editing stopped by host' : 'Remove all files'}
+              aria-label="Remove all files"
+            >
+              <FolderX size={14} strokeWidth={1.75} />
+            </button>
           )}
 
           <button
@@ -331,17 +369,15 @@ export default function Sidebar({
         </div>
       </div>
 
-      {isHost && (
-        <input
-          type="file"
-          ref={folderInputRef}
-          webkitdirectory=""
-          directory=""
-          multiple
-          style={{ display: 'none' }}
-          onChange={handleFolderChange}
-        />
-      )}
+      <input
+        type="file"
+        ref={folderInputRef}
+        webkitdirectory=""
+        directory=""
+        multiple
+        style={{ display: 'none' }}
+        onChange={handleFolderChange}
+      />
 
       {/* New file input form */}
       {isCreating && (
@@ -384,15 +420,26 @@ export default function Sidebar({
       <div className="file-list" role="tree" aria-label="Project files">
         {files.length === 0 && !isCreating ? (
           <div className="sidebar-empty">
-            <p>No files yet</p>
-            <button
-              type="button"
-              className="btn-flat btn-secondary btn-xs"
-              onClick={() => setIsCreating(true)}
-              disabled={isStopped}
-            >
-              Create a file
-            </button>
+            <Folder size={28} strokeWidth={1.5} className="sidebar-empty-icon" />
+            <p className="sidebar-empty-text">No files yet</p>
+            <div className="sidebar-empty-actions">
+              <button
+                type="button"
+                className="btn-flat btn-primary btn-sm"
+                onClick={() => setIsCreating(true)}
+                disabled={isStopped}
+              >
+                Create a file
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-secondary btn-sm"
+                onClick={handleOpenFolderClick}
+                disabled={isStopped}
+              >
+                Open folder
+              </button>
+            </div>
           </div>
         ) : (
           <>
@@ -401,6 +448,37 @@ export default function Sidebar({
           </>
         )}
       </div>
+
+      {/* Remove All Files confirmation dialog */}
+      {isConfirmRemoveAllOpen && (
+        <div className="modal-backdrop" onClick={() => setIsConfirmRemoveAllOpen(false)}>
+          <div className="modal-card modal-delete" onClick={(e) => e.stopPropagation()}>
+            <h4 className="modal-title">Remove All Files</h4>
+            <p className="modal-desc">
+              Are you sure you want to delete all {files.length} file{files.length === 1 ? '' : 's'} from the workspace? This will permanently delete them for everyone in the room.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-flat btn-secondary"
+                onClick={() => setIsConfirmRemoveAllOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-danger btn-confirm-remove-all"
+                onClick={() => {
+                  setIsConfirmRemoveAllOpen(false)
+                  if (onClearAllFiles) onClearAllFiles()
+                }}
+              >
+                Remove All Files
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete confirmation dialog */}
       {fileToDelete && (

@@ -353,7 +353,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
         {/* Left Column: Brand Hero & Editorial Demo */}
         <section className="join-hero-left">
           <div className="join-brand-wrapper">
-            <AnimatedLogo size={280} animated={true} />
+            <AnimatedLogo size={420} animated={true} />
           </div>
 
           <h1 className="join-editorial-headline">

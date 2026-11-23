@@ -76,6 +76,7 @@ export default function ChatPanel({
   const [inputText, setInputText] = useState('')
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasNewUnseen, setHasNewUnseen] = useState(false)
+  const [isConfirmClearOpen, setIsConfirmClearOpen] = useState(false)
 
   const messagesContainerRef = useRef(null)
   const messagesEndRef = useRef(null)
@@ -116,7 +117,16 @@ export default function ChatPanel({
     const chatArray = workspace.ydoc.getArray('chat')
     const updateMessages = () => {
       const arr = chatArray.toArray()
-      setMessages(arr.slice(-200))
+      const seen = new Set()
+      const deduped = []
+      for (const m of arr) {
+        if (!m) continue
+        const key = m.id || `${m.userId}-${m.time}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        deduped.push(m)
+      }
+      setMessages(deduped.slice(-200))
     }
 
     updateMessages()
@@ -219,14 +229,28 @@ export default function ChatPanel({
 
   // Clear chat for current user only
   const handleClearChatForMe = () => {
-    const ok = window.confirm('Clear chat on your screen only? Other people keep their messages.')
-    if (!ok) return
-
+    setIsConfirmClearOpen(false)
     const now = Date.now()
     setChatClearedAt(now)
     try {
       window.localStorage.setItem(clearedKey, String(now))
     } catch (_) {}
+  }
+
+  // Delete for everyone in shared room
+  const handleDeleteForEveryone = (msgId) => {
+    if (!msgId || !chatArray) return
+    const arr = chatArray.toArray()
+    const idx = arr.findIndex((m) => m.id === msgId)
+    if (idx !== -1) {
+      const old = arr[idx]
+      chatArray.delete(idx, 1)
+      chatArray.insert(idx, [{
+        ...old,
+        text: 'This message was deleted',
+        isDeleted: true
+      }])
+    }
   }
 
   // Delete single message for current user only
@@ -261,7 +285,7 @@ export default function ChatPanel({
           <button
             type="button"
             className="btn-clear-chat"
-            onClick={handleClearChatForMe}
+            onClick={() => setIsConfirmClearOpen(true)}
             title="Clear chat on your screen only"
           >
             Clear chat
@@ -287,7 +311,7 @@ export default function ChatPanel({
         {visibleMessages.length === 0 ? (
           <div className="chat-empty-state">
             <span>
-              No messages yet.<span className="signature-caret" aria-hidden="true">|</span>
+              No messages yet.<span className="signature-caret" aria-hidden="true" />
             </span>
           </div>
         ) : (
@@ -307,18 +331,32 @@ export default function ChatPanel({
                   </span>
                   <div className="chat-message-meta-right">
                     <span className="chat-message-time">{formatChatTime(msg)}</span>
-                    <button
-                      type="button"
-                      className="btn-delete-msg-hover"
-                      onClick={() => handleDeleteMessageForMe(msg.id)}
-                      title="Delete for me"
-                      aria-label="Delete message for me"
-                    >
-                      <Trash2 size={12} strokeWidth={1.75} />
-                    </button>
+                    {!msg.isDeleted && (
+                      <button
+                        type="button"
+                        className="btn-delete-msg-hover"
+                        onClick={() => {
+                          if (isOwn) {
+                            handleDeleteForEveryone(msg.id)
+                          } else {
+                            handleDeleteMessageForMe(msg.id)
+                          }
+                        }}
+                        title={isOwn ? 'Delete for everyone' : 'Delete for me'}
+                        aria-label={isOwn ? 'Delete for everyone' : 'Delete for me'}
+                        style={{ color: 'var(--color-danger, #ef4444)' }}
+                      >
+                        <Trash2 size={12} strokeWidth={1.75} />
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="chat-message-text">{msg.text}</div>
+                <div
+                  className={`chat-message-text ${msg.isDeleted ? 'chat-message-deleted' : ''}`}
+                  style={msg.isDeleted ? { fontStyle: 'italic', opacity: 0.6 } : {}}
+                >
+                  {msg.text}
+                </div>
               </div>
             )
           })
@@ -368,6 +406,33 @@ export default function ChatPanel({
           </div>
         </div>
       </div>
+      {/* Clear Chat Confirmation Modal */}
+      {isConfirmClearOpen && (
+        <div className="modal-backdrop" onClick={() => setIsConfirmClearOpen(false)}>
+          <div className="modal-card modal-delete" onClick={(e) => e.stopPropagation()}>
+            <h4 className="modal-title">Clear Chat</h4>
+            <p className="modal-desc">
+              Clear chat messages on your screen only? Other people in the room will still see their messages.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-flat btn-secondary"
+                onClick={() => setIsConfirmClearOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-danger btn-confirm-clear-chat"
+                onClick={handleClearChatForMe}
+              >
+                Clear on My Screen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   )
 }

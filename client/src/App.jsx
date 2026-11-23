@@ -40,6 +40,7 @@ import { runRemoteCode, isOnlineLanguage } from './run/remote.js'
 
 export default function App() {
   const [session, setSession] = useState(null)
+  const [currentUserColor, setCurrentUserColor] = useState(null)
   const [workspace, setWorkspace] = useState(null)
   const [status, setStatus] = useState('online')
   const [files, setFiles] = useState([])
@@ -328,6 +329,7 @@ export default function App() {
     try {
       window.localStorage.setItem('offcode-pref-color', autoColor)
     } catch (_) {}
+    setCurrentUserColor(autoColor)
     setSession({ userName, roomId, userColor: autoColor, password })
     logEvent('session', `Joined room "${roomId}" as ${userName}`)
   }
@@ -357,6 +359,7 @@ export default function App() {
 
     setWorkspace(null)
     setSession(null)
+    setCurrentUserColor(null)
     setFiles([])
     setActiveFile(null)
     setOpenFiles([])
@@ -471,7 +474,7 @@ export default function App() {
       name: userName,
       color: assignedColor
     })
-    setSession((prev) => (prev ? { ...prev, userColor: assignedColor } : prev))
+    setCurrentUserColor(assignedColor)
 
     // Sync initial status
     setStatus(ws.getStatus())
@@ -532,6 +535,18 @@ export default function App() {
           }
         }
       })
+      const hasMe = list.some((u) => u.isYou)
+      if (!hasMe && myId) {
+        list.unshift({
+          clientId: myClientId,
+          userId: myId,
+          name: userName,
+          color: assignedColor,
+          currentFile: activeFile,
+          currentLine: 1,
+          isYou: true
+        })
+      }
       setUsers(list)
 
       // Automatic conflict handling (Phase 4):
@@ -559,7 +574,7 @@ export default function App() {
                 ...curUser,
                 color: nextColor
               })
-              setSession((prev) => (prev ? { ...prev, userColor: nextColor } : prev))
+              setCurrentUserColor(nextColor)
             }, 500)
           }
         }
@@ -701,7 +716,7 @@ export default function App() {
       ws.destroy()
       clearAllUndoManagers()
     }
-  }, [session, logEvent])
+  }, [session?.roomId, session?.userName, session?.password, logEvent])
 
   // Broadcast current active file in awareness
   useEffect(() => {
@@ -798,8 +813,8 @@ export default function App() {
   }, [workspace, isChatOpen])
 
   // Active Y.Text based on mode and review tab
-  const isDraftEditing = isNonHostReview && reviewTab === 'draft'
-  const isMainReadOnly = isNonHostReview && reviewTab === 'main'
+  const isDraftEditing = isReviewMode && reviewTab === 'draft'
+  const isMainReadOnly = isReviewMode && reviewTab === 'main'
 
   let activeYText = null
   if (workspace && activeFile) {
@@ -1021,9 +1036,14 @@ export default function App() {
 
   const handleCloseTab = (fileName) => {
     setOpenFiles((prev) => {
+      const closedIdx = prev.indexOf(fileName)
       const next = prev.filter((f) => f !== fileName)
       if (activeFile === fileName) {
-        setActiveFile(next.length > 0 ? next[next.length - 1] : null)
+        let newActive = null
+        if (next.length > 0) {
+          newActive = closedIdx < next.length ? next[closedIdx] : next[next.length - 1]
+        }
+        setActiveFile(newActive)
       }
       return next
     })
@@ -1119,14 +1139,9 @@ export default function App() {
 
   // Remove all files / close folder from workspace
   const handleClearAllFiles = useCallback(() => {
-    if (!workspace || !isHost || isCurrentUserStopped) return
+    if (!workspace || isCurrentUserStopped) return
     const currentFiles = workspace.listFiles()
     if (currentFiles.length === 0) return
-
-    const confirmed = window.confirm(
-      'Remove all files from the workspace? This will delete all files and close the current folder.'
-    )
-    if (!confirmed) return
 
     for (const f of currentFiles) {
       workspace.deleteFile(f)
@@ -1137,83 +1152,90 @@ export default function App() {
     setActiveFile(null)
     logEvent('file', 'Removed all files from workspace')
     showToast('Removed all files from workspace.', 'info')
-  }, [workspace, isHost, isCurrentUserStopped, removeUndoManager, logEvent, showToast])
+  }, [workspace, isCurrentUserStopped, removeUndoManager, logEvent, showToast])
 
   // Import folder of files into workspace (one-time copy)
   const handleImportFolder = useCallback(
-    async (fileList) => {
-      if (!workspace || !isHost || isCurrentUserStopped) return
-      if (!fileList || fileList.length === 0) return
+    async (fileInput, initialSkipped = 0) => {
+      if (!workspace || isCurrentUserStopped) return
+      if (!fileInput) return
 
+      let skippedCount = initialSkipped || 0
       const allowedExts = SUPPORTED_EXTENSIONS
       const candidates = []
 
-      for (let i = 0; i < fileList.length; i++) {
-        const file = fileList[i]
-        const relPath = file.webkitRelativePath
-          ? file.webkitRelativePath.split('/').slice(1).join('/')
-          : file.name
+      const items = Array.isArray(fileInput) ? fileInput : Array.from(fileInput)
+      if (items.length === 0) return
 
-        if (!relPath) continue
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i]
+        let relPath = ''
+        let fileObj = null
+        let textContent = null
+
+        if (item.relPath) {
+          relPath = item.relPath
+          fileObj = item.file
+          textContent = item.text
+        } else {
+          fileObj = item
+          relPath = item.webkitRelativePath
+            ? item.webkitRelativePath.split('/').slice(1).join('/')
+            : item.name
+        }
+
+        if (!relPath) {
+          skippedCount++
+          continue
+        }
 
         // Check ignored folders (node_modules, .git)
         const parts = relPath.split('/')
-        if (parts.some((p) => p === 'node_modules' || p.startsWith('.git'))) {
+        if (parts.some((p) => p === 'node_modules' || p.startsWith('.git') || p === '.DS_Store')) {
+          skippedCount++
           continue
         }
 
         // Check extension
         const ext = getFileExtension(relPath)
         if (!ext || !allowedExts.includes(ext)) {
+          skippedCount++
           continue
         }
 
         // Check size (skip files over 1 MB)
-        if (file.size > 1024 * 1024) {
+        if (fileObj && fileObj.size > 1024 * 1024) {
+          skippedCount++
           continue
         }
 
-        candidates.push({ file, relPath })
+        candidates.push({ relPath, fileObj, textContent })
       }
 
       if (candidates.length === 0) {
-        showToast('No supported text files found in selected folder.', 'danger')
+        showToast(`No supported files found (skipped ${skippedCount}).`, 'danger')
         return
-      }
-
-      // If workspace already contains files, confirm with user before replacing previous folder/files
-      const currentFiles = workspace.listFiles()
-      if (currentFiles.length > 0) {
-        const confirmed = window.confirm(
-          'Opening a new folder will replace all current files in the workspace. Are you sure you want to erase existing files and import this folder?'
-        )
-        if (!confirmed) {
-          return
-        }
-
-        // Clear previous files and undo managers
-        for (const oldFile of currentFiles) {
-          workspace.deleteFile(oldFile)
-          removeUndoManager(oldFile)
-        }
-        setOpenFiles([])
       }
 
       let toImport = candidates
       if (toImport.length > 200) {
+        skippedCount += (toImport.length - 200)
         toImport = toImport.slice(0, 200)
-        showToast('Folder exceeds 200 files. Importing first 200 files.', 'info')
       }
 
       let importedCount = 0
       for (const item of toImport) {
-        const { file, relPath } = item
+        const { relPath, fileObj, textContent } = item
         try {
-          const content = await file.text()
+          let content = textContent
+          if (content === undefined || content === null) {
+            content = await fileObj.text()
+          }
           workspace.createFile(relPath, content)
           importedCount++
         } catch (err) {
           console.warn(`Failed reading file "${relPath}":`, err)
+          skippedCount++
         }
       }
 
@@ -1222,18 +1244,18 @@ export default function App() {
         setFiles(allFiles)
         if (allFiles.includes('index.html')) {
           setActiveFile('index.html')
-          setOpenFiles(['index.html'])
+          setOpenFiles((prev) => Array.from(new Set([...prev, 'index.html'])))
         } else if (toImport.length > 0 && allFiles.includes(toImport[0].relPath)) {
           setActiveFile(toImport[0].relPath)
-          setOpenFiles([toImport[0].relPath])
+          setOpenFiles((prev) => Array.from(new Set([...prev, toImport[0].relPath])))
         } else {
           setActiveFile(allFiles.length > 0 ? allFiles[0] : null)
         }
         logEvent('file', `Imported ${importedCount} files from folder`)
-        showToast(`Imported ${importedCount} files into room.`, 'success')
+        showToast(`Imported ${importedCount} file${importedCount === 1 ? '' : 's'}, skipped ${skippedCount}.`, 'success')
       }
     },
-    [workspace, isHost, isCurrentUserStopped, showToast, logEvent, removeUndoManager]
+    [workspace, isCurrentUserStopped, showToast, logEvent]
   )
 
   // Save current file to disk
@@ -1553,7 +1575,7 @@ export default function App() {
       <TopBar
         roomId={session.roomId}
         userName={session.userName}
-        userColor={session.userColor}
+        userColor={currentUserColor || session.userColor}
         status={status}
         onToggleOnline={handleToggleOnline}
         onUndo={handleUndo}
@@ -1670,7 +1692,8 @@ export default function App() {
           <div
             className="panel-resizer panel-resizer-left"
             onMouseDown={handleSidebarResizeStart}
-            title="Drag to resize Explorer"
+            onDoubleClick={() => updateLayout((prev) => ({ ...prev, sidebarWidth: 240 }))}
+            title="Drag to resize Explorer (Double-click to reset)"
           />
         )}
 
@@ -1692,7 +1715,7 @@ export default function App() {
             onUserInteraction={handleUserInteraction}
             onCursorChange={setCursorPos}
             readOnly={isMainReadOnly || isCurrentUserStopped}
-            isReviewMode={isNonHostReview}
+            isReviewMode={isReviewMode}
             isDraft={isDraftEditing}
             onSwitchReviewTab={(tab) => setReviewTab(tab)}
             onPushDraft={() => setIsPushDraftOpen(true)}
@@ -1734,7 +1757,8 @@ export default function App() {
           <div
             className="panel-resizer panel-resizer-right"
             onMouseDown={handlePeopleResizeStart}
-            title="Drag to resize People"
+            onDoubleClick={() => updateLayout((prev) => ({ ...prev, peopleWidth: 260 }))}
+            title="Drag to resize People (Double-click to reset)"
           />
         )}
 

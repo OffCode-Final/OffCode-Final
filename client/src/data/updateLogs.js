@@ -11,10 +11,42 @@
 
 export const UPDATE_LOGS = [
   {
+    version: 'v1.2',
+    title: 'Multi-Language Runners, Autocomplete & Draft Proposals',
+    releaseDate: 'November 2026',
+    isCurrent: true,
+    logs: [
+      {
+        item: 'Multi-Language Cloud Runners',
+        detail: 'Sandboxed remote execution support for C, C++, Java, Rust, Go, Ruby, and PHP with 15s timeout, stdin support, and offline guards.'
+      },
+      {
+        item: 'Client-Side JS & TS Execution',
+        detail: 'Isolated Web Worker execution engine for running JavaScript and TypeScript directly in the browser with full console capture.'
+      },
+      {
+        item: 'Native CodeMirror Autocompletion',
+        detail: 'Integrated keyword and language snippet completion with Tab key template insertion.'
+      },
+      {
+        item: 'Solo-Host Review & Draft Proposals',
+        detail: 'Complete draft branch workflow allowing room hosts and collaborators to draft and review code proposals before merging into main.'
+      },
+      {
+        item: 'Peer-to-Peer Chat Soft-Delete',
+        detail: 'Shared message deletion across all room participants synchronized over Yjs CRDT.'
+      },
+      {
+        item: 'Simulate Offline & Debug Tools',
+        detail: 'Built-in offline mode toggle and live awareness inspector to stress-test collaboration resilience.'
+      }
+    ]
+  },
+  {
     version: 'v1.1',
     title: 'Room Lifecycle, Security & PWA Auto-Reload',
     releaseDate: 'November 2026',
-    isCurrent: true,
+    isCurrent: false,
     logs: [
       {
         item: 'Blank Canvas Initial State',

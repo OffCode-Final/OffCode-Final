@@ -160,7 +160,7 @@ export default function OutputPanel({
           <div className="console-stream">
             {outputs.length === 0 ? (
               <div className="console-empty">
-                No output to display.<span className="signature-caret" aria-hidden="true">|</span>
+                No output to display.<span className="signature-caret" aria-hidden="true" />
               </div>
             ) : (
               outputs.map((line) => {
