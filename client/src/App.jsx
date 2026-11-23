@@ -16,7 +16,9 @@ import {
   getLanguageName,
   getDefaultServerUrl,
   resolveHtmlAssets,
-  SUPPORTED_EXTENSIONS
+  SUPPORTED_EXTENSIONS,
+  pickUniqueColor,
+  COLLABORATOR_PALETTE
 } from './utils/helpers'
 
 import JoinScreen from './components/JoinScreen'
@@ -33,6 +35,8 @@ import ChatPanel, { getChatJoinedAt, getMessageTime } from './components/ChatPan
 import { improveCodeWithGemini } from './ai/gemini'
 import AiKeyModal from './components/AiKeyModal'
 import AiReviewModal from './components/AiReviewModal'
+import { DEFAULT_PREFS } from './components/CustomizePopover'
+import { runRemoteCode, isOnlineLanguage } from './run/remote.js'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -132,11 +136,144 @@ export default function App() {
     })
   }, [])
 
+  // OffCode Layout State (resizable & collapsible Explorer & People)
+  const [layout, setLayout] = useState(() => {
+    const defaults = {
+      sidebarWidth: 240,
+      sidebarCollapsed: typeof window !== 'undefined' && window.innerWidth < 900,
+      peopleWidth: 260,
+      peopleCollapsed: typeof window !== 'undefined' && window.innerWidth < 900
+    }
+    try {
+      const saved = window.localStorage.getItem('offcode-layout')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return {
+          ...defaults,
+          ...parsed,
+          sidebarCollapsed: typeof window !== 'undefined' && window.innerWidth < 900 ? true : (parsed.sidebarCollapsed ?? defaults.sidebarCollapsed),
+          peopleCollapsed: typeof window !== 'undefined' && window.innerWidth < 900 ? true : (parsed.peopleCollapsed ?? defaults.peopleCollapsed)
+        }
+      }
+    } catch (_) {}
+    return defaults
+  })
+
+  const updateLayout = useCallback((updater) => {
+    setLayout((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater }
+      try {
+        window.localStorage.setItem('offcode-layout', JSON.stringify(next))
+      } catch (_) {}
+      return next
+    })
+  }, [])
+
+  // Ctrl+B (or Cmd+B) shortcut to toggle Explorer sidebar
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        updateLayout((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [updateLayout])
+
+  // Drag resizers for Sidebar & People
+  const handleSidebarResizeStart = useCallback((e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = layout.sidebarWidth
+
+    const onMouseMove = (moveEvent) => {
+      const delta = moveEvent.clientX - startX
+      const newWidth = Math.max(180, Math.min(420, startWidth + delta))
+      const peopleW = layout.peopleCollapsed ? 40 : layout.peopleWidth
+      if (window.innerWidth - newWidth - peopleW >= 360) {
+        updateLayout((prev) => ({ ...prev, sidebarWidth: newWidth }))
+      }
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [layout, updateLayout])
+
+  const handlePeopleResizeStart = useCallback((e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = layout.peopleWidth
+
+    const onMouseMove = (moveEvent) => {
+      const delta = startX - moveEvent.clientX
+      const newWidth = Math.max(220, Math.min(420, startWidth + delta))
+      const sidebarW = layout.sidebarCollapsed ? 40 : layout.sidebarWidth
+      if (window.innerWidth - sidebarW - newWidth >= 360) {
+        updateLayout((prev) => ({ ...prev, peopleWidth: newWidth }))
+      }
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [layout, updateLayout])
+
+  // Editor preferences & Customize popover
+  const [editorPrefs, setEditorPrefs] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem('offcode-editor-prefs')
+      if (saved) return { ...DEFAULT_PREFS, ...JSON.parse(saved) }
+    } catch (_) {}
+    return DEFAULT_PREFS
+  })
+
+  const handleUpdateEditorPrefs = useCallback((updater) => {
+    setEditorPrefs((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater }
+      try {
+        window.localStorage.setItem('offcode-editor-prefs', JSON.stringify(next))
+      } catch (_) {}
+      return next
+    })
+  }, [])
+
+  const [isCustomizeOpen, setIsCustomizeOpen] = useState(false)
+
   const workspaceRef = useRef(null)
   const prevHostRef = useRef(null)
   const pythonWorkerRef = useRef(null)
   const jsWorkerRef = useRef(null)
   const jsTimeoutRef = useRef(null)
+  const colorConflictTimerRef = useRef(null)
+  const remoteAbortControllerRef = useRef(null)
+
+  const [showOnlineNotice, setShowOnlineNotice] = useState(false)
+  const [outputFooterNote, setOutputFooterNote] = useState('')
+
+  const handleDismissOnlineNotice = useCallback(() => {
+    setShowOnlineNotice(false)
+    try {
+      window.sessionStorage.setItem('offcode-dismissed-online-notice', 'true')
+    } catch (_) {}
+  }, [])
 
   // Append entry to live activity event log
   const logEvent = useCallback((type, message) => {
@@ -181,14 +318,26 @@ export default function App() {
   }, [session?.roomId])
 
   // Join workspace
-  const handleJoin = ({ userName, roomId, userColor, password = '' }) => {
+  const handleJoin = ({ userName, roomId, password = '' }) => {
     updateUrlRoom(roomId)
-    setSession({ userName, roomId, userColor, password })
+    let savedPref = null
+    try {
+      savedPref = window.localStorage.getItem('offcode-pref-color')
+    } catch (_) {}
+    const autoColor = pickUniqueColor([], savedPref)
+    try {
+      window.localStorage.setItem('offcode-pref-color', autoColor)
+    } catch (_) {}
+    setSession({ userName, roomId, userColor: autoColor, password })
     logEvent('session', `Joined room "${roomId}" as ${userName}`)
   }
 
   // Leave workspace
   const handleLeaveRoom = () => {
+    if (colorConflictTimerRef.current) {
+      clearTimeout(colorConflictTimerRef.current)
+      colorConflictTimerRef.current = null
+    }
     if (workspaceRef.current) {
       workspaceRef.current.destroy()
       workspaceRef.current = null
@@ -300,6 +449,30 @@ export default function App() {
       ws.awareness.setLocalStateField('userId', myId)
     }
 
+    // Resolve initial automatic unique color from awareness
+    const initialOtherColors = []
+    ws.awareness.getStates().forEach((st, cid) => {
+      if (cid !== ws.ydoc.clientID && st.user?.color) {
+        initialOtherColors.push(st.user.color)
+      }
+    })
+    let savedPrefColor = null
+    try {
+      savedPrefColor = window.localStorage.getItem('offcode-pref-color')
+    } catch (_) {}
+    const assignedColor = pickUniqueColor(initialOtherColors, savedPrefColor)
+    try {
+      window.localStorage.setItem('offcode-pref-color', assignedColor)
+    } catch (_) {}
+
+    const curLocalUser = ws.awareness.getLocalState()?.user || {}
+    ws.awareness.setLocalStateField('user', {
+      ...curLocalUser,
+      name: userName,
+      color: assignedColor
+    })
+    setSession((prev) => (prev ? { ...prev, userColor: assignedColor } : prev))
+
     // Sync initial status
     setStatus(ws.getStatus())
 
@@ -340,10 +513,11 @@ export default function App() {
         setHostId(currentHost)
       }
 
+      const otherUsers = []
       states.forEach((state, clientId) => {
         if (state.user) {
           const resolvedUserId = state.userId || state.user.userId || state.user.id || `client_${clientId}`
-          list.push({
+          const userItem = {
             clientId,
             userId: resolvedUserId,
             name: state.user.name || 'Anonymous',
@@ -351,10 +525,45 @@ export default function App() {
             currentFile: state.currentFile || null,
             currentLine: state.currentLine || 1,
             isYou: clientId === myClientId
-          })
+          }
+          list.push(userItem)
+          if (clientId !== myClientId) {
+            otherUsers.push(userItem)
+          }
         }
       })
       setUsers(list)
+
+      // Automatic conflict handling (Phase 4):
+      // If two people end up with the same color, the person with the lexicographically
+      // larger userId switches to the next free color within a second quietly (no toast).
+      const myState = states.get(myClientId)
+      const myLocalUser = myState?.user
+      const myLocalColor = myLocalUser?.color
+      if (myId && myLocalColor) {
+        const collisions = otherUsers.filter(
+          (u) => u.color && u.color.toLowerCase() === myLocalColor.toLowerCase()
+        )
+        if (collisions.length > 0) {
+          const mustYield = collisions.some((other) => String(myId) > String(other.userId))
+          if (mustYield && !colorConflictTimerRef.current) {
+            colorConflictTimerRef.current = setTimeout(() => {
+              colorConflictTimerRef.current = null
+              const activeOtherColors = otherUsers.map((u) => u.color).filter(Boolean)
+              const nextColor = pickUniqueColor(activeOtherColors, null)
+              try {
+                window.localStorage.setItem('offcode-pref-color', nextColor)
+              } catch (_) {}
+              const curUser = ws.awareness.getLocalState()?.user || {}
+              ws.awareness.setLocalStateField('user', {
+                ...curUser,
+                color: nextColor
+              })
+              setSession((prev) => (prev ? { ...prev, userColor: nextColor } : prev))
+            }, 500)
+          }
+        }
+      }
     }
     ws.awareness.on('change', onAwarenessChange)
 
@@ -476,6 +685,10 @@ export default function App() {
     window.addEventListener('beforeunload', handleBeforeUnload)
 
     return () => {
+      if (colorConflictTimerRef.current) {
+        clearTimeout(colorConflictTimerRef.current)
+        colorConflictTimerRef.current = null
+      }
       window.removeEventListener('beforeunload', handleBeforeUnload)
       frozenMap.unobserve(updateFrozen)
       unsubStatus()
@@ -551,11 +764,21 @@ export default function App() {
         if (addedDelta > 0) {
           const myUserId = workspace.getUserId ? workspace.getUserId() : null
           const joinedAt = getChatJoinedAt(session?.roomId, myUserId)
-          const cutoff = joinedAt - 2000
+          const cleanRoom = (session?.roomId || 'default').trim().toLowerCase()
+          let chatClearedAt = 0
+          let hiddenIds = new Set()
+          try {
+            const savedCleared = window.localStorage.getItem(`chatClearedAt:${cleanRoom}`)
+            if (savedCleared) chatClearedAt = parseInt(savedCleared, 10) || 0
+            const savedHidden = window.localStorage.getItem(`chatHidden:${cleanRoom}`)
+            if (savedHidden) hiddenIds = new Set(JSON.parse(savedHidden))
+          } catch (_) {}
 
+          const cutoff = Math.max(joinedAt - 2000, chatClearedAt)
           const latestItems = chatArray.toArray().slice(-addedDelta)
           const fromOthers = latestItems.filter((m) => {
             if (!m || m.userId === myUserId) return false
+            if (m.id && hiddenIds.has(m.id)) return false
             const mTime = getMessageTime(m)
             return mTime >= cutoff
           }).length
@@ -1034,6 +1257,14 @@ export default function App() {
       jsTimeoutRef.current = null
     }
 
+    if (remoteAbortControllerRef.current) {
+      remoteAbortControllerRef.current.abort()
+      remoteAbortControllerRef.current = null
+      setIsRunning(false)
+      addOutput('stderr', 'Execution was stopped.')
+      logEvent('run', 'Online execution was stopped by user')
+    }
+
     if (pythonWorkerRef.current) {
       pythonWorkerRef.current.terminate()
       pythonWorkerRef.current = null
@@ -1047,7 +1278,7 @@ export default function App() {
       jsWorkerRef.current = null
       setIsRunning(false)
       addOutput('stderr', 'Execution terminated by user.')
-      logEvent('run', 'JavaScript execution terminated by user')
+      logEvent('run', 'Code execution terminated by user')
     }
   }, [addOutput, logEvent])
 
@@ -1063,8 +1294,9 @@ export default function App() {
     addOutput('status', `--- Running ${activeFile} ---`)
     logEvent('run', `Executed "${activeFile}"`)
 
-    // 1. Python Execution via Pyodide Web Worker
+    // 1. Python Execution via Pyodide Web Worker (Offline)
     if (ext === 'py') {
+      setOutputFooterNote('')
       if (pythonWorkerRef.current) {
         pythonWorkerRef.current.terminate()
       }
@@ -1097,12 +1329,15 @@ export default function App() {
       return
     }
 
-    // 2. JavaScript Execution via Sandboxed Web Worker
-    if (['js', 'jsx', 'mjs'].includes(ext)) {
+    // 2. JavaScript, TypeScript (.ts, .tsx) Execution via Sandboxed Web Worker (Offline)
+    if (['js', 'jsx', 'mjs', 'ts', 'tsx'].includes(ext)) {
+      const isTypeScript = ['ts', 'tsx'].includes(ext)
+      setOutputFooterNote(isTypeScript ? 'Types are not checked.' : '')
+
       if (jsWorkerRef.current) {
         jsWorkerRef.current.terminate()
       }
-      const worker = new Worker('/js-worker.js')
+      const worker = new Worker(new URL('./workers/js-worker.js', import.meta.url), { type: 'module' })
       jsWorkerRef.current = worker
 
       jsTimeoutRef.current = setTimeout(() => {
@@ -1112,7 +1347,7 @@ export default function App() {
       }, 10000)
 
       worker.onmessage = (e) => {
-        const { type, data, duration } = e.data
+        const { type, data, duration, isTs } = e.data
         if (type === 'stdout') {
           addOutput('stdout', data)
         } else if (type === 'stderr') {
@@ -1120,7 +1355,8 @@ export default function App() {
         } else if (type === 'done') {
           clearTimeout(jsTimeoutRef.current)
           setIsRunning(false)
-          addOutput('status', `Finished in ${duration}s`)
+          const suffix = isTs ? ' (Types are not checked.)' : ''
+          addOutput('status', `Finished in ${duration}s${suffix}`)
         } else if (type === 'error') {
           clearTimeout(jsTimeoutRef.current)
           setIsRunning(false)
@@ -1134,11 +1370,63 @@ export default function App() {
         addOutput('stderr', `Worker Error: ${err.message}`)
       }
 
-      worker.postMessage({ code })
+      worker.postMessage({
+        code,
+        isTs: ext === 'ts',
+        isTsx: ext === 'tsx'
+      })
       return
     }
 
-    // 3. HTML Live Preview in Sandboxed Iframe
+    // 3. Online Languages (C, C++, Java, Go, Rust, PHP, Ruby) via Wandbox Runner
+    if (isOnlineLanguage(ext)) {
+      setOutputFooterNote('Ran online')
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setIsRunning(false)
+        addOutput('stderr', 'Running this language needs internet.')
+        return
+      }
+
+      // Show notice once per session
+      let isNoticeDismissed = false
+      try {
+        isNoticeDismissed = Boolean(window.sessionStorage.getItem('offcode-dismissed-online-notice'))
+      } catch (_) {}
+      if (!isNoticeDismissed) {
+        setShowOnlineNotice(true)
+      }
+
+      const controller = new AbortController()
+      remoteAbortControllerRef.current = controller
+
+      const timeoutId = setTimeout(() => {
+        controller.abort()
+      }, 15000)
+
+      runRemoteCode({
+        ext,
+        code,
+        signal: controller.signal
+      })
+        .then((result) => {
+          clearTimeout(timeoutId)
+          remoteAbortControllerRef.current = null
+          setIsRunning(false)
+          if (result.stdout) addOutput('stdout', result.stdout)
+          if (result.stderr) addOutput('stderr', result.stderr)
+          addOutput('status', `Finished in ${result.duration}s (Ran online)`)
+        })
+        .catch((err) => {
+          clearTimeout(timeoutId)
+          remoteAbortControllerRef.current = null
+          setIsRunning(false)
+          addOutput('stderr', `Error: ${err.message}`)
+        })
+      return
+    }
+
+    // 4. HTML Live Preview in Sandboxed Iframe
     if (['html', 'htm'].includes(ext)) {
       const getFileContent = (path) => {
         if (!workspace) return null
@@ -1245,6 +1533,15 @@ export default function App() {
   const isHtml = ['html', 'htm'].includes(activeExt)
   const pendingCount = proposals.filter((p) => p.status === 'pending').length
 
+  const isOnlineExt = ['c', 'cpp', 'cxx', 'cc', 'java', 'php', 'rs', 'rust', 'go', 'rb', 'ruby'].includes(activeExt)
+  const isRunnableExt = ['py', 'js', 'jsx', 'mjs', 'html', 'htm', 'ts', 'tsx'].includes(activeExt) || isOnlineExt
+  const isOnline = typeof navigator === 'undefined' || navigator.onLine
+  const canRunActive = Boolean(activeFile && isRunnableExt && (isOnline || !isOnlineExt))
+  let runTooltipText = 'Run code (Ctrl+Enter)'
+  if (isOnlineExt) {
+    runTooltipText = isOnline ? 'Run code (Ctrl+Enter) (online)' : 'Needs internet'
+  }
+
   // Show Join screen if not connected
   if (!session || !workspace) {
     return <JoinScreen onJoin={handleJoin} theme={theme} onToggleTheme={handleToggleTheme} />
@@ -1293,6 +1590,10 @@ export default function App() {
         onOpenAiKeyModal={() => setIsAiKeyModalOpen(true)}
         onRemoveAiKey={handleRemoveAiKey}
         hasAiKey={Boolean(aiKey)}
+        onToggleCustomize={() => setIsCustomizeOpen((prev) => !prev)}
+        isCustomizeOpen={isCustomizeOpen}
+        canRunActive={canRunActive}
+        runTooltipText={runTooltipText}
       />
 
       {/* Stopped by Host Banner */}
@@ -1344,7 +1645,10 @@ export default function App() {
         )}
 
         {/* Left Sidebar: File explorer */}
-        <div className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''}`}>
+        <div
+          className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''} ${layout.sidebarCollapsed ? 'is-collapsed' : ''}`}
+          style={{ width: layout.sidebarCollapsed ? 40 : layout.sidebarWidth }}
+        >
           <Sidebar
             files={files}
             activeFile={activeFile}
@@ -1356,8 +1660,19 @@ export default function App() {
             isStopped={isCurrentUserStopped}
             isHost={isHost}
             onImportFolder={handleImportFolder}
+            isCollapsed={layout.sidebarCollapsed}
+            onToggleCollapse={() => updateLayout((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
           />
         </div>
+
+        {/* Draggable Resizer for Sidebar */}
+        {!layout.sidebarCollapsed && (
+          <div
+            className="panel-resizer panel-resizer-left"
+            onMouseDown={handleSidebarResizeStart}
+            title="Drag to resize Explorer"
+          />
+        )}
 
         {/* Center: CodeMirror 6 Editor with Bottom Output Panel */}
         <div className="editor-and-output-column">
@@ -1392,6 +1707,10 @@ export default function App() {
             theme={theme}
             onImproveWithAi={handleTriggerAi}
             isOffline={status === 'offline'}
+            editorPrefs={editorPrefs}
+            onChangeEditorPrefs={handleUpdateEditorPrefs}
+            isCustomizeOpen={isCustomizeOpen}
+            onToggleCustomize={() => setIsCustomizeOpen((prev) => !prev)}
           />
 
           {/* Bottom Output & Preview Panel */}
@@ -1404,11 +1723,26 @@ export default function App() {
             onStop={handleStopCode}
             htmlContent={htmlContent}
             isHtmlMode={isHtml}
+            showOnlineNotice={showOnlineNotice}
+            onDismissOnlineNotice={handleDismissOnlineNotice}
+            footerNote={outputFooterNote}
           />
         </div>
 
+        {/* Draggable Resizer for People */}
+        {!layout.peopleCollapsed && (
+          <div
+            className="panel-resizer panel-resizer-right"
+            onMouseDown={handlePeopleResizeStart}
+            title="Drag to resize People"
+          />
+        )}
+
         {/* Right: People Panel */}
-        <div className={`people-panel-container ${isMobilePeopleOpen ? 'mobile-open' : ''}`}>
+        <div
+          className={`people-panel-container ${isMobilePeopleOpen ? 'mobile-open' : ''} ${layout.peopleCollapsed ? 'is-collapsed' : ''}`}
+          style={{ width: layout.peopleCollapsed ? 40 : layout.peopleWidth }}
+        >
           <PeoplePanel
             users={users}
             activeFile={activeFile}
@@ -1421,6 +1755,8 @@ export default function App() {
             onStopUser={handleStopUser}
             onResumeUser={handleResumeUser}
             frozenUserIds={frozenUserIds}
+            isCollapsed={layout.peopleCollapsed}
+            onToggleCollapse={() => updateLayout((prev) => ({ ...prev, peopleCollapsed: !prev.peopleCollapsed }))}
           />
         </div>
 

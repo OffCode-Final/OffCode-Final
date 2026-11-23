@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { EditorState, Compartment } from '@codemirror/state'
 import {
@@ -11,10 +11,18 @@ import {
   showTooltip
 } from '@codemirror/view'
 import { defaultKeymap } from '@codemirror/commands'
-import { bracketMatching, foldGutter, indentOnInput, indentUnit, HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import {
+  bracketMatching,
+  foldGutter,
+  indentOnInput,
+  indentUnit,
+  HighlightStyle,
+  syntaxHighlighting,
+  StreamLanguage
+} from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
-import { X, Send, FileText, FileCode, Plus } from 'lucide-react'
+import { X, Send, FileCode, Plus, Sliders } from 'lucide-react'
 
 import { python } from '@codemirror/lang-python'
 import { javascript } from '@codemirror/lang-javascript'
@@ -27,52 +35,211 @@ import { java } from '@codemirror/lang-java'
 import { php } from '@codemirror/lang-php'
 import { rust } from '@codemirror/lang-rust'
 import { go } from '@codemirror/lang-go'
-import { StreamLanguage } from '@codemirror/language'
 import { ruby } from '@codemirror/legacy-modes/mode/ruby'
 
 import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension } from '../utils/helpers'
 import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
+import CustomizePopover, { DEFAULT_PREFS } from './CustomizePopover'
 
-// Highlight styles tuned for Dark (soft pastel) and Light (GitHub-light)
-const darkHighlightStyle = HighlightStyle.define([
-  { tag: t.keyword, color: '#c678dd' },
-  { tag: [t.name, t.deleted, t.character, t.macroName], color: '#e06c75' },
-  { tag: [t.function(t.variableName), t.labelName], color: '#61afef' },
-  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#d19a66' },
-  { tag: [t.definition(t.name), t.separator], color: '#abb2bf' },
-  { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#e5c07b' },
-  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)], color: '#56b6c2' },
-  { tag: [t.meta, t.comment], color: 'var(--text-faint, #5c6572)', fontStyle: 'italic' },
-  { tag: t.strong, fontWeight: 'bold' },
-  { tag: t.emphasis, fontStyle: 'italic' },
-  { tag: t.link, textDecoration: 'underline' },
-  { tag: t.heading, fontWeight: 'bold', color: '#e06c75' },
-  { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#d19a66' },
-  { tag: [t.processingInstruction, t.string, t.inserted], color: '#98c379' },
-  { tag: t.invalid, color: '#ef4444' }
-])
+// 6 Syntax Theme Presets defined for both dark & light
+function createHighlightStyle(preset, isDark) {
+  switch (preset) {
+    case 'GitHub':
+      return isDark
+        ? HighlightStyle.define([
+            { tag: t.keyword, color: '#ff7b72' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#c9d1d9' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#d2a8ff' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#79c0ff' },
+            { tag: [t.typeName, t.className, t.number], color: '#ffa657' },
+            { tag: [t.operator, t.operatorKeyword], color: '#ff7b72' },
+            { tag: [t.meta, t.comment], color: '#8b949e', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#a5d6ff' },
+            { tag: t.invalid, color: '#f85149' }
+          ])
+        : HighlightStyle.define([
+            { tag: t.keyword, color: '#cf222e' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#24292f' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#8250df' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#0550ae' },
+            { tag: [t.typeName, t.className, t.number], color: '#953800' },
+            { tag: [t.operator, t.operatorKeyword], color: '#0a3069' },
+            { tag: [t.meta, t.comment], color: '#6e7781', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#0a3069' },
+            { tag: t.invalid, color: '#cf222e' }
+          ])
 
-const lightHighlightStyle = HighlightStyle.define([
-  { tag: t.keyword, color: '#cf222e' },
-  { tag: [t.name, t.deleted, t.character, t.macroName], color: '#24292f' },
-  { tag: [t.function(t.variableName), t.labelName], color: '#8250df' },
-  { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#0550ae' },
-  { tag: [t.definition(t.name), t.separator], color: '#24292f' },
-  { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#953800' },
-  { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)], color: '#0a3069' },
-  { tag: [t.meta, t.comment], color: 'var(--text-muted, #6e7781)', fontStyle: 'italic' },
-  { tag: t.strong, fontWeight: 'bold' },
-  { tag: t.emphasis, fontStyle: 'italic' },
-  { tag: t.link, textDecoration: 'underline' },
-  { tag: t.heading, fontWeight: 'bold', color: '#0550ae' },
-  { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#0550ae' },
-  { tag: [t.processingInstruction, t.string, t.inserted], color: '#0a3069' },
-  { tag: t.invalid, color: '#cf222e' }
-])
+    case 'One':
+      return isDark
+        ? HighlightStyle.define([
+            { tag: t.keyword, color: '#c678dd' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#abb2bf' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#61afef' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#d19a66' },
+            { tag: [t.typeName, t.className, t.number], color: '#e5c07b' },
+            { tag: [t.operator, t.operatorKeyword], color: '#56b6c2' },
+            { tag: [t.meta, t.comment], color: '#5c6370', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#98c379' },
+            { tag: t.invalid, color: '#e06c75' }
+          ])
+        : HighlightStyle.define([
+            { tag: t.keyword, color: '#a626a4' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#383a42' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#4078f2' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#986801' },
+            { tag: [t.typeName, t.className, t.number], color: '#c18401' },
+            { tag: [t.operator, t.operatorKeyword], color: '#0184bc' },
+            { tag: [t.meta, t.comment], color: '#a0a1a7', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#50a14f' },
+            { tag: t.invalid, color: '#e45649' }
+          ])
+
+    case 'Solarized':
+      return isDark
+        ? HighlightStyle.define([
+            { tag: t.keyword, color: '#859900' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#839496' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#268bd2' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#cb4b16' },
+            { tag: [t.typeName, t.className, t.number], color: '#b58900' },
+            { tag: [t.operator, t.operatorKeyword], color: '#2aa198' },
+            { tag: [t.meta, t.comment], color: '#586e75', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#2aa198' },
+            { tag: t.invalid, color: '#dc322f' }
+          ])
+        : HighlightStyle.define([
+            { tag: t.keyword, color: '#859900' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#657b83' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#268bd2' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#cb4b16' },
+            { tag: [t.typeName, t.className, t.number], color: '#b58900' },
+            { tag: [t.operator, t.operatorKeyword], color: '#2aa198' },
+            { tag: [t.meta, t.comment], color: '#93a1a1', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#2aa198' },
+            { tag: t.invalid, color: '#dc322f' }
+          ])
+
+    case 'Monokai':
+      return isDark
+        ? HighlightStyle.define([
+            { tag: t.keyword, color: '#f92672' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#f8f8f2' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#a6e22e' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#ae81ff' },
+            { tag: [t.typeName, t.className, t.number], color: '#66d9ef' },
+            { tag: [t.operator, t.operatorKeyword], color: '#fd971f' },
+            { tag: [t.meta, t.comment], color: '#75715e', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#e6db74' },
+            { tag: t.invalid, color: '#f92672' }
+          ])
+        : HighlightStyle.define([
+            { tag: t.keyword, color: '#d7005f' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#272822' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#718c00' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#8959a8' },
+            { tag: [t.typeName, t.className, t.number], color: '#3e999f' },
+            { tag: [t.operator, t.operatorKeyword], color: '#e78c45' },
+            { tag: [t.meta, t.comment], color: '#8e908c', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#e78c45' },
+            { tag: t.invalid, color: '#c82829' }
+          ])
+
+    case 'High contrast':
+      return isDark
+        ? HighlightStyle.define([
+            { tag: t.keyword, color: '#58a6ff' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#ffffff' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#ffff00' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#ff7b72' },
+            { tag: [t.typeName, t.className, t.number], color: '#7ee787' },
+            { tag: [t.operator, t.operatorKeyword], color: '#ffffff' },
+            { tag: [t.meta, t.comment], color: '#8b949e', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#3fb950' },
+            { tag: t.invalid, color: '#ff0000' }
+          ])
+        : HighlightStyle.define([
+            { tag: t.keyword, color: '#0000ff' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#000000' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#7900b5' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#a00000' },
+            { tag: [t.typeName, t.className, t.number], color: '#006400' },
+            { tag: [t.operator, t.operatorKeyword], color: '#000000' },
+            { tag: [t.meta, t.comment], color: '#555555', fontStyle: 'italic' },
+            { tag: [t.string, t.inserted], color: '#006400' },
+            { tag: t.invalid, color: '#cc0000' }
+          ])
+
+    case 'OffCode':
+    default:
+      return isDark
+        ? HighlightStyle.define([
+            { tag: t.keyword, color: '#c678dd' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#e06c75' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#61afef' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#d19a66' },
+            { tag: [t.definition(t.name), t.separator], color: '#abb2bf' },
+            { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#e5c07b' },
+            { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)], color: '#56b6c2' },
+            { tag: [t.meta, t.comment], color: 'var(--text-faint, #5c6572)', fontStyle: 'italic' },
+            { tag: t.strong, fontWeight: 'bold' },
+            { tag: t.emphasis, fontStyle: 'italic' },
+            { tag: t.link, textDecoration: 'underline' },
+            { tag: t.heading, fontWeight: 'bold', color: '#e06c75' },
+            { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#d19a66' },
+            { tag: [t.processingInstruction, t.string, t.inserted], color: '#98c379' },
+            { tag: t.invalid, color: '#ef4444' }
+          ])
+        : HighlightStyle.define([
+            { tag: t.keyword, color: '#cf222e' },
+            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#24292f' },
+            { tag: [t.function(t.variableName), t.labelName], color: '#8250df' },
+            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#0550ae' },
+            { tag: [t.definition(t.name), t.separator], color: '#24292f' },
+            { tag: [t.typeName, t.className, t.number, t.changed, t.annotation, t.modifier, t.self, t.namespace], color: '#953800' },
+            { tag: [t.operator, t.operatorKeyword, t.url, t.escape, t.regexp, t.link, t.special(t.string)], color: '#0a3069' },
+            { tag: [t.meta, t.comment], color: 'var(--text-muted, #6e7781)', fontStyle: 'italic' },
+            { tag: t.strong, fontWeight: 'bold' },
+            { tag: t.emphasis, fontStyle: 'italic' },
+            { tag: t.link, textDecoration: 'underline' },
+            { tag: t.heading, fontWeight: 'bold', color: '#0550ae' },
+            { tag: [t.atom, t.bool, t.special(t.variableName)], color: '#0550ae' },
+            { tag: [t.processingInstruction, t.string, t.inserted], color: '#0a3069' },
+            { tag: t.invalid, color: '#cf222e' }
+          ])
+  }
+}
+
+function getFontFamilyString(family) {
+  switch (family) {
+    case 'Fira Code':
+      return '"Fira Code", Consolas, monospace'
+    case 'Source Code Pro':
+      return '"Source Code Pro", Consolas, monospace'
+    case 'IBM Plex Mono':
+      return '"IBM Plex Mono", Consolas, monospace'
+    case 'System monospace':
+      return 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+    case 'JetBrains Mono':
+    default:
+      return '"JetBrains Mono", Consolas, monospace'
+  }
+}
+
+function getLineHeightValue(lh) {
+  switch (lh) {
+    case 'compact': return '1.4'
+    case 'relaxed': return '1.8'
+    case 'normal':
+    default: return '1.6'
+  }
+}
 
 const themeCompartment = new Compartment()
 const syntaxCompartment = new Compartment()
+const lineNumbersCompartment = new Compartment()
+const wordWrapCompartment = new Compartment()
+const tabSizeCompartment = new Compartment()
 const aiTooltipCompartment = new Compartment()
 
 function createAiTooltipExtension({
@@ -117,7 +284,6 @@ function createAiTooltipExtension({
           </svg>
         `
 
-        // Prevent focus stealing or clearing selection
         button.addEventListener('mousedown', (e) => {
           e.preventDefault()
           e.stopPropagation()
@@ -151,22 +317,27 @@ function createAiTooltipExtension({
   })
 }
 
-function getEditorTheme(theme) {
+function getEditorTheme(theme, prefs = DEFAULT_PREFS) {
   const isDark = theme !== 'light'
+  const fontFamily = getFontFamilyString(prefs.fontFamily)
+  const fontSize = `${prefs.fontSize || 13}px`
+  const lineHeight = getLineHeightValue(prefs.lineHeight)
+  const ligatures = prefs.ligatures ? 'normal' : 'none'
+
   return EditorView.theme(
     {
       '&': {
         backgroundColor: 'var(--bg-editor)',
         color: 'var(--text-main)',
-        fontFamily: 'var(--font-code)',
-        fontSize: '13px',
-        lineHeight: '1.6',
-        fontVariantLigatures: 'none'
+        fontFamily,
+        fontSize,
+        lineHeight,
+        fontVariantLigatures: ligatures
       },
       '.cm-content': {
         caretColor: 'var(--editor-cursor)',
-        fontFamily: 'var(--font-code)',
-        fontVariantLigatures: 'none'
+        fontFamily,
+        fontVariantLigatures: ligatures
       },
       '.cm-cursor, .cm-dropCursor': {
         borderLeft: '2px solid var(--editor-cursor)'
@@ -189,7 +360,7 @@ function getEditorTheme(theme) {
       },
       '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
         backgroundColor: isDark ? 'rgba(91, 147, 247, 0.2)' : 'rgba(37, 99, 235, 0.15)',
-        outline: isDark ? '1px solid var(--accent-primary)' : '1px solid var(--accent-primary)'
+        outline: '1px solid var(--accent-primary)'
       },
       '.cm-line': {
         paddingLeft: '6px'
@@ -199,10 +370,8 @@ function getEditorTheme(theme) {
   )
 }
 
-function getSyntaxTheme(theme) {
-  return theme === 'light'
-    ? syntaxHighlighting(lightHighlightStyle)
-    : syntaxHighlighting(darkHighlightStyle)
+function getSyntaxTheme(theme, syntaxPreset = 'OffCode') {
+  return syntaxHighlighting(createHighlightStyle(syntaxPreset, theme !== 'light'))
 }
 
 export default function Editor({
@@ -232,10 +401,15 @@ export default function Editor({
   theme = 'dark',
   onCreateFile,
   onImproveWithAi = null,
-  isOffline = false
+  isOffline = false,
+  editorPrefs = DEFAULT_PREFS,
+  onChangeEditorPrefs,
+  isCustomizeOpen = false,
+  onToggleCustomize
 }) {
   const editorRef = useRef(null)
   const viewRef = useRef(null)
+  const customizeBtnRef = useRef(null)
   const [scrollerNode, setScrollerNode] = useState(null)
   const [remotePointers, setRemotePointers] = useState([])
   const pointerTimestampsRef = useRef(new Map())
@@ -286,6 +460,26 @@ export default function Editor({
     }
   }
 
+  // Zoom handlers for shortcuts
+  const handleZoom = useCallback(
+    (delta) => {
+      if (!onChangeEditorPrefs) return
+      const cur = editorPrefs.fontSize || 13
+      const next = Math.max(11, Math.min(24, cur + delta))
+      if (next !== cur) {
+        onChangeEditorPrefs({ ...editorPrefs, fontSize: next })
+      }
+    },
+    [editorPrefs, onChangeEditorPrefs]
+  )
+
+  const handleResetZoom = useCallback(() => {
+    if (!onChangeEditorPrefs) return
+    if (editorPrefs.fontSize !== 13) {
+      onChangeEditorPrefs({ ...editorPrefs, fontSize: 13 })
+    }
+  }, [editorPrefs, onChangeEditorPrefs])
+
   useEffect(() => {
     if (!editorRef.current || !activeFile || !ytext) {
       return
@@ -297,35 +491,32 @@ export default function Editor({
       viewRef.current = null
     }
 
-    // Retrieve or create the persistent cached UndoManager for this file or personal draft
     const cacheKey = isDraft ? `draft:${activeFile}` : activeFile
     const fileUndoManager = getUndoManager(cacheKey, ytext)
 
-    // Notify awareness that we are currently viewing this file
     if (awareness) {
       awareness.setLocalStateField('currentFile', activeFile)
     }
 
-    // CodeMirror extensions with proper indentation & syntax highlighting
+    // Extensions list
     const extensions = [
-      lineNumbers(),
+      lineNumbersCompartment.of(editorPrefs.lineNumbers ? lineNumbers() : []),
       highlightActiveLineGutter(),
       foldGutter(),
       bracketMatching(),
       highlightActiveLine(),
       indentOnInput(),
-      indentUnit.of('    '),
-      themeCompartment.of(getEditorTheme(theme)),
-      syntaxCompartment.of(getSyntaxTheme(theme)),
+      tabSizeCompartment.of(EditorState.tabSize.of(editorPrefs.tabSize || 4)),
+      indentUnit.of(' '.repeat(editorPrefs.tabSize || 4)),
+      wordWrapCompartment.of(editorPrefs.wordWrap ? EditorView.lineWrapping : []),
+      themeCompartment.of(getEditorTheme(theme, editorPrefs)),
+      syntaxCompartment.of(getSyntaxTheme(theme, editorPrefs.syntaxTheme)),
       getLanguageSupport(activeFile),
       placeholder('Start typing, or press Ctrl+Enter to run'),
       EditorState.readOnly.of(Boolean(readOnly || isStopped)),
       EditorView.editable.of(!readOnly && !isStopped),
-      // Keymap for local undo/redo with Mod-z and Mod-Shift-z / Mod-y
       keymap.of((readOnly || isStopped) ? defaultKeymap : [...yUndoManagerKeymap, ...defaultKeymap]),
-      // Yjs collaboration plugin (Sync + Remote Cursors + Local UndoManager)
       yCollab(ytext, awareness, { undoManager: (readOnly || isStopped) ? false : fileUndoManager }),
-      // User Changes Underlines and Attribution
       userChangesCompartment.of(
         createUserChangesExtension({
           ytext,
@@ -336,7 +527,6 @@ export default function Editor({
           showUserChanges
         })
       ),
-      // AI Sparkle Tooltip on Selection
       aiTooltipCompartment.of(
         createAiTooltipExtension({
           onImproveWithAi,
@@ -345,18 +535,45 @@ export default function Editor({
           isOffline
         })
       ),
-      // Dom event handlers to unhook follow mode on user interaction
       EditorView.domEventHandlers({
         mousedown() {
           if (onUserInteraction) onUserInteraction()
           return false
         },
-        keydown() {
+        keydown(e) {
           if (onUserInteraction) onUserInteraction()
+          // Zoom shortcuts: Ctrl+Plus, Ctrl+Minus, Ctrl+0
+          if (e.ctrlKey || e.metaKey) {
+            if (e.key === '=' || e.key === '+') {
+              e.preventDefault()
+              handleZoom(1)
+              return true
+            } else if (e.key === '-' || e.key === '_') {
+              e.preventDefault()
+              handleZoom(-1)
+              return true
+            } else if (e.key === '0') {
+              e.preventDefault()
+              handleResetZoom()
+              return true
+            }
+          }
+          return false
+        },
+        wheel(e) {
+          // Ctrl + wheel zoom prevention of page zoom while editor focused
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault()
+            if (e.deltaY < 0) {
+              handleZoom(1)
+            } else if (e.deltaY > 0) {
+              handleZoom(-1)
+            }
+            return true
+          }
           return false
         }
       }),
-      // Update listener for cursor position and document stats
       EditorView.updateListener.of((update) => {
         if (update.selectionSet || update.docChanged) {
           const head = update.state.selection.main.head
@@ -369,7 +586,6 @@ export default function Editor({
           }
           if (onCursorChange) onCursorChange(pos)
 
-          // Update awareness with current line number
           if (awareness) {
             awareness.setLocalStateField('currentLine', line.number)
           }
@@ -390,9 +606,7 @@ export default function Editor({
     viewRef.current = view
     view.focus()
 
-    // Initialize cursor stats
     try {
-      const line = state.doc.lineAt(0)
       if (onCursorChange) {
         onCursorChange({
           line: 1,
@@ -404,9 +618,7 @@ export default function Editor({
       if (awareness) {
         awareness.setLocalStateField('currentLine', 1)
       }
-    } catch {
-      // ignore
-    }
+    } catch (_) {}
 
     const scroller = view.scrollDOM
     setScrollerNode(scroller)
@@ -426,6 +638,16 @@ export default function Editor({
     const handleMouseMove = (e) => {
       if (!awareness || !activeFile) return
       const rect = scroller.getBoundingClientRect()
+      // Only broadcast if cursor is within the editor content boundaries
+      if (
+        e.clientX < rect.left ||
+        e.clientX > rect.right ||
+        e.clientY < rect.top ||
+        e.clientY > rect.bottom
+      ) {
+        return
+      }
+
       const x = Math.round(e.clientX - rect.left + scroller.scrollLeft)
       const y = Math.round(e.clientY - rect.top + scroller.scrollTop)
       const pointerData = { file: activeFile, x, y }
@@ -468,11 +690,13 @@ export default function Editor({
     }
 
     scroller.addEventListener('mousemove', handleMouseMove, { passive: true })
+    scroller.addEventListener('mouseleave', clearPointer, { passive: true })
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       clearPointer()
       scroller.removeEventListener('mousemove', handleMouseMove)
+      scroller.removeEventListener('mouseleave', clearPointer)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       setScrollerNode(null)
       if (viewRef.current) {
@@ -482,27 +706,24 @@ export default function Editor({
     }
   }, [activeFile, ytext, awareness, readOnly, isStopped])
 
-  // Reconfigure user change highlighting dynamically without destroying the view
+  // Dynamic Editor Preferences Reconfiguration via CodeMirror Compartments
   useEffect(() => {
-    if (!viewRef.current || !ytext) return
+    if (!viewRef.current) return
 
     try {
       viewRef.current.dispatch({
-        effects: userChangesCompartment.reconfigure(
-          createUserChangesExtension({
-            ytext,
-            currentUserId,
-            currentUserName,
-            currentUserColor,
-            users,
-            showUserChanges
-          })
-        )
+        effects: [
+          themeCompartment.reconfigure(getEditorTheme(theme, editorPrefs)),
+          syntaxCompartment.reconfigure(getSyntaxTheme(theme, editorPrefs.syntaxTheme)),
+          lineNumbersCompartment.reconfigure(editorPrefs.lineNumbers ? lineNumbers() : []),
+          wordWrapCompartment.reconfigure(editorPrefs.wordWrap ? EditorView.lineWrapping : []),
+          tabSizeCompartment.reconfigure(EditorState.tabSize.of(editorPrefs.tabSize || 4))
+        ]
       })
     } catch (err) {
-      console.warn('[Editor] Failed reconfiguring user changes extension:', err)
+      console.warn('[Editor] Failed reconfiguring editor compartments:', err)
     }
-  }, [showUserChanges, users, currentUserId, currentUserName, currentUserColor, ytext])
+  }, [theme, editorPrefs])
 
   // Track and filter remote mouse pointers in the same file
   useEffect(() => {
@@ -580,34 +801,6 @@ export default function Editor({
     }
   }, [awareness, activeFile, onPointersChange, frozenUserIds])
 
-  // Dynamic Theme Reconfiguration via CodeMirror Compartment
-  useEffect(() => {
-    if (viewRef.current) {
-      viewRef.current.dispatch({
-        effects: [
-          themeCompartment.reconfigure(getEditorTheme(theme)),
-          syntaxCompartment.reconfigure(getSyntaxTheme(theme))
-        ]
-      })
-    }
-  }, [theme])
-
-  // Dynamic AI Sparkle Tooltip Reconfiguration
-  useEffect(() => {
-    if (viewRef.current) {
-      viewRef.current.dispatch({
-        effects: aiTooltipCompartment.reconfigure(
-          createAiTooltipExtension({
-            onImproveWithAi,
-            isStopped,
-            readOnly,
-            isOffline
-          })
-        )
-      })
-    }
-  }, [isStopped, readOnly, isOffline, onImproveWithAi])
-
   // Scroll to line when jumped or following a peer
   useEffect(() => {
     if (viewRef.current && targetScrollLine != null && targetScrollLine > 0) {
@@ -624,101 +817,98 @@ export default function Editor({
     }
   }, [targetScrollLine])
 
-  const getTabFileIcon = (filename) => {
+  const getTabLanguageDot = (filename) => {
     const ext = getFileExtension(filename)
-    let dotClass = 'file-icon'
-    if (ext === 'md') dotClass += ' file-icon-md'
-    else if (ext === 'txt') dotClass += ' file-icon-txt'
-    else if (ext === 'py') dotClass += ' file-icon-py'
-    else if (['js', 'jsx', 'mjs'].includes(ext)) dotClass += ' file-icon-js'
-    else if (['ts', 'tsx'].includes(ext)) dotClass += ' file-icon-ts'
-    else if (['html', 'htm'].includes(ext)) dotClass += ' file-icon-html'
-    else if (ext === 'css') dotClass += ' file-icon-css'
-    else if (ext === 'json') dotClass += ' file-icon-json'
-    else if (['c', 'h'].includes(ext)) dotClass += ' file-icon-c'
-    else if (['cpp', 'cxx', 'cc', 'hpp'].includes(ext)) dotClass += ' file-icon-cpp'
-    else if (ext === 'java') dotClass += ' file-icon-java'
-    else if (ext === 'php') dotClass += ' file-icon-php'
-    else if (ext === 'rs') dotClass += ' file-icon-rs'
-    else if (ext === 'go') dotClass += ' file-icon-go'
-    else if (ext === 'rb') dotClass += ' file-icon-rb'
-
-    return <span className={`tab-lang-dot ${dotClass}`} aria-hidden="true" />
+    return <span className={`tab-lang-dot file-icon-${ext || 'txt'}`} aria-hidden="true" />
   }
 
   return (
-    <main className="editor-area">
-      {/* VS Code Style Editor Tabs Bar */}
-      <div className="editor-tabs-bar">
-        <div className="editor-tabs-scroll">
+    <main className="editor-container" role="region" aria-label="Code Editor">
+      {/* Tab bar (36px high, scrollable, with Customize button) */}
+      <div className="editor-tab-bar" role="tablist">
+        <div className="tab-scroll-container">
           {openFiles.map((fileName) => {
             const isActive = fileName === activeFile
             return (
               <div
                 key={fileName}
+                role="tab"
+                aria-selected={isActive}
                 className={`editor-tab ${isActive ? 'active' : ''}`}
-                onClick={() => onSelectTab && onSelectTab(fileName)}
+                onClick={() => onSelectTab(fileName)}
                 title={fileName}
               >
-                {getTabFileIcon(fileName)}
+                {getTabLanguageDot(fileName)}
                 <span className="editor-tab-name">{fileName}</span>
-                <span className="editor-tab-badge">
-                  {getFileExtension(fileName).toUpperCase() || 'FILE'}
-                </span>
-                {openFiles.length > 1 && (
-                  <button
-                    type="button"
-                    className="btn-tab-close"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (onCloseTab) onCloseTab(fileName)
-                    }}
-                    title={`Close ${fileName}`}
-                    aria-label={`Close tab ${fileName}`}
-                  >
-                    <X size={12} />
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="btn-tab-close"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (onCloseTab) onCloseTab(fileName)
+                  }}
+                  title={`Close ${fileName}`}
+                  aria-label={`Close tab ${fileName}`}
+                >
+                  <X size={12} strokeWidth={1.75} />
+                </button>
               </div>
             )
           })}
         </div>
 
-        {/* Review Mode Draft vs Main File Switcher */}
-        {isReviewMode && onSwitchReviewTab && (
-          <div className="review-tabs-switcher">
-            <button
-              type="button"
-              className={`btn-review-tab ${isDraft ? 'active' : ''}`}
-              onClick={() => onSwitchReviewTab('draft')}
-              title="Edit private draft"
-            >
-              Draft (editing)
-            </button>
-            <button
-              type="button"
-              className={`btn-review-tab ${!isDraft ? 'active' : ''}`}
-              onClick={() => onSwitchReviewTab('main')}
-              title="View authoritative main file"
-            >
-              Main file (read-only)
-            </button>
-          </div>
-        )}
+        <div className="editor-tab-actions">
+          <button
+            ref={customizeBtnRef}
+            type="button"
+            className={`btn-icon-subtle btn-customize-editor ${isCustomizeOpen ? 'active' : ''}`}
+            onClick={onToggleCustomize}
+            title="Customize editor"
+            aria-label="Customize editor"
+          >
+            <Sliders size={14} strokeWidth={1.75} />
+          </button>
+        </div>
+
+        <CustomizePopover
+          prefs={editorPrefs}
+          onChangePrefs={onChangeEditorPrefs}
+          isOpen={isCustomizeOpen}
+          onClose={() => onToggleCustomize && onToggleCustomize()}
+          triggerRef={customizeBtnRef}
+        />
       </div>
 
-      {/* Review Mode Banner for Non-Host Drafts */}
+      {/* Review Mode Banner / Controls */}
       {isReviewMode && (
-        <div className="review-draft-banner">
-          <span className="banner-msg">You're editing your draft. Push it for host review.</span>
+        <div className="review-mode-banner">
+          <div className="review-banner-left">
+            <span className="review-badge">Draft Mode</span>
+            <div className="review-tab-segmented">
+              <button
+                type="button"
+                className={`review-seg-btn ${isDraft ? 'active' : ''}`}
+                onClick={() => onSwitchReviewTab && onSwitchReviewTab('draft')}
+              >
+                My draft
+              </button>
+              <button
+                type="button"
+                className={`review-seg-btn ${!isDraft ? 'active' : ''}`}
+                onClick={() => onSwitchReviewTab && onSwitchReviewTab('main')}
+              >
+                Main (read-only)
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
-            className="btn-flat btn-primary btn-xs btn-banner-push"
+            className="btn-flat btn-primary btn-xs btn-push-draft"
             onClick={onPushDraft}
-            disabled={isStopped}
-            title={isStopped ? 'Editing stopped by host' : 'Submit draft for host review'}
+            disabled={!isDraft || isStopped}
           >
-            <Send size={12} />
+            <Send size={12} strokeWidth={1.75} />
             <span>Push draft</span>
           </button>
         </div>
@@ -728,9 +918,9 @@ export default function Editor({
       {!activeFile || !ytext ? (
         <div className="editor-empty-state">
           <div className="editor-empty-card">
-            <FileCode size={40} className="editor-empty-icon" />
+            <FileCode size={36} strokeWidth={1.75} className="editor-empty-icon" />
             <h3 className="editor-empty-title">
-              No file open<span className="signature-caret" aria-hidden="true" />
+              No file open<span className="signature-caret" aria-hidden="true">|</span>
             </h3>
             <p className="editor-empty-desc">Select a file from the explorer or create a new file to get started.</p>
             {onCreateFile && (
@@ -740,7 +930,7 @@ export default function Editor({
                 onClick={onCreateFile}
                 disabled={isStopped}
               >
-                <Plus size={14} />
+                <Plus size={14} strokeWidth={1.75} />
                 <span>New file</span>
               </button>
             )}
@@ -761,16 +951,16 @@ export default function Editor({
                     }}
                   >
                     <svg
-                      width="15"
-                      height="15"
+                      width="16"
+                      height="16"
                       viewBox="0 0 16 16"
                       fill="none"
                       className="remote-pointer-arrow"
                     >
                       <path
-                        d="M0 0 L5 15 L8 9 L14 8 Z"
+                        d="M0 0 L5.5 15.5 L8.5 9.5 L14.5 8.5 Z"
                         fill={p.color}
-                        stroke="rgba(255, 255, 255, 0.9)"
+                        stroke={theme === 'dark' ? '#0B0C0F' : '#FFFFFF'}
                         strokeWidth="1.2"
                         strokeLinejoin="round"
                       />
@@ -779,7 +969,7 @@ export default function Editor({
                       className="remote-pointer-badge"
                       style={{
                         backgroundColor: p.color,
-                        color: '#ffffff'
+                        color: '#FFFFFF'
                       }}
                     >
                       <span>{p.name}</span>

@@ -1,17 +1,22 @@
-import { useState, useEffect } from 'react'
-import { X, Square, Trash2 } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { X, Square, Trash2, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react'
 
 export default function OutputPanel({
   isOpen,
   onClose,
-  outputs,
+  outputs = [],
   onClear,
-  isRunning,
+  isRunning = false,
   onStop,
-  htmlContent,
-  isHtmlMode
+  htmlContent = '',
+  isHtmlMode = false,
+  showOnlineNotice = false,
+  onDismissOnlineNotice,
+  footerNote = ''
 }) {
   const [activeTab, setActiveTab] = useState('console') // 'console' | 'preview'
+  const [panelHeight, setPanelHeight] = useState(200)
+  const isResizingRef = useRef(false)
 
   useEffect(() => {
     if (isHtmlMode && htmlContent) {
@@ -21,10 +26,63 @@ export default function OutputPanel({
     }
   }, [isHtmlMode, htmlContent])
 
+  const handleResizeStart = (e) => {
+    e.preventDefault()
+    isResizingRef.current = true
+    const startY = e.clientY
+    const startH = panelHeight
+
+    const onMouseMove = (moveEvent) => {
+      if (!isResizingRef.current) return
+      const delta = startY - moveEvent.clientY
+      const newHeight = Math.max(120, Math.min(600, startH + delta))
+      setPanelHeight(newHeight)
+    }
+
+    const onMouseUp = () => {
+      isResizingRef.current = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'row-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+
   if (!isOpen) return null
 
   return (
-    <div className="output-panel">
+    <div className="output-panel" style={{ height: `${panelHeight}px` }}>
+      {/* Draggable top resizer handle */}
+      <div
+        className="output-resizer-handle"
+        onMouseDown={handleResizeStart}
+        title="Drag to resize Output panel"
+      />
+
+      {/* Online service notice banner */}
+      {showOnlineNotice && (
+        <div className="output-online-notice" role="alert">
+          <div className="output-notice-text">
+            <AlertCircle size={13} strokeWidth={1.75} />
+            <span>This language runs on an online service. Your code is sent to it.</span>
+          </div>
+          {onDismissOnlineNotice && (
+            <button
+              type="button"
+              className="btn-dismiss-notice"
+              onClick={onDismissOnlineNotice}
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Panel Header */}
       <div className="output-header">
         <div className="output-header-left">
@@ -60,7 +118,7 @@ export default function OutputPanel({
               onClick={onStop}
               title="Stop execution"
             >
-              <Square size={12} />
+              <Square size={12} strokeWidth={1.75} />
               <span>Stop</span>
             </button>
           )}
@@ -71,7 +129,7 @@ export default function OutputPanel({
             onClick={onClear}
             title="Clear console"
           >
-            <Trash2 size={12} />
+            <Trash2 size={12} strokeWidth={1.75} />
             <span>Clear</span>
           </button>
 
@@ -80,8 +138,9 @@ export default function OutputPanel({
             className="btn-icon-subtle"
             onClick={onClose}
             title="Close output"
+            aria-label="Close output"
           >
-            <X size={14} />
+            <X size={14} strokeWidth={1.75} />
           </button>
         </div>
       </div>
@@ -100,7 +159,9 @@ export default function OutputPanel({
         ) : (
           <div className="console-stream">
             {outputs.length === 0 ? (
-              <div className="console-empty">No output to display.</div>
+              <div className="console-empty">
+                No output to display.<span className="signature-caret" aria-hidden="true">|</span>
+              </div>
             ) : (
               outputs.map((line) => {
                 let lineClass = 'console-line stdout'
@@ -127,6 +188,7 @@ export default function OutputPanel({
             : outputs.length > 0
             ? `Process finished at ${outputs[outputs.length - 1]?.timestamp || ''}`
             : 'Console ready'}
+          {footerNote ? ` • ${footerNote}` : ''}
         </span>
       </div>
     </div>

@@ -1,19 +1,18 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Plus,
   Trash2,
-  FileCode,
-  FileText,
-  AlertCircle,
   Folder,
   FolderOpen,
   FolderX,
   ChevronRight,
   ChevronDown,
   Upload,
-  Info
+  Info,
+  ChevronLeft,
+  Files
 } from 'lucide-react'
-import { getFileExtension, SUPPORTED_EXTENSIONS } from '../utils/helpers'
+import { getFileExtension } from '../utils/helpers'
 
 function buildTree(fileList) {
   const root = { name: '', path: '', folders: {}, files: [] }
@@ -52,7 +51,9 @@ export default function Sidebar({
   users = [],
   isStopped = false,
   isHost = false,
-  onImportFolder
+  onImportFolder,
+  isCollapsed = false,
+  onToggleCollapse
 }) {
   const [isCreating, setIsCreating] = useState(false)
   const [newFileName, setNewFileName] = useState('')
@@ -99,30 +100,20 @@ export default function Sidebar({
         onImportFolder(selectedFiles)
       }
     }
-    e.target.value = ''
   }
 
   const handleCreateSubmit = (e) => {
     e.preventDefault()
-    const cleanName = newFileName.trim()
-
-    if (!cleanName) {
-      setError('Enter a file name.')
+    const trimmed = newFileName.trim()
+    if (!trimmed) {
+      setError('File name cannot be empty')
       return
     }
-
-    const ext = getFileExtension(cleanName)
-    if (!ext || !SUPPORTED_EXTENSIONS.includes(ext)) {
-      setError(`Supported extensions: ${SUPPORTED_EXTENSIONS.map((e) => `.${e}`).join(', ')}`)
+    if (files.includes(trimmed)) {
+      setError('A file with this name already exists')
       return
     }
-
-    if (files.includes(cleanName)) {
-      setError('A file with this name already exists.')
-      return
-    }
-
-    onCreateFile(cleanName)
+    onCreateFile(trimmed)
     setNewFileName('')
     setIsCreating(false)
     setError('')
@@ -135,63 +126,19 @@ export default function Sidebar({
     }
   }
 
-  const getFileIcon = (filename) => {
+  // Get a colored language dot using one calm palette
+  const getLanguageDot = (filename) => {
     const ext = getFileExtension(filename)
-    if (ext === 'md') {
-      return <FileText size={14} className="file-icon file-icon-md" />
-    }
-    if (ext === 'txt') {
-      return <FileText size={14} className="file-icon file-icon-txt" />
-    }
-    if (ext === 'py') {
-      return <FileCode size={14} className="file-icon file-icon-py" />
-    }
-    if (['js', 'jsx', 'mjs'].includes(ext)) {
-      return <FileCode size={14} className="file-icon file-icon-js" />
-    }
-    if (['ts', 'tsx'].includes(ext)) {
-      return <FileCode size={14} className="file-icon file-icon-ts" />
-    }
-    if (['html', 'htm'].includes(ext)) {
-      return <FileCode size={14} className="file-icon file-icon-html" />
-    }
-    if (['css'].includes(ext)) {
-      return <FileCode size={14} className="file-icon file-icon-css" />
-    }
-    if (ext === 'json') {
-      return <FileCode size={14} className="file-icon file-icon-json" />
-    }
-    if (['c', 'h'].includes(ext)) {
-      return <FileCode size={14} className="file-icon file-icon-c" />
-    }
-    if (['cpp', 'cxx', 'cc', 'hpp'].includes(ext)) {
-      return <FileCode size={14} className="file-icon file-icon-cpp" />
-    }
-    if (ext === 'java') {
-      return <FileCode size={14} className="file-icon file-icon-java" />
-    }
-    if (ext === 'php') {
-      return <FileCode size={14} className="file-icon file-icon-php" />
-    }
-    if (ext === 'rs') {
-      return <FileCode size={14} className="file-icon file-icon-rs" />
-    }
-    if (ext === 'go') {
-      return <FileCode size={14} className="file-icon file-icon-go" />
-    }
-    if (ext === 'rb') {
-      return <FileCode size={14} className="file-icon file-icon-rb" />
-    }
-    return <FileCode size={14} className="file-icon" />
+    return <span className={`lang-palette-dot file-icon-${ext || 'txt'}`} aria-hidden="true" />
   }
 
-  const tree = useMemo(() => buildTree(files), [files])
-  const rootFolders = Object.keys(tree.folders).sort()
-  const rootFiles = [...tree.files].sort()
+  const tree = buildTree(files)
 
   const renderFileRow = (filePath, depth = 0) => {
-    const isActive = filePath === activeFile
+    const isActive = activeFile === filePath
     const displayName = filePath.split('/').pop()
+
+    // Find remote users viewing this file
     const remoteViewers = users.filter((u) => !u.isYou && u.currentFile === filePath)
 
     return (
@@ -199,14 +146,14 @@ export default function Sidebar({
         key={filePath}
         className={`file-row ${isActive ? 'active' : ''}`}
         onClick={() => onSelectFile(filePath)}
-        style={{ paddingLeft: `${12 + depth * 14}px` }}
+        style={{ paddingLeft: `${14 + depth * 14}px` }}
         title={filePath}
       >
         <div className="file-row-main">
-          {getFileIcon(filePath)}
+          {getLanguageDot(filePath)}
           <span className="file-row-name">{displayName}</span>
 
-          {/* Presence indicator dot for remote collaborators */}
+          {/* Remote presence dots in user colors */}
           {remoteViewers.length > 0 && (
             <div className="file-presence-dots">
               {remoteViewers.map((viewer) => (
@@ -234,7 +181,7 @@ export default function Sidebar({
           title={isStopped ? 'Editing stopped by host' : `Delete ${filePath}`}
           aria-label={isStopped ? 'Editing stopped by host' : `Delete ${filePath}`}
         >
-          <Trash2 size={13} />
+          <Trash2 size={13} strokeWidth={1.75} />
         </button>
       </div>
     )
@@ -259,19 +206,19 @@ export default function Sidebar({
           }}
           title={folderNode.path}
         >
-          <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--text-muted)' }}>
-            {isExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          <span className="folder-chevron" aria-hidden="true">
+            {isExpanded ? <ChevronDown size={13} strokeWidth={1.75} /> : <ChevronRight size={13} strokeWidth={1.75} />}
           </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', color: 'var(--color-warning)' }}>
-            {isExpanded ? <FolderOpen size={14} /> : <Folder size={14} />}
+          <span className="folder-icon" aria-hidden="true">
+            {isExpanded ? <FolderOpen size={14} strokeWidth={1.75} /> : <Folder size={14} strokeWidth={1.75} />}
           </span>
-          <span className="file-row-name" style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>
+          <span className="file-row-name folder-name">
             {folderNode.name}
           </span>
         </div>
 
         {isExpanded && (
-          <div className="folder-children">
+          <div className="folder-children" style={{ borderLeft: '1px solid var(--border-subtle)', marginLeft: `${18 + depth * 14}px` }}>
             {subFolderKeys.map((k) => renderFolderNode(folderNode.folders[k], depth + 1))}
             {folderFiles.map((f) => renderFileRow(f, depth + 1))}
           </div>
@@ -280,12 +227,59 @@ export default function Sidebar({
     )
   }
 
+  // Collapsed rail mode (40px)
+  if (isCollapsed) {
+    return (
+      <aside className="sidebar-rail" onClick={onToggleCollapse} title="Expand Explorer (Ctrl+B)">
+        <button
+          type="button"
+          className="btn-rail-icon"
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleCollapse()
+          }}
+          title="Expand Explorer (Ctrl+B)"
+          aria-label="Expand Explorer"
+        >
+          <Files size={16} strokeWidth={1.75} />
+        </button>
+
+        <button
+          type="button"
+          className="btn-rail-icon"
+          onClick={(e) => {
+            e.stopPropagation()
+            onToggleCollapse()
+            setTimeout(() => setIsCreating(true), 100)
+          }}
+          disabled={isStopped}
+          title="New file"
+          aria-label="New file"
+        >
+          <Plus size={16} strokeWidth={1.75} />
+        </button>
+      </aside>
+    )
+  }
+
   return (
     <aside className="sidebar">
       {/* Sidebar Header */}
       <div className="sidebar-header">
-        <span className="sidebar-title">EXPLORER</span>
-        <div className="sidebar-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+        <div className="sidebar-title-row">
+          <button
+            type="button"
+            className="btn-icon-subtle btn-collapse-panel"
+            onClick={onToggleCollapse}
+            title="Collapse Explorer (Ctrl+B)"
+            aria-label="Collapse Explorer"
+          >
+            <ChevronLeft size={14} strokeWidth={1.75} />
+          </button>
+          <span className="sidebar-title">EXPLORER</span>
+        </div>
+
+        <div className="sidebar-header-actions">
           {isHost && (
             <>
               <button
@@ -294,20 +288,11 @@ export default function Sidebar({
                 onClick={handleOpenFolderClick}
                 disabled={isStopped}
                 style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
-                title={isStopped ? 'Editing stopped by host' : 'Open folder (one-time copy)'}
+                title={isStopped ? 'Editing stopped by host' : 'Import folder'}
+                aria-label="Import folder"
               >
-                <Upload size={14} />
+                <Upload size={14} strokeWidth={1.75} />
               </button>
-
-              <span
-                className="btn-icon-subtle info-tooltip-trigger"
-                title="Open folder is a one-time copy; edits do not write back to computer."
-                tabIndex={0}
-                aria-label="Open folder information"
-                style={{ display: 'inline-flex', alignItems: 'center', cursor: 'help', color: 'var(--text-faint)' }}
-              >
-                <Info size={13} />
-              </span>
 
               {files.length > 0 && (
                 <button
@@ -319,9 +304,10 @@ export default function Sidebar({
                   }}
                   disabled={isStopped}
                   style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
-                  title={isStopped ? 'Editing stopped by host' : 'Remove all files / close folder'}
+                  title={isStopped ? 'Editing stopped by host' : 'Remove all files'}
+                  aria-label="Remove all files"
                 >
-                  <FolderX size={14} />
+                  <FolderX size={14} strokeWidth={1.75} />
                 </button>
               )}
             </>
@@ -340,7 +326,7 @@ export default function Sidebar({
             title={isStopped ? 'Editing stopped by host' : 'New file'}
             aria-label={isStopped ? 'Editing stopped by host' : 'New file'}
           >
-            <Plus size={15} />
+            <Plus size={15} strokeWidth={1.75} />
           </button>
         </div>
       </div>
@@ -359,10 +345,10 @@ export default function Sidebar({
 
       {/* New file input form */}
       {isCreating && (
-        <form onSubmit={handleCreateSubmit} className="new-file-box">
+        <form onSubmit={handleCreateSubmit} className="new-file-form">
           <input
             type="text"
-            className="text-input new-file-input"
+            className="new-file-input"
             value={newFileName}
             onChange={(e) => {
               setNewFileName(e.target.value)
@@ -374,13 +360,7 @@ export default function Sidebar({
             autoComplete="off"
             autoFocus
           />
-          {error && (
-            <div className="validation-msg">
-              <AlertCircle size={12} />
-              <span>{error}</span>
-            </div>
-          )}
-
+          {error && <span className="new-file-error">{error}</span>}
           <div className="new-file-actions">
             <button type="submit" className="btn-flat btn-primary btn-xs">
               Create
@@ -400,38 +380,50 @@ export default function Sidebar({
         </form>
       )}
 
-      {/* Compact File and Folder Tree List */}
-      <div className="file-list">
-        {files.length === 0 ? (
-          <div className="file-list-empty">No files in workspace.</div>
+      {/* File Tree */}
+      <div className="file-list" role="tree" aria-label="Project files">
+        {files.length === 0 && !isCreating ? (
+          <div className="sidebar-empty">
+            <p>No files yet</p>
+            <button
+              type="button"
+              className="btn-flat btn-secondary btn-xs"
+              onClick={() => setIsCreating(true)}
+              disabled={isStopped}
+            >
+              Create a file
+            </button>
+          </div>
         ) : (
           <>
-            {rootFolders.map((fKey) => renderFolderNode(tree.folders[fKey], 0))}
-            {rootFiles.map((fileName) => renderFileRow(fileName, 0))}
+            {Object.keys(tree.folders).sort().map((k) => renderFolderNode(tree.folders[k], 0))}
+            {tree.files.sort().map((f) => renderFileRow(f, 0))}
           </>
         )}
       </div>
 
-      {/* Delete confirmation modal */}
+      {/* Delete confirmation dialog */}
       {fileToDelete && (
         <div className="modal-backdrop" onClick={() => setFileToDelete(null)}>
           <div className="modal-card modal-delete" onClick={(e) => e.stopPropagation()}>
-            <h4>Delete File</h4>
-            <p>Delete "{fileToDelete}"? This cannot be undone.</p>
+            <h4 className="modal-title">Delete File</h4>
+            <p className="modal-desc">
+              Are you sure you want to delete <code>{fileToDelete}</code>? This will delete it for everyone in the room.
+            </p>
             <div className="modal-actions">
               <button
                 type="button"
-                className="btn-flat btn-danger btn-sm"
-                onClick={confirmDelete}
-              >
-                Delete
-              </button>
-              <button
-                type="button"
-                className="btn-flat btn-secondary btn-sm"
+                className="btn-flat btn-secondary"
                 onClick={() => setFileToDelete(null)}
               >
                 Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-danger"
+                onClick={confirmDelete}
+              >
+                Delete
               </button>
             </div>
           </div>

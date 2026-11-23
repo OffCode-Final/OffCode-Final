@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
-import { X, History, Sparkles, CheckCircle2 } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { X, History } from 'lucide-react'
 import { UPDATE_LOGS } from '../data/updateLogs'
 
 export default function UpdateLogsModal({ isOpen, onClose }) {
   const currentVersion = UPDATE_LOGS[0]?.version || 'v1.1'
+  const drawerRef = useRef(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -14,49 +15,52 @@ export default function UpdateLogsModal({ isOpen, onClose }) {
       }
     }
 
+    const handleClickOutside = (e) => {
+      if (drawerRef.current && !drawerRef.current.contains(e.target)) {
+        onClose()
+      }
+    }
+
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
   }, [isOpen, onClose])
 
   if (!isOpen) return null
 
   return (
-    <div className="modal-backdrop update-logs-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="update-logs-title">
-      <div className="modal-card update-logs-card" onClick={(e) => e.stopPropagation()}>
+    <div className="updates-drawer-backdrop" role="dialog" aria-modal="true" aria-labelledby="updates-drawer-title">
+      <aside className="updates-drawer" ref={drawerRef} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
-        <div className="update-logs-header">
-          <div className="update-logs-header-left">
-            <div className="update-logs-icon-wrapper">
-              <History size={16} />
-            </div>
-            <div>
-              <h3 id="update-logs-title" className="update-logs-title">Update Logs</h3>
-              <p className="update-logs-subtitle">Track new features, improvements, and bug fixes</p>
-            </div>
+        <div className="updates-drawer-header">
+          <div className="updates-drawer-title-row">
+            <History size={16} strokeWidth={1.75} className="updates-drawer-icon" />
+            <h3 id="updates-drawer-title" className="updates-drawer-title">Updates</h3>
+            <span className="badge-release-version">{currentVersion}</span>
           </div>
           <button
             type="button"
-            className="btn-icon-bar btn-modal-close"
+            className="btn-icon-subtle btn-close-updates"
             onClick={onClose}
-            title="Close update logs (Esc)"
-            aria-label="Close update logs"
+            title="Close (Esc)"
+            aria-label="Close updates"
           >
-            <X size={16} />
+            <X size={16} strokeWidth={1.75} />
           </button>
         </div>
 
         {/* Content list */}
-        <div className="update-logs-body">
+        <div className="updates-drawer-body">
           {UPDATE_LOGS.map((release) => (
             <div key={release.version} className="update-release-section">
               <div className="update-release-header">
                 <div className="update-release-badges">
                   <span className="badge-release-version">{release.version}</span>
                   {release.isCurrent && (
-                    <span className="badge-release-current">
-                      <Sparkles size={11} />
-                      Current
-                    </span>
+                    <span className="badge-release-current">Current</span>
                   )}
                 </div>
                 <div className="update-release-meta">
@@ -65,10 +69,10 @@ export default function UpdateLogsModal({ isOpen, onClose }) {
                 </div>
               </div>
 
-              <ol className="update-logs-list">
+              <ul className="update-logs-list">
                 {release.logs.map((log, index) => (
-                  <li key={index} className="update-log-item">
-                    <span className="update-log-number">{index + 1}.</span>
+                  <li key={index} className="update-log-bullet">
+                    <span className="update-log-bullet-mark">•</span>
                     <div className="update-log-content">
                       <strong className="update-log-feature">{log.item}</strong>
                       <span className="update-log-sep"> – </span>
@@ -76,22 +80,19 @@ export default function UpdateLogsModal({ isOpen, onClose }) {
                     </div>
                   </li>
                 ))}
-              </ol>
+              </ul>
             </div>
           ))}
         </div>
 
         {/* Footer */}
-        <div className="update-logs-footer">
-          <div className="update-logs-footer-info">
-            <CheckCircle2 size={13} className="text-success" />
-            <span>OffCode {currentVersion} • All features verified & active</span>
-          </div>
-          <button type="button" className="btn-flat btn-primary" onClick={onClose}>
-            Done
+        <div className="updates-drawer-footer">
+          <span className="updates-drawer-note">OffCode {currentVersion} • Offline collaborative editor</span>
+          <button type="button" className="btn-flat btn-secondary btn-sm" onClick={onClose}>
+            Close
           </button>
         </div>
-      </div>
+      </aside>
     </div>
   )
 }

@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { Send, X } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { Send, X, Trash2, ArrowDown } from 'lucide-react'
 
 /**
  * Returns the timestamp (in ms) when the user first entered this room.
@@ -11,7 +11,6 @@ export function getChatJoinedAt(roomId, userId = null) {
   const cleanRoom = (roomId || 'default').trim().toLowerCase()
   const baseKey = `chatJoinedAt:${cleanRoom}`
 
-  // Support URL ?as=<name> or explicit userId so multi-tab testing on a single machine isolates profiles
   let asParam = userId
   try {
     const params = new URLSearchParams(window.location.search)
@@ -41,7 +40,6 @@ export function getChatJoinedAt(roomId, userId = null) {
 
 /**
  * Extracts a numeric millisecond timestamp from a chat message item.
- * Supports numeric time, timestamp, createdAt, or timestamp encoded in safeId (msg_<timestamp>_...).
  */
 export function getMessageTime(msg) {
   if (!msg) return 0
@@ -72,13 +70,40 @@ export default function ChatPanel({
   isOpen,
   onClose,
   workspace,
-  session,
-  isHost = false
+  session
 }) {
   const [messages, setMessages] = useState([])
   const [inputText, setInputText] = useState('')
+  const [isAtBottom, setIsAtBottom] = useState(true)
+  const [hasNewUnseen, setHasNewUnseen] = useState(false)
+
+  const messagesContainerRef = useRef(null)
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
+
+  const cleanRoom = (session?.roomId || 'default').trim().toLowerCase()
+  const clearedKey = `chatClearedAt:${cleanRoom}`
+  const hiddenKey = `chatHidden:${cleanRoom}`
+
+  // Local chatClearedAt (hides messages prior to this on user's screen only)
+  const [chatClearedAt, setChatClearedAt] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(clearedKey)
+      return saved ? parseInt(saved, 10) || 0 : 0
+    } catch (_) {
+      return 0
+    }
+  })
+
+  // Local chatHidden (capped at 500 ids, hides only those messages on user's screen)
+  const [hiddenIds, setHiddenIds] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem(hiddenKey)
+      return saved ? new Set(JSON.parse(saved)) : new Set()
+    } catch (_) {
+      return new Set()
+    }
+  })
 
   // Retrieve or initialize the joinedAt timestamp for this room
   const myUserId = workspace?.getUserId ? workspace.getUserId() : session?.userName
@@ -91,7 +116,6 @@ export default function ChatPanel({
     const chatArray = workspace.ydoc.getArray('chat')
     const updateMessages = () => {
       const arr = chatArray.toArray()
-      // Keep only last 200 messages in memory
       setMessages(arr.slice(-200))
     }
 
@@ -103,23 +127,59 @@ export default function ChatPanel({
     }
   }, [workspace])
 
-  // Filter messages: Only display messages with time >= joinedAt minus 2 seconds
-  const cutoff = joinedAt - 2000
-  const visibleMessages = messages.filter((msg) => getMessageTime(msg) >= cutoff)
+  // Filter messages: Only display messages with time >= joinedAt - 2000 AND > chatClearedAt AND not hidden
+  const cutoff = Math.max(joinedAt - 2000, chatClearedAt)
+  const visibleMessages = useMemo(() => {
+    return messages.filter((msg) => {
+      if (!msg) return false
+      if (msg.id && hiddenIds.has(msg.id)) return false
+      return getMessageTime(msg) >= cutoff
+    })
+  }, [messages, cutoff, hiddenIds])
 
-  // Auto-scroll to bottom on new visible messages
-  useEffect(() => {
-    if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  // Check scroll position
+  const handleScroll = useCallback(() => {
+    const el = messagesContainerRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    const atBottom = distanceFromBottom < 30
+    setIsAtBottom(atBottom)
+    if (atBottom) {
+      setHasNewUnseen(false)
     }
-  }, [visibleMessages, isOpen])
+  }, [])
 
-  // Focus input when opened
+  // Auto-scroll to bottom on new messages if user was already at bottom
+  useEffect(() => {
+    if (!isOpen) return
+    if (isAtBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    } else {
+      setHasNewUnseen(true)
+    }
+  }, [visibleMessages, isAtBottom, isOpen])
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    setIsAtBottom(true)
+    setHasNewUnseen(false)
+  }
+
+  // Focus and auto-grow input when opened
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 50)
     }
   }, [isOpen])
+
+  const handleInputChange = (e) => {
+    setInputText(e.target.value.slice(0, 500))
+    // Auto-grow textarea
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120)}px`
+    }
+  }
 
   const handleSend = () => {
     const text = inputText.trim()
@@ -130,11 +190,11 @@ export default function ChatPanel({
 
     const now = Date.now()
     const safeId = `msg_${now}_${Math.random().toString(36).slice(2, 9)}_${Math.random().toString(36).slice(2, 6)}`
-    const myUserId = workspace.getUserId ? workspace.getUserId() : 'user_local'
+    const resolvedUserId = workspace.getUserId ? workspace.getUserId() : 'user_local'
 
     const newMsg = {
       id: safeId,
-      userId: myUserId,
+      userId: resolvedUserId,
       name: session?.userName || 'Anonymous',
       color: session?.userColor || '#6366f1',
       text: cleanText,
@@ -144,6 +204,10 @@ export default function ChatPanel({
 
     chatArray.push([newMsg])
     setInputText('')
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+    }
+    setTimeout(scrollToBottom, 50)
   }
 
   const handleKeyDown = (e) => {
@@ -153,17 +217,34 @@ export default function ChatPanel({
     }
   }
 
-  const handleClearChat = () => {
-    if (!workspace?.ydoc) return
-    const ok = window.confirm('Delete all chat messages for everyone?')
+  // Clear chat for current user only
+  const handleClearChatForMe = () => {
+    const ok = window.confirm('Clear chat on your screen only? Other people keep their messages.')
     if (!ok) return
 
-    const chatArray = workspace.ydoc.getArray('chat')
-    workspace.ydoc.transact(() => {
-      if (chatArray.length > 0) {
-        chatArray.delete(0, chatArray.length)
+    const now = Date.now()
+    setChatClearedAt(now)
+    try {
+      window.localStorage.setItem(clearedKey, String(now))
+    } catch (_) {}
+  }
+
+  // Delete single message for current user only
+  const handleDeleteMessageForMe = (msgId) => {
+    if (!msgId) return
+    setHiddenIds((prev) => {
+      const next = new Set(prev)
+      next.add(msgId)
+      // Cap at 500 ids, dropping oldest
+      let arr = Array.from(next)
+      if (arr.length > 500) {
+        arr = arr.slice(arr.length - 500)
       }
-    }, 'chat-clear')
+      try {
+        window.localStorage.setItem(hiddenKey, JSON.stringify(arr))
+      } catch (_) {}
+      return new Set(arr)
+    })
   }
 
   if (!isOpen) return null
@@ -177,16 +258,14 @@ export default function ChatPanel({
           <span className="chat-count">({visibleMessages.length})</span>
         </div>
         <div className="chat-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {isHost && (
-            <button
-              type="button"
-              className="btn-clear-chat"
-              onClick={handleClearChat}
-              title="Delete all chat messages for everyone"
-            >
-              Clear chat
-            </button>
-          )}
+          <button
+            type="button"
+            className="btn-clear-chat"
+            onClick={handleClearChatForMe}
+            title="Clear chat on your screen only"
+          >
+            Clear chat
+          </button>
           <button
             type="button"
             className="btn-icon-bar"
@@ -200,10 +279,16 @@ export default function ChatPanel({
       </div>
 
       {/* Messages list */}
-      <div className="chat-messages-container">
+      <div
+        className="chat-messages-container"
+        ref={messagesContainerRef}
+        onScroll={handleScroll}
+      >
         {visibleMessages.length === 0 ? (
           <div className="chat-empty-state">
-            <span>No messages yet.</span>
+            <span>
+              No messages yet.<span className="signature-caret" aria-hidden="true">|</span>
+            </span>
           </div>
         ) : (
           visibleMessages.map((msg) => {
@@ -220,7 +305,18 @@ export default function ChatPanel({
                   >
                     {msg.name}{isOwn ? ' (you)' : ''}
                   </span>
-                  <span className="chat-message-time">{formatChatTime(msg)}</span>
+                  <div className="chat-message-meta-right">
+                    <span className="chat-message-time">{formatChatTime(msg)}</span>
+                    <button
+                      type="button"
+                      className="btn-delete-msg-hover"
+                      onClick={() => handleDeleteMessageForMe(msg.id)}
+                      title="Delete for me"
+                      aria-label="Delete message for me"
+                    >
+                      <Trash2 size={12} strokeWidth={1.75} />
+                    </button>
+                  </div>
                 </div>
                 <div className="chat-message-text">{msg.text}</div>
               </div>
@@ -230,6 +326,18 @@ export default function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* "New messages" scroll-to-bottom floating pill */}
+      {hasNewUnseen && (
+        <button
+          type="button"
+          className="chat-new-messages-pill"
+          onClick={scrollToBottom}
+        >
+          <ArrowDown size={12} strokeWidth={2} />
+          <span>New messages</span>
+        </button>
+      )}
+
       {/* Input area */}
       <div className="chat-input-area">
         <div className="chat-input-box">
@@ -238,14 +346,14 @@ export default function ChatPanel({
             className="chat-textarea"
             placeholder="Type a message (Enter to send, Shift+Enter for newline)..."
             value={inputText}
-            onChange={(e) => setInputText(e.target.value.slice(0, 500))}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             maxLength={500}
             rows={2}
           />
           <div className="chat-input-footer">
             <span className="chat-char-count">
-              {inputText.length}/500
+              {inputText.length > 400 ? `${inputText.length}/500` : ''}
             </span>
             <button
               type="button"

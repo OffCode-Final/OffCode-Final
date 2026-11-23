@@ -3,18 +3,61 @@
  */
 import JSZip from 'jszip'
 
-// Curated palette of pleasant, accessible collaborator colors
-// (Used ONLY for remote cursors, selections, and presence indicator dot)
-export const USER_COLORS = [
-  { name: 'Sky Blue', hex: '#0284c7' },
-  { name: 'Emerald', hex: '#059669' },
-  { name: 'Purple', hex: '#7c3aed' },
-  { name: 'Rose', hex: '#e11d48' },
-  { name: 'Amber', hex: '#d97706' },
-  { name: 'Indigo', hex: '#4f46e5' },
-  { name: 'Teal', hex: '#0d9488' },
-  { name: 'Fuchsia', hex: '#c026d3' }
+// Curated 12-color palette of clearly different collaborator colors (Phase 4)
+// Looks distinct and legible on both light (#F5F2EB) and dark (#0B0C0F) backgrounds
+export const COLLABORATOR_PALETTE = [
+  '#2563EB', // Blue
+  '#EA580C', // Orange
+  '#16A34A', // Green
+  '#DB2777', // Pink
+  '#9333EA', // Purple
+  '#0D9488', // Teal
+  '#DC2626', // Red
+  '#D97706', // Yellow-Gold
+  '#4F46E5', // Indigo
+  '#65A30D', // Lime
+  '#0891B2', // Cyan
+  '#C026D3'  // Magenta
 ]
+
+export const USER_COLORS = COLLABORATOR_PALETTE.map((hex) => ({ name: hex, hex }))
+
+export function getHueShiftedColor(index) {
+  const hue = Math.round((index * 137.508) % 360)
+  return `hsl(${hue}, 75%, 48%)`
+}
+
+export function pickUniqueColor(takenColors = [], preferredColor = null) {
+  const takenSet = new Set(
+    takenColors
+      .filter(Boolean)
+      .map((c) => (typeof c === 'string' ? c.toLowerCase().trim() : ''))
+  )
+
+  // Keep same color on refresh if still free
+  if (preferredColor && !takenSet.has(preferredColor.toLowerCase().trim())) {
+    return preferredColor
+  }
+
+  // Pick first available from the 12-color palette
+  for (const c of COLLABORATOR_PALETTE) {
+    if (!takenSet.has(c.toLowerCase())) {
+      return c
+    }
+  }
+
+  // With > 12 people, reuse colors by generating a hue-shifted variant
+  let idx = takenColors.length
+  while (idx < 100) {
+    const candidate = getHueShiftedColor(idx)
+    if (!takenSet.has(candidate.toLowerCase())) {
+      return candidate
+    }
+    idx++
+  }
+
+  return COLLABORATOR_PALETTE[0]
+}
 
 export const SUPPORTED_EXTENSIONS = [
   'py',
