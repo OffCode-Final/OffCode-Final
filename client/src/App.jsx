@@ -40,6 +40,7 @@ import { runRemoteCode, isOnlineLanguage } from './run/remote.js'
 
 export default function App() {
   const [session, setSession] = useState(null)
+  const [currentUserColor, setCurrentUserColor] = useState(null)
   const [workspace, setWorkspace] = useState(null)
   const [status, setStatus] = useState('online')
   const [files, setFiles] = useState([])
@@ -328,6 +329,7 @@ export default function App() {
     try {
       window.localStorage.setItem('offcode-pref-color', autoColor)
     } catch (_) {}
+    setCurrentUserColor(autoColor)
     setSession({ userName, roomId, userColor: autoColor, password })
     logEvent('session', `Joined room "${roomId}" as ${userName}`)
   }
@@ -357,6 +359,7 @@ export default function App() {
 
     setWorkspace(null)
     setSession(null)
+    setCurrentUserColor(null)
     setFiles([])
     setActiveFile(null)
     setOpenFiles([])
@@ -471,7 +474,7 @@ export default function App() {
       name: userName,
       color: assignedColor
     })
-    setSession((prev) => (prev ? { ...prev, userColor: assignedColor } : prev))
+    setCurrentUserColor(assignedColor)
 
     // Sync initial status
     setStatus(ws.getStatus())
@@ -532,6 +535,18 @@ export default function App() {
           }
         }
       })
+      const hasMe = list.some((u) => u.isYou)
+      if (!hasMe && myId) {
+        list.unshift({
+          clientId: myClientId,
+          userId: myId,
+          name: userName,
+          color: assignedColor,
+          currentFile: activeFile,
+          currentLine: 1,
+          isYou: true
+        })
+      }
       setUsers(list)
 
       // Automatic conflict handling (Phase 4):
@@ -559,7 +574,7 @@ export default function App() {
                 ...curUser,
                 color: nextColor
               })
-              setSession((prev) => (prev ? { ...prev, userColor: nextColor } : prev))
+              setCurrentUserColor(nextColor)
             }, 500)
           }
         }
@@ -701,7 +716,7 @@ export default function App() {
       ws.destroy()
       clearAllUndoManagers()
     }
-  }, [session, logEvent])
+  }, [session?.roomId, session?.userName, session?.password, logEvent])
 
   // Broadcast current active file in awareness
   useEffect(() => {
@@ -798,8 +813,8 @@ export default function App() {
   }, [workspace, isChatOpen])
 
   // Active Y.Text based on mode and review tab
-  const isDraftEditing = isNonHostReview && reviewTab === 'draft'
-  const isMainReadOnly = isNonHostReview && reviewTab === 'main'
+  const isDraftEditing = isReviewMode && reviewTab === 'draft'
+  const isMainReadOnly = isReviewMode && reviewTab === 'main'
 
   let activeYText = null
   if (workspace && activeFile) {
@@ -1021,9 +1036,14 @@ export default function App() {
 
   const handleCloseTab = (fileName) => {
     setOpenFiles((prev) => {
+      const closedIdx = prev.indexOf(fileName)
       const next = prev.filter((f) => f !== fileName)
       if (activeFile === fileName) {
-        setActiveFile(next.length > 0 ? next[next.length - 1] : null)
+        let newActive = null
+        if (next.length > 0) {
+          newActive = closedIdx < next.length ? next[closedIdx] : next[next.length - 1]
+        }
+        setActiveFile(newActive)
       }
       return next
     })
@@ -1555,7 +1575,7 @@ export default function App() {
       <TopBar
         roomId={session.roomId}
         userName={session.userName}
-        userColor={session.userColor}
+        userColor={currentUserColor || session.userColor}
         status={status}
         onToggleOnline={handleToggleOnline}
         onUndo={handleUndo}
@@ -1672,7 +1692,8 @@ export default function App() {
           <div
             className="panel-resizer panel-resizer-left"
             onMouseDown={handleSidebarResizeStart}
-            title="Drag to resize Explorer"
+            onDoubleClick={() => updateLayout((prev) => ({ ...prev, sidebarWidth: 240 }))}
+            title="Drag to resize Explorer (Double-click to reset)"
           />
         )}
 
@@ -1694,7 +1715,7 @@ export default function App() {
             onUserInteraction={handleUserInteraction}
             onCursorChange={setCursorPos}
             readOnly={isMainReadOnly || isCurrentUserStopped}
-            isReviewMode={isNonHostReview}
+            isReviewMode={isReviewMode}
             isDraft={isDraftEditing}
             onSwitchReviewTab={(tab) => setReviewTab(tab)}
             onPushDraft={() => setIsPushDraftOpen(true)}
@@ -1736,7 +1757,8 @@ export default function App() {
           <div
             className="panel-resizer panel-resizer-right"
             onMouseDown={handlePeopleResizeStart}
-            title="Drag to resize People"
+            onDoubleClick={() => updateLayout((prev) => ({ ...prev, peopleWidth: 260 }))}
+            title="Drag to resize People (Double-click to reset)"
           />
         )}
 
