@@ -15,7 +15,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons.svg', 'pyodide/**/*'],
+      includeAssets: ['favicon.svg', 'icons.svg', 'pyodide/**/*', 'logos/**/*'],
       workbox: {
         skipWaiting: true,
         clientsClaim: true,

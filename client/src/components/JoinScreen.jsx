@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Sun, Moon, Users, WifiOff, GitPullRequest, Copy, Check, Lock } from 'lucide-react'
 import { getRandomColor, getInitialRoomFromUrl, copyToClipboard } from '../utils/helpers'
 import AnimatedLogo from './AnimatedLogo'
+import LogoBackground from './LogoBackground'
 
 export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
+  const cardRef = useRef(null)
   const [tab, setTab] = useState('join') // 'create' | 'join'
   const [userName, setUserName] = useState('')
   const [roomId, setRoomId] = useState('')
@@ -217,6 +219,8 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
 
   return (
     <div className="join-container">
+      <LogoBackground cardRef={cardRef} />
+
       {onToggleTheme && (
         <div className="join-theme-corner">
           <button
@@ -231,7 +235,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
         </div>
       )}
 
-      <div className="join-card">
+      <div ref={cardRef} className="join-card">
         {/* Brand Header */}
         <div className="join-header">
           <div className="join-brand-row">
