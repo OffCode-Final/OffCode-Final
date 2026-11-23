@@ -389,21 +389,30 @@ export function createWorkspace({
   meta.observe(handleMetaChange);
 
   // 4. Initial Seeding and Host Election Logic
-  let isInitialized = false;
-  const initSession = () => {
-    if (isInitialized) return;
-    isInitialized = true;
+  let idbLoaded = false;
+  idbPromise.then(() => {
+    idbLoaded = true;
+  });
 
-    // A. Host Election:
+  const tryElectHost = () => {
+    // Rule: hostId may be set ONLY when all of these are true:
+    // 1. IndexedDB has loaded
+    // 2. websocket provider has completed its first sync with the server (provider.synced is true)
+    // 3. meta.hostId is still empty after that
+    // Never while status is connecting or offline, never from a timeout fallback.
+    if (!idbLoaded) return;
+    if (!provider || !provider.synced) return;
+    if (status === 'connecting' || status === 'offline') return;
+
     if (!meta.has('hostId') || !meta.get('hostId')) {
       meta.set('hostId', currentUserId);
     }
-    // Mode defaults to 'live' ('free' mapped to 'live')
     if (!meta.has('mode') || meta.get('mode') === 'free') {
       meta.set('mode', 'live');
     }
+  };
 
-    // B. Default File Seeding:
+  const seedDefaultFiles = () => {
     if (files.size === 0) {
       const host = meta.get('hostId');
       if (host === currentUserId || !host) {
@@ -415,30 +424,46 @@ export function createWorkspace({
     }
   };
 
+  // Provider sync listener: triggers host election and default file seeding
+  provider.on('synced', (isSynced) => {
+    if (isSynced) {
+      tryElectHost();
+      seedDefaultFiles();
+    }
+  });
+
   // 5. whenReady Promise
   const whenReady = new Promise((resolve) => {
     idbPromise.then(() => {
-      if (provider.synced || isManualOffline) {
-        initSession();
+      idbLoaded = true;
+      if (provider.synced) {
+        tryElectHost();
+        seedDefaultFiles();
+        resolve();
+      } else if (isManualOffline) {
+        seedDefaultFiles();
         resolve();
       } else {
         let resolved = false;
         const onSync = (isSynced) => {
           if (isSynced && !resolved) {
             resolved = true;
-            initSession();
+            tryElectHost();
+            seedDefaultFiles();
             resolve();
           }
         };
         provider.on('synced', onSync);
 
+        // Timeout fallback: resolve whenReady so editor UI displays,
+        // but NEVER elect host from timeout fallback!
         setTimeout(() => {
           if (!resolved) {
             resolved = true;
-            initSession();
+            seedDefaultFiles();
             resolve();
           }
-        }, 300);
+        }, 500);
       }
     });
   });
