@@ -117,7 +117,16 @@ export default function ChatPanel({
     const chatArray = workspace.ydoc.getArray('chat')
     const updateMessages = () => {
       const arr = chatArray.toArray()
-      setMessages(arr.slice(-200))
+      const seen = new Set()
+      const deduped = []
+      for (const m of arr) {
+        if (!m) continue
+        const key = m.id || `${m.userId}-${m.time}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        deduped.push(m)
+      }
+      setMessages(deduped.slice(-200))
     }
 
     updateMessages()
@@ -204,7 +213,6 @@ export default function ChatPanel({
     }
 
     chatArray.push([newMsg])
-    setMessages((prev) => [...prev, newMsg])
     setInputText('')
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto'
@@ -323,27 +331,24 @@ export default function ChatPanel({
                   </span>
                   <div className="chat-message-meta-right">
                     <span className="chat-message-time">{formatChatTime(msg)}</span>
-                    {isOwn && !msg.isDeleted && (
+                    {!msg.isDeleted && (
                       <button
                         type="button"
                         className="btn-delete-msg-hover"
-                        onClick={() => handleDeleteForEveryone(msg.id)}
-                        title="Delete for everyone"
-                        aria-label="Delete for everyone"
+                        onClick={() => {
+                          if (isOwn) {
+                            handleDeleteForEveryone(msg.id)
+                          } else {
+                            handleDeleteMessageForMe(msg.id)
+                          }
+                        }}
+                        title={isOwn ? 'Delete for everyone' : 'Delete for me'}
+                        aria-label={isOwn ? 'Delete for everyone' : 'Delete for me'}
                         style={{ color: 'var(--color-danger, #ef4444)' }}
                       >
                         <Trash2 size={12} strokeWidth={1.75} />
                       </button>
                     )}
-                    <button
-                      type="button"
-                      className="btn-delete-msg-hover"
-                      onClick={() => handleDeleteMessageForMe(msg.id)}
-                      title="Delete for me"
-                      aria-label="Delete message for me"
-                    >
-                      <X size={12} strokeWidth={1.75} />
-                    </button>
                   </div>
                 </div>
                 <div

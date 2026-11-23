@@ -46,16 +46,17 @@ test('Frontend QA Features & Edge Cases Test Suite', async (t) => {
     const ws = createClient({ roomId: 'qa-file-list-room', userName: 'User1', userId: 'u1' });
     await ws.whenReady;
 
-    // By default main.js is seeded
-    const extraFiles = ['script.py', 'styles.css', 'index.html', 'utils.ts'];
-    for (const name of extraFiles) {
+    // Room starts completely empty by default
+    assert.strictEqual(ws.listFiles().length, 0, 'New room must start completely empty');
+
+    const fileNames = ['main.js', 'script.py', 'styles.css', 'index.html', 'utils.ts'];
+    for (const name of fileNames) {
       ws.createFile(name, `// ${name} content`);
     }
 
     const files = ws.listFiles();
     assert.strictEqual(files.length, 5, 'Should have exactly 5 files in workspace');
-    assert.ok(files.includes('main.js'));
-    for (const name of extraFiles) {
+    for (const name of fileNames) {
       assert.ok(files.includes(name), `File ${name} must exist in list`);
     }
 
@@ -157,6 +158,8 @@ test('Frontend QA Features & Edge Cases Test Suite', async (t) => {
   await t.test('5. Solo-host review mode & draft proposal flow', async () => {
     const ws = createClient({ roomId: 'qa-solo-host-review', userName: 'SoloHost', userId: 'sh1' });
     await ws.whenReady;
+
+    ws.createFile('main.js', 'console.log("Original code");');
 
     // Solo host enters review mode
     ws.setMode('review');

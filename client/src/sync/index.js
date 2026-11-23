@@ -413,15 +413,7 @@ export function createWorkspace({
   };
 
   const seedDefaultFiles = () => {
-    if (files.size === 0) {
-      const host = meta.get('hostId');
-      if (host === currentUserId || !host) {
-        const defaultFile = new Y.Text();
-        files.set('main.js', defaultFile);
-        defaultFile.insert(0, '');
-        trackFile('main.js', defaultFile);
-      }
-    }
+    // Rooms start completely empty with zero default files
   };
 
   // Provider sync listener: triggers host election and default file seeding

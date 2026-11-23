@@ -888,7 +888,7 @@ export default function Editor({
       </div>
 
       {/* Review Mode Banner / Controls */}
-      {isReviewMode && (
+      {isReviewMode && activeFile && ytext && (
         <div className="review-mode-banner">
           <div className="review-banner-left">
             <span className="review-badge">Draft Mode</span>
@@ -945,7 +945,15 @@ export default function Editor({
           </div>
         </div>
       ) : (
-        <div className="editor-canvas" ref={editorRef}>
+        <div
+          className="editor-canvas"
+          ref={editorRef}
+          style={{
+            fontSize: `${editorPrefs.fontSize || 13}px`,
+            fontFamily: getFontFamilyString(editorPrefs.fontFamily),
+            lineHeight: getLineHeightValue(editorPrefs.lineHeight)
+          }}
+        >
           {scrollerNode &&
             createPortal(
               <div className="remote-pointers-container" aria-hidden="true">
