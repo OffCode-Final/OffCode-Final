@@ -414,6 +414,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
                 placeholder="e.g. Alice"
                 maxLength={24}
                 autoComplete="name"
+                spellCheck={false}
                 autoFocus
               />
             </div>
@@ -465,6 +466,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
                 placeholder={tab === 'create' ? 'e.g. room-7429' : 'Paste room code'}
                 maxLength={32}
                 autoComplete="off"
+                spellCheck={false}
               />
 
               {roomId.trim() && roomStatus && !roomStatus.checking && (
@@ -511,6 +513,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
                   placeholder="Optional password to protect this room"
                   maxLength={32}
                   autoComplete="new-password"
+                  spellCheck={false}
                 />
               </div>
             )}
@@ -533,6 +536,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
                   placeholder="Enter room password"
                   maxLength={32}
                   autoComplete="current-password"
+                  spellCheck={false}
                   autoFocus
                 />
               </div>

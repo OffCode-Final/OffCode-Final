@@ -674,6 +674,7 @@ export default function Editor({
                       if (onCloseTab) onCloseTab(fileName)
                     }}
                     title={`Close ${fileName}`}
+                    aria-label={`Close tab ${fileName}`}
                   >
                     <X size={12} />
                   </button>

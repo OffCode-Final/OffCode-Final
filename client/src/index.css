@@ -516,7 +516,7 @@ button:disabled {
   background: var(--bg-hover-row);
   color: var(--text-muted);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
   font-family: var(--font-code);
   font-size: 12px;
 }
@@ -628,7 +628,7 @@ button:disabled {
   font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .btn-toolbar:hover:not(:disabled) {
@@ -709,7 +709,7 @@ button:disabled {
   color: var(--text-muted);
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .btn-icon-bar:hover:not(:disabled) {
@@ -784,7 +784,7 @@ button:disabled {
   text-align: left;
   width: 100%;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
 .dropdown-item:hover,
@@ -1455,7 +1455,7 @@ button:disabled {
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .btn-ghost-action:hover {
@@ -1610,7 +1610,7 @@ button:disabled {
   color: inherit;
   font-family: inherit;
   font-size: inherit;
-  transition: all var(--transition-fast);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
 }
 
 .status-bar-btn:hover {

@@ -232,6 +232,7 @@ export default function Sidebar({
           disabled={isStopped}
           style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
           title={isStopped ? 'Editing stopped by host' : `Delete ${filePath}`}
+          aria-label={isStopped ? 'Editing stopped by host' : `Delete ${filePath}`}
         >
           <Trash2 size={13} />
         </button>
@@ -337,6 +338,7 @@ export default function Sidebar({
             disabled={isStopped}
             style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
             title={isStopped ? 'Editing stopped by host' : 'New file'}
+            aria-label={isStopped ? 'Editing stopped by host' : 'New file'}
           >
             <Plus size={15} />
           </button>
@@ -366,7 +368,10 @@ export default function Sidebar({
               setNewFileName(e.target.value)
               setError('')
             }}
-            placeholder="e.g. script.py, css/style.css"
+            placeholder="e.g. main.ts, script.py"
+            aria-label="New file name"
+            spellCheck={false}
+            autoComplete="off"
             autoFocus
           />
           {error && (
