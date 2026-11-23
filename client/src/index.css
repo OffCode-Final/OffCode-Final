@@ -2194,17 +2194,49 @@ button:disabled {
 
 .join-container {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
-  min-height: 100vh;
+  align-items: center;
+  min-height: 100dvh;
   width: 100vw;
   background-color: var(--bg-app);
   background-image: linear-gradient(var(--border-subtle) 1px, transparent 1px),
                     linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
   background-size: 28px 28px;
   position: relative;
-  padding: 48px 32px 72px;
+  padding: 32px 32px 76px;
   overflow-y: auto;
+  box-sizing: border-box;
+}
+
+@media (max-height: 820px) {
+  .join-container {
+    justify-content: flex-start;
+    padding-top: 20px;
+    padding-bottom: 76px;
+  }
+  .join-brand-wrapper {
+    margin-bottom: 16px;
+  }
+  .join-editorial-headline {
+    font-size: clamp(28px, 3.4vw, 46px);
+    margin-bottom: 12px;
+  }
+  .join-editorial-sub {
+    margin-bottom: 14px;
+    font-size: 13px;
+  }
+  .join-features-list {
+    margin-bottom: 14px;
+    gap: 6px;
+  }
+  .join-live-demo {
+    margin-top: 14px;
+  }
+  .join-card {
+    padding: 20px 24px;
+    gap: 10px;
+  }
 }
 
 .join-floating-background {
@@ -2270,8 +2302,14 @@ button:disabled {
 }
 
 .join-brand-wrapper {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   animation: joinFadeUp 260ms ease-out both;
+}
+
+.join-brand-wrapper svg {
+  width: clamp(280px, 34vw, 420px);
+  max-width: 100%;
+  height: auto;
 }
 
 .join-editorial-headline {
@@ -2437,16 +2475,20 @@ button:disabled {
   background-color: var(--bg-elevated);
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  padding: 32px;
+  padding: 24px 28px;
   box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
   max-width: 440px;
   margin-left: auto;
   position: relative;
   z-index: 10;
+  min-height: 440px;
+  max-height: calc(100dvh - 100px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
   animation: joinFadeUp 300ms ease-out 100ms both;
 }
 
