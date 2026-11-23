@@ -20,7 +20,9 @@ import {
   Key,
   Trash2,
   History,
-  Sliders
+  Sliders,
+  WifiOff,
+  Terminal
 } from 'lucide-react'
 import { getFileExtension, copyToClipboard } from '../utils/helpers'
 import UpdateLogsModal from './UpdateLogsModal'
@@ -326,19 +328,8 @@ export default function TopBar({
 
         <div className="topbar-divider" />
 
-        {/* Group 3: Customize, Chat, Updates, Theme, Mobile People, More */}
+        {/* Group 3: Chat, Updates, Theme, Mobile People, More */}
         <div className="topbar-group">
-          <button
-            type="button"
-            className={`btn-toolbar btn-ghost btn-customize-toggle ${isCustomizeOpen ? 'active' : ''}`}
-            onClick={onToggleCustomize}
-            title="Customize editor"
-            aria-label="Customize editor"
-          >
-            <Sliders size={16} strokeWidth={1.75} />
-            <span>Customize</span>
-          </button>
-
           <button
             type="button"
             className={`btn-toolbar btn-ghost btn-chat-toggle ${isChatOpen ? 'active' : ''}`}
@@ -440,7 +431,7 @@ export default function TopBar({
                   }}
                 >
                   <Key size={14} strokeWidth={1.75} />
-                  <span>Change AI key</span>
+                  <span>{hasAiKey ? 'Change AI key' : 'Add AI key'}</span>
                 </button>
 
                 {hasAiKey && (
@@ -457,6 +448,62 @@ export default function TopBar({
                     <span>Remove AI key</span>
                   </button>
                 )}
+
+                <div className="dropdown-divider" />
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={`dropdown-item ${status === 'offline' ? 'active' : ''}`}
+                  onClick={() => {
+                    setIsMoreOpen(false)
+                    if (onToggleOnline) onToggleOnline()
+                  }}
+                >
+                  <WifiOff size={14} strokeWidth={1.75} />
+                  <span style={{ flex: 1, textAlign: 'left' }}>Simulate Offline</span>
+                  <span
+                    className="toggle-indicator-badge"
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      padding: '1px 6px',
+                      borderRadius: 'var(--radius-xs)',
+                      background: status === 'offline' ? 'var(--color-warning-bg, #fef3c7)' : 'var(--bg-active-row)',
+                      color: status === 'offline' ? 'var(--color-warning, #d97706)' : 'var(--text-muted)',
+                      marginLeft: '8px'
+                    }}
+                  >
+                    {status === 'offline' ? 'ON' : 'OFF'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={`dropdown-item ${showDebug ? 'active' : ''}`}
+                  onClick={() => {
+                    setIsMoreOpen(false)
+                    if (onToggleDebug) onToggleDebug()
+                  }}
+                >
+                  <Terminal size={14} strokeWidth={1.75} />
+                  <span style={{ flex: 1, textAlign: 'left' }}>Debug Inspector</span>
+                  <span
+                    className="toggle-indicator-badge"
+                    style={{
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      padding: '1px 6px',
+                      borderRadius: 'var(--radius-xs)',
+                      background: showDebug ? 'var(--color-success-bg)' : 'var(--bg-active-row)',
+                      color: showDebug ? 'var(--color-success)' : 'var(--text-muted)',
+                      marginLeft: '8px'
+                    }}
+                  >
+                    {showDebug ? 'ON' : 'OFF'}
+                  </span>
+                </button>
 
                 <div className="dropdown-divider" />
 
@@ -493,7 +540,7 @@ export default function TopBar({
       </div>
 
       {isUpdateLogsOpen && (
-        <UpdateLogsModal onClose={() => setIsUpdateLogsOpen(false)} />
+        <UpdateLogsModal isOpen={isUpdateLogsOpen} onClose={() => setIsUpdateLogsOpen(false)} />
       )}
     </header>
   )
