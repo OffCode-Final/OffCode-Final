@@ -16,7 +16,9 @@ import {
   getLanguageName,
   getDefaultServerUrl,
   resolveHtmlAssets,
-  SUPPORTED_EXTENSIONS
+  SUPPORTED_EXTENSIONS,
+  pickUniqueColor,
+  COLLABORATOR_PALETTE
 } from './utils/helpers'
 
 import JoinScreen from './components/JoinScreen'
@@ -259,6 +261,7 @@ export default function App() {
   const pythonWorkerRef = useRef(null)
   const jsWorkerRef = useRef(null)
   const jsTimeoutRef = useRef(null)
+  const colorConflictTimerRef = useRef(null)
 
   // Append entry to live activity event log
   const logEvent = useCallback((type, message) => {
@@ -303,14 +306,26 @@ export default function App() {
   }, [session?.roomId])
 
   // Join workspace
-  const handleJoin = ({ userName, roomId, userColor, password = '' }) => {
+  const handleJoin = ({ userName, roomId, password = '' }) => {
     updateUrlRoom(roomId)
-    setSession({ userName, roomId, userColor, password })
+    let savedPref = null
+    try {
+      savedPref = window.localStorage.getItem('offcode-pref-color')
+    } catch (_) {}
+    const autoColor = pickUniqueColor([], savedPref)
+    try {
+      window.localStorage.setItem('offcode-pref-color', autoColor)
+    } catch (_) {}
+    setSession({ userName, roomId, userColor: autoColor, password })
     logEvent('session', `Joined room "${roomId}" as ${userName}`)
   }
 
   // Leave workspace
   const handleLeaveRoom = () => {
+    if (colorConflictTimerRef.current) {
+      clearTimeout(colorConflictTimerRef.current)
+      colorConflictTimerRef.current = null
+    }
     if (workspaceRef.current) {
       workspaceRef.current.destroy()
       workspaceRef.current = null
@@ -422,6 +437,30 @@ export default function App() {
       ws.awareness.setLocalStateField('userId', myId)
     }
 
+    // Resolve initial automatic unique color from awareness
+    const initialOtherColors = []
+    ws.awareness.getStates().forEach((st, cid) => {
+      if (cid !== ws.ydoc.clientID && st.user?.color) {
+        initialOtherColors.push(st.user.color)
+      }
+    })
+    let savedPrefColor = null
+    try {
+      savedPrefColor = window.localStorage.getItem('offcode-pref-color')
+    } catch (_) {}
+    const assignedColor = pickUniqueColor(initialOtherColors, savedPrefColor)
+    try {
+      window.localStorage.setItem('offcode-pref-color', assignedColor)
+    } catch (_) {}
+
+    const curLocalUser = ws.awareness.getLocalState()?.user || {}
+    ws.awareness.setLocalStateField('user', {
+      ...curLocalUser,
+      name: userName,
+      color: assignedColor
+    })
+    setSession((prev) => (prev ? { ...prev, userColor: assignedColor } : prev))
+
     // Sync initial status
     setStatus(ws.getStatus())
 
@@ -462,10 +501,11 @@ export default function App() {
         setHostId(currentHost)
       }
 
+      const otherUsers = []
       states.forEach((state, clientId) => {
         if (state.user) {
           const resolvedUserId = state.userId || state.user.userId || state.user.id || `client_${clientId}`
-          list.push({
+          const userItem = {
             clientId,
             userId: resolvedUserId,
             name: state.user.name || 'Anonymous',
@@ -473,10 +513,45 @@ export default function App() {
             currentFile: state.currentFile || null,
             currentLine: state.currentLine || 1,
             isYou: clientId === myClientId
-          })
+          }
+          list.push(userItem)
+          if (clientId !== myClientId) {
+            otherUsers.push(userItem)
+          }
         }
       })
       setUsers(list)
+
+      // Automatic conflict handling (Phase 4):
+      // If two people end up with the same color, the person with the lexicographically
+      // larger userId switches to the next free color within a second quietly (no toast).
+      const myState = states.get(myClientId)
+      const myLocalUser = myState?.user
+      const myLocalColor = myLocalUser?.color
+      if (myId && myLocalColor) {
+        const collisions = otherUsers.filter(
+          (u) => u.color && u.color.toLowerCase() === myLocalColor.toLowerCase()
+        )
+        if (collisions.length > 0) {
+          const mustYield = collisions.some((other) => String(myId) > String(other.userId))
+          if (mustYield && !colorConflictTimerRef.current) {
+            colorConflictTimerRef.current = setTimeout(() => {
+              colorConflictTimerRef.current = null
+              const activeOtherColors = otherUsers.map((u) => u.color).filter(Boolean)
+              const nextColor = pickUniqueColor(activeOtherColors, null)
+              try {
+                window.localStorage.setItem('offcode-pref-color', nextColor)
+              } catch (_) {}
+              const curUser = ws.awareness.getLocalState()?.user || {}
+              ws.awareness.setLocalStateField('user', {
+                ...curUser,
+                color: nextColor
+              })
+              setSession((prev) => (prev ? { ...prev, userColor: nextColor } : prev))
+            }, 500)
+          }
+        }
+      }
     }
     ws.awareness.on('change', onAwarenessChange)
 
@@ -598,6 +673,10 @@ export default function App() {
     window.addEventListener('beforeunload', handleBeforeUnload)
 
     return () => {
+      if (colorConflictTimerRef.current) {
+        clearTimeout(colorConflictTimerRef.current)
+        colorConflictTimerRef.current = null
+      }
       window.removeEventListener('beforeunload', handleBeforeUnload)
       frozenMap.unobserve(updateFrozen)
       unsubStatus()
