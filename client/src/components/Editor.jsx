@@ -21,6 +21,7 @@ import {
   StreamLanguage
 } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
+import { autocompletion, acceptCompletion } from '@codemirror/autocomplete'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import { X, Send, FileCode, Plus, Sliders } from 'lucide-react'
 
@@ -515,7 +516,8 @@ export default function Editor({
       placeholder('Start typing, or press Ctrl+Enter to run'),
       EditorState.readOnly.of(Boolean(readOnly || isStopped)),
       EditorView.editable.of(!readOnly && !isStopped),
-      keymap.of((readOnly || isStopped) ? defaultKeymap : [...yUndoManagerKeymap, ...defaultKeymap]),
+      autocompletion({ activateOnTyping: true }),
+      keymap.of((readOnly || isStopped) ? defaultKeymap : [{ key: 'Tab', run: acceptCompletion }, ...yUndoManagerKeymap, ...defaultKeymap]),
       yCollab(ytext, awareness, { undoManager: (readOnly || isStopped) ? false : fileUndoManager }),
       userChangesCompartment.of(
         createUserChangesExtension({
@@ -836,6 +838,12 @@ export default function Editor({
                 aria-selected={isActive}
                 className={`editor-tab ${isActive ? 'active' : ''}`}
                 onClick={() => onSelectTab(fileName)}
+                onMouseDown={(e) => {
+                  if (e.button === 1) {
+                    e.preventDefault()
+                    if (onCloseTab) onCloseTab(fileName)
+                  }
+                }}
                 title={fileName}
               >
                 {getTabLanguageDot(fileName)}
@@ -920,7 +928,7 @@ export default function Editor({
           <div className="editor-empty-card">
             <FileCode size={36} strokeWidth={1.75} className="editor-empty-icon" />
             <h3 className="editor-empty-title">
-              No file open<span className="signature-caret" aria-hidden="true">|</span>
+              No file open<span className="signature-caret" aria-hidden="true" />
             </h3>
             <p className="editor-empty-desc">Select a file from the explorer or create a new file to get started.</p>
             {onCreateFile && (
