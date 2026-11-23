@@ -36,6 +36,7 @@ import { improveCodeWithGemini } from './ai/gemini'
 import AiKeyModal from './components/AiKeyModal'
 import AiReviewModal from './components/AiReviewModal'
 import { DEFAULT_PREFS } from './components/CustomizePopover'
+import { runRemoteCode, isOnlineLanguage } from './run/remote.js'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -262,6 +263,17 @@ export default function App() {
   const jsWorkerRef = useRef(null)
   const jsTimeoutRef = useRef(null)
   const colorConflictTimerRef = useRef(null)
+  const remoteAbortControllerRef = useRef(null)
+
+  const [showOnlineNotice, setShowOnlineNotice] = useState(false)
+  const [outputFooterNote, setOutputFooterNote] = useState('')
+
+  const handleDismissOnlineNotice = useCallback(() => {
+    setShowOnlineNotice(false)
+    try {
+      window.sessionStorage.setItem('offcode-dismissed-online-notice', 'true')
+    } catch (_) {}
+  }, [])
 
   // Append entry to live activity event log
   const logEvent = useCallback((type, message) => {
@@ -1245,6 +1257,14 @@ export default function App() {
       jsTimeoutRef.current = null
     }
 
+    if (remoteAbortControllerRef.current) {
+      remoteAbortControllerRef.current.abort()
+      remoteAbortControllerRef.current = null
+      setIsRunning(false)
+      addOutput('stderr', 'Execution was stopped.')
+      logEvent('run', 'Online execution was stopped by user')
+    }
+
     if (pythonWorkerRef.current) {
       pythonWorkerRef.current.terminate()
       pythonWorkerRef.current = null
@@ -1258,7 +1278,7 @@ export default function App() {
       jsWorkerRef.current = null
       setIsRunning(false)
       addOutput('stderr', 'Execution terminated by user.')
-      logEvent('run', 'JavaScript execution terminated by user')
+      logEvent('run', 'Code execution terminated by user')
     }
   }, [addOutput, logEvent])
 
@@ -1274,8 +1294,9 @@ export default function App() {
     addOutput('status', `--- Running ${activeFile} ---`)
     logEvent('run', `Executed "${activeFile}"`)
 
-    // 1. Python Execution via Pyodide Web Worker
+    // 1. Python Execution via Pyodide Web Worker (Offline)
     if (ext === 'py') {
+      setOutputFooterNote('')
       if (pythonWorkerRef.current) {
         pythonWorkerRef.current.terminate()
       }
@@ -1308,12 +1329,15 @@ export default function App() {
       return
     }
 
-    // 2. JavaScript Execution via Sandboxed Web Worker
-    if (['js', 'jsx', 'mjs'].includes(ext)) {
+    // 2. JavaScript, TypeScript (.ts, .tsx) Execution via Sandboxed Web Worker (Offline)
+    if (['js', 'jsx', 'mjs', 'ts', 'tsx'].includes(ext)) {
+      const isTypeScript = ['ts', 'tsx'].includes(ext)
+      setOutputFooterNote(isTypeScript ? 'Types are not checked.' : '')
+
       if (jsWorkerRef.current) {
         jsWorkerRef.current.terminate()
       }
-      const worker = new Worker('/js-worker.js')
+      const worker = new Worker(new URL('./workers/js-worker.js', import.meta.url), { type: 'module' })
       jsWorkerRef.current = worker
 
       jsTimeoutRef.current = setTimeout(() => {
@@ -1323,7 +1347,7 @@ export default function App() {
       }, 10000)
 
       worker.onmessage = (e) => {
-        const { type, data, duration } = e.data
+        const { type, data, duration, isTs } = e.data
         if (type === 'stdout') {
           addOutput('stdout', data)
         } else if (type === 'stderr') {
@@ -1331,7 +1355,8 @@ export default function App() {
         } else if (type === 'done') {
           clearTimeout(jsTimeoutRef.current)
           setIsRunning(false)
-          addOutput('status', `Finished in ${duration}s`)
+          const suffix = isTs ? ' (Types are not checked.)' : ''
+          addOutput('status', `Finished in ${duration}s${suffix}`)
         } else if (type === 'error') {
           clearTimeout(jsTimeoutRef.current)
           setIsRunning(false)
@@ -1345,11 +1370,63 @@ export default function App() {
         addOutput('stderr', `Worker Error: ${err.message}`)
       }
 
-      worker.postMessage({ code })
+      worker.postMessage({
+        code,
+        isTs: ext === 'ts',
+        isTsx: ext === 'tsx'
+      })
       return
     }
 
-    // 3. HTML Live Preview in Sandboxed Iframe
+    // 3. Online Languages (C, C++, Java, Go, Rust, PHP, Ruby) via Wandbox Runner
+    if (isOnlineLanguage(ext)) {
+      setOutputFooterNote('Ran online')
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        setIsRunning(false)
+        addOutput('stderr', 'Running this language needs internet.')
+        return
+      }
+
+      // Show notice once per session
+      let isNoticeDismissed = false
+      try {
+        isNoticeDismissed = Boolean(window.sessionStorage.getItem('offcode-dismissed-online-notice'))
+      } catch (_) {}
+      if (!isNoticeDismissed) {
+        setShowOnlineNotice(true)
+      }
+
+      const controller = new AbortController()
+      remoteAbortControllerRef.current = controller
+
+      const timeoutId = setTimeout(() => {
+        controller.abort()
+      }, 15000)
+
+      runRemoteCode({
+        ext,
+        code,
+        signal: controller.signal
+      })
+        .then((result) => {
+          clearTimeout(timeoutId)
+          remoteAbortControllerRef.current = null
+          setIsRunning(false)
+          if (result.stdout) addOutput('stdout', result.stdout)
+          if (result.stderr) addOutput('stderr', result.stderr)
+          addOutput('status', `Finished in ${result.duration}s (Ran online)`)
+        })
+        .catch((err) => {
+          clearTimeout(timeoutId)
+          remoteAbortControllerRef.current = null
+          setIsRunning(false)
+          addOutput('stderr', `Error: ${err.message}`)
+        })
+      return
+    }
+
+    // 4. HTML Live Preview in Sandboxed Iframe
     if (['html', 'htm'].includes(ext)) {
       const getFileContent = (path) => {
         if (!workspace) return null
@@ -1646,6 +1723,9 @@ export default function App() {
             onStop={handleStopCode}
             htmlContent={htmlContent}
             isHtmlMode={isHtml}
+            showOnlineNotice={showOnlineNotice}
+            onDismissOnlineNotice={handleDismissOnlineNotice}
+            footerNote={outputFooterNote}
           />
         </div>
 
