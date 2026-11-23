@@ -24,6 +24,11 @@ import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { cpp } from '@codemirror/lang-cpp'
 import { java } from '@codemirror/lang-java'
+import { php } from '@codemirror/lang-php'
+import { rust } from '@codemirror/lang-rust'
+import { go } from '@codemirror/lang-go'
+import { StreamLanguage } from '@codemirror/language'
+import { ruby } from '@codemirror/legacy-modes/mode/ruby'
 
 import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension } from '../utils/helpers'
@@ -265,6 +270,14 @@ export default function Editor({
         return cpp()
       case 'java':
         return java()
+      case 'php':
+        return php()
+      case 'rs':
+        return rust()
+      case 'go':
+        return go()
+      case 'rb':
+        return StreamLanguage.define(ruby)
       default:
         return []
     }

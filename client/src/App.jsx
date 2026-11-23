@@ -14,7 +14,8 @@ import {
   getFileExtension,
   getLanguageName,
   getDefaultServerUrl,
-  resolveHtmlAssets
+  resolveHtmlAssets,
+  SUPPORTED_EXTENSIONS
 } from './utils/helpers'
 
 import JoinScreen from './components/JoinScreen'
@@ -920,7 +921,7 @@ export default function App() {
       if (!workspace || !isHost || isCurrentUserStopped) return
       if (!fileList || fileList.length === 0) return
 
-      const allowedExts = ['html', 'css', 'js', 'json', 'md', 'py', 'c', 'cpp', 'java', 'txt']
+      const allowedExts = SUPPORTED_EXTENSIONS
       const candidates = []
 
       for (let i = 0; i < fileList.length; i++) {

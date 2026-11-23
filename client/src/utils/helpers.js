@@ -19,6 +19,8 @@ export const USER_COLORS = [
 export const SUPPORTED_EXTENSIONS = [
   'py',
   'js',
+  'ts',
+  'tsx',
   'html',
   'css',
   'json',
@@ -26,6 +28,10 @@ export const SUPPORTED_EXTENSIONS = [
   'c',
   'cpp',
   'java',
+  'php',
+  'rs',
+  'go',
+  'rb',
   'txt'
 ]
 
@@ -72,14 +78,37 @@ export function getLanguageName(filename) {
       return 'C'
     case 'java':
       return 'Java'
+    case 'php':
+      return 'PHP'
+    case 'rs':
+      return 'Rust'
+    case 'go':
+      return 'Go'
+    case 'rb':
+      return 'Ruby'
     default:
       return 'Plain Text'
   }
 }
 
-export function getInitialTemplate(_filename) {
-  // Returns clean, empty file content without welcoming or boilerplate code
-  return ''
+export function getInitialTemplate(filename) {
+  const ext = getFileExtension(filename)
+  switch (ext) {
+    case 'ts':
+      return `// TypeScript Hello World\nconst greeting: string = "Hello, World!";\nconsole.log(greeting);\n`
+    case 'tsx':
+      return `// React TypeScript Component\nexport default function App(): JSX.Element {\n  return <h1>Hello, World!</h1>;\n}\n`
+    case 'php':
+      return `<?php\n// PHP Hello World\necho "Hello, World!\\n";\n`
+    case 'rs':
+      return `// Rust Hello World\nfn main() {\n    println!("Hello, World!");\n}\n`
+    case 'go':
+      return `// Go Hello World\npackage main\n\nimport "fmt"\n\nfunc main() {\n    fmt.Println("Hello, World!")\n}\n`
+    case 'rb':
+      return `# Ruby Hello World\nputs "Hello, World!"\n`
+    default:
+      return ''
+  }
 }
 
 export function getInitialRoomFromUrl() {

@@ -143,14 +143,41 @@ export default function Sidebar({
     if (ext === 'py') {
       return <FileCode size={14} className="file-icon file-icon-py" />
     }
-    if (['js', 'jsx', 'mjs', 'ts', 'tsx'].includes(ext)) {
+    if (['js', 'jsx', 'mjs'].includes(ext)) {
       return <FileCode size={14} className="file-icon file-icon-js" />
+    }
+    if (['ts', 'tsx'].includes(ext)) {
+      return <FileCode size={14} className="file-icon file-icon-ts" />
     }
     if (['html', 'htm'].includes(ext)) {
       return <FileCode size={14} className="file-icon file-icon-html" />
     }
     if (['css'].includes(ext)) {
       return <FileCode size={14} className="file-icon file-icon-css" />
+    }
+    if (ext === 'json') {
+      return <FileCode size={14} className="file-icon file-icon-json" />
+    }
+    if (['c', 'h'].includes(ext)) {
+      return <FileCode size={14} className="file-icon file-icon-c" />
+    }
+    if (['cpp', 'cxx', 'cc', 'hpp'].includes(ext)) {
+      return <FileCode size={14} className="file-icon file-icon-cpp" />
+    }
+    if (ext === 'java') {
+      return <FileCode size={14} className="file-icon file-icon-java" />
+    }
+    if (ext === 'php') {
+      return <FileCode size={14} className="file-icon file-icon-php" />
+    }
+    if (ext === 'rs') {
+      return <FileCode size={14} className="file-icon file-icon-rs" />
+    }
+    if (ext === 'go') {
+      return <FileCode size={14} className="file-icon file-icon-go" />
+    }
+    if (ext === 'rb') {
+      return <FileCode size={14} className="file-icon file-icon-rb" />
     }
     return <FileCode size={14} className="file-icon" />
   }
