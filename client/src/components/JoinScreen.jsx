@@ -12,7 +12,7 @@ import {
   siPhp,
   siRuby
 } from 'simple-icons'
-import { getRandomColor, getInitialRoomFromUrl, copyToClipboard, USER_COLORS } from '../utils/helpers'
+import { getInitialRoomFromUrl, copyToClipboard } from '../utils/helpers'
 import AnimatedLogo from './AnimatedLogo'
 
 const SUPPORTED_LANG_MARKS = [
@@ -28,20 +28,51 @@ const SUPPORTED_LANG_MARKS = [
   { name: 'Ruby', short: 'Ruby', icon: siRuby, hex: 'CC342D' }
 ]
 
+function FloatingBackground() {
+  return (
+    <div className="join-floating-background" aria-hidden="true">
+      <div className="bg-float-icon icon-python" style={{ top: '8%', left: '3%', width: '56px', height: '56px', animationDuration: '22s', animationDelay: '-2s' }}>
+        <svg viewBox="0 0 48 48"><path d="M24 4c-9 0-8 4-8 4v5h8v2H12S4 14 4 24s6 10 6 10h4v-5s0-6 6-6h9s5 0 5-5V9s1-5-10-5z" fill="#3776ab"/><path d="M24 44c9 0 8-4 8-4v-5h-8v-2h12s8 1 8-9-6-10-6-10h-4v5s0 6-6 6h-9s-5 0-5 5v10s-1 4 10 4z" fill="#ffd43b"/><circle cx="18" cy="9" r="1.6" fill="#fff"/><circle cx="30" cy="39" r="1.6" fill="#fff"/></svg>
+      </div>
+      <div className="bg-float-icon icon-ts" style={{ top: '72%', left: '4%', width: '50px', height: '50px', animationDuration: '25s', animationDelay: '-7s' }}>
+        <svg viewBox="0 0 48 48"><rect width="48" height="48" rx="6" fill="#3178c6"/><text x="44" y="42" textAnchor="end" fontSize="24" fontWeight="800" fill="#fff" fontFamily="sans-serif">TS</text></svg>
+      </div>
+      <div className="bg-float-icon icon-js" style={{ top: '14%', right: '5%', width: '48px', height: '48px', animationDuration: '20s', animationDelay: '-4s' }}>
+        <svg viewBox="0 0 48 48"><rect width="48" height="48" rx="6" fill="#f7df1e"/><text x="44" y="42" textAnchor="end" fontSize="24" fontWeight="800" fill="#323330" fontFamily="sans-serif">JS</text></svg>
+      </div>
+      <div className="bg-float-icon icon-cpp" style={{ top: '48%', left: '2%', width: '60px', height: '60px', animationDuration: '26s', animationDelay: '-12s' }}>
+        <svg viewBox="0 0 48 48"><path d="M24 3l18 10.5v21L24 45 6 34.5v-21z" fill="#00599c"/><text x="11" y="31" fontSize="21" fontWeight="700" fill="#fff" fontFamily="sans-serif">C</text><text x="26" y="29" fontSize="13" fontWeight="700" fill="#fff" fontFamily="sans-serif">++</text></svg>
+      </div>
+      <div className="bg-float-icon icon-go" style={{ top: '82%', right: '8%', width: '56px', height: '56px', animationDuration: '24s', animationDelay: '-9s' }}>
+        <svg viewBox="0 0 48 48"><text x="28" y="32" textAnchor="middle" fontSize="26" fontWeight="800" fontStyle="italic" fill="#00add8" fontFamily="sans-serif">GO</text><path d="M2 20h9M0 26h10M3 32h8" stroke="#00add8" strokeWidth="2.5" strokeLinecap="round"/></svg>
+      </div>
+      <div className="bg-float-icon icon-rust" style={{ top: '40%', right: '3%', width: '54px', height: '54px', animationDuration: '28s', animationDelay: '-15s' }}>
+        <svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="19" fill="none" stroke="#b7410e" strokeWidth="4" strokeDasharray="3.2 2.7"/><circle cx="24" cy="24" r="15" fill="none" stroke="#b7410e" strokeWidth="2.5"/><text x="24" y="31" textAnchor="middle" fontSize="20" fontWeight="800" fill="#b7410e" fontFamily="sans-serif">R</text></svg>
+      </div>
+      <div className="bg-float-icon icon-php" style={{ top: '22%', left: '44%', width: '52px', height: '52px', animationDuration: '23s', animationDelay: '-10s' }}>
+        <svg viewBox="0 0 48 48"><ellipse cx="24" cy="24" rx="22" ry="13" fill="#777bb3"/><text x="24" y="29" textAnchor="middle" fontSize="15" fontWeight="800" fill="#232531" fontFamily="sans-serif">php</text></svg>
+      </div>
+      <div className="bg-float-icon icon-ruby" style={{ top: '65%', right: '4%', width: '52px', height: '52px', animationDuration: '21s', animationDelay: '-6s' }}>
+        <svg viewBox="0 0 48 48"><path d="M10 8h28l8 10-22 26L2 18z" fill="#cc342d"/><path d="M2 18h44M14 18l10 26 10-26M18 8l-4 10 10-10 10 10-4-10" stroke="#fff" strokeWidth="1.5" fill="none" opacity=".8"/></svg>
+      </div>
+    </div>
+  )
+}
+
 function LiveTypingDemo() {
-  const [typedAsha, setTypedAsha] = useState('connect(room);')
-  const [typedDev, setTypedDev] = useState('editor.merge(peers);')
+  const [typedUser1, setTypedUser1] = useState('connect(room);')
+  const [typedUser2, setTypedUser2] = useState('editor.merge(peers);')
 
   useEffect(() => {
     let step = 0
-    const ashaSteps = ['connect', 'connect(room)', 'connect(room);']
-    const devSteps = ['editor', 'editor.merge', 'editor.merge(peers);']
+    const user1Steps = ['connect', 'connect(room)', 'connect(room);']
+    const user2Steps = ['editor', 'editor.merge', 'editor.merge(peers);']
     const timer = setInterval(() => {
       step = (step + 1) % 6
       if (step < 3) {
-        setTypedAsha(ashaSteps[step])
+        setTypedUser1(user1Steps[step])
       } else {
-        setTypedDev(devSteps[step - 3])
+        setTypedUser2(user2Steps[step - 3])
       }
     }, 1100)
     return () => clearInterval(timer)
@@ -50,9 +81,11 @@ function LiveTypingDemo() {
   return (
     <div className="join-live-demo" aria-hidden="true">
       <div className="demo-window-header">
-        <span className="demo-dot" />
-        <span className="demo-dot" />
-        <span className="demo-dot" />
+        <div className="demo-mac-controls">
+          <span className="demo-mac-dot dot-red" />
+          <span className="demo-mac-dot dot-yellow" />
+          <span className="demo-mac-dot dot-green" />
+        </div>
         <span className="demo-filename">workspace.ts</span>
       </div>
       <div className="demo-code-body">
@@ -63,19 +96,19 @@ function LiveTypingDemo() {
         <div className="demo-line">
           <span className="demo-num">2</span>
           <span className="demo-indent" />
-          <span className="demo-kw">const</span> session = <span className="demo-val">{typedAsha}</span>
-          <span className="demo-cursor demo-cursor-asha">
+          <span className="demo-kw">const</span> session = <span className="demo-val">{typedUser1}</span>
+          <span className="demo-cursor demo-cursor-user1">
             <span className="demo-cursor-caret" />
-            <span className="demo-cursor-tag">Asha</span>
+            <span className="demo-cursor-tag">User 1</span>
           </span>
         </div>
         <div className="demo-line">
           <span className="demo-num">3</span>
           <span className="demo-indent" />
-          <span className="demo-kw">return</span> <span className="demo-val">{typedDev}</span>
-          <span className="demo-cursor demo-cursor-dev">
+          <span className="demo-kw">return</span> <span className="demo-val">{typedUser2}</span>
+          <span className="demo-cursor demo-cursor-user2">
             <span className="demo-cursor-caret" />
-            <span className="demo-cursor-tag">Dev</span>
+            <span className="demo-cursor-tag">User 2</span>
           </span>
         </div>
         <div className="demo-line">
@@ -93,8 +126,8 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const [userName, setUserName] = useState('')
   const [roomId, setRoomId] = useState('')
   const [roomPassword, setRoomPassword] = useState('')
-  const [userColor, setUserColor] = useState(() => getRandomColor().hex)
   const [error, setError] = useState('')
+  const [missingRoomWarning, setMissingRoomWarning] = useState(false)
   const [copied, setCopied] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [roomStatus, setRoomStatus] = useState(null)
@@ -140,6 +173,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
     const clean = (roomId || '').trim().toLowerCase()
     if (!clean) {
       setRoomStatus(null)
+      setMissingRoomWarning(false)
       return
     }
 
@@ -168,6 +202,9 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
               hasPassword: Boolean(data.hasPassword),
               activeUsers: data.activeUsers || 0
             })
+            if (data.exists) {
+              setMissingRoomWarning(false)
+            }
           }
         } else {
           if (isCurrent) setRoomStatus(null)
@@ -190,6 +227,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
   const handleTabChange = (newTab) => {
     setTab(newTab)
     setError('')
+    setMissingRoomWarning(false)
     setRoomPassword('')
     if (newTab === 'create' && !roomId) {
       setRoomId(generateRandomRoom())
@@ -230,6 +268,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
 
     setIsSubmitting(true)
     setError('')
+    setMissingRoomWarning(false)
 
     try {
       if (tab === 'join') {
@@ -237,7 +276,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
         const checkData = checkRes.ok ? await checkRes.json() : null
 
         if (!checkData || !checkData.exists) {
-          setError('Room has not been created yet. Please switch to Create Room to create it.')
+          setMissingRoomWarning(true)
           setIsSubmitting(false)
           return
         }
@@ -279,7 +318,6 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
       onJoin({
         userName: cleanName,
         roomId: cleanRoom,
-        userColor,
         password: roomPassword.trim()
       })
     } catch (err) {
@@ -295,6 +333,8 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
 
   return (
     <div className="join-container">
+      <FloatingBackground />
+
       {onToggleTheme && (
         <div className="join-theme-corner">
           <button
@@ -313,11 +353,14 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
         {/* Left Column: Brand Hero & Editorial Demo */}
         <section className="join-hero-left">
           <div className="join-brand-wrapper">
-            <AnimatedLogo size={180} animated={true} />
+            <AnimatedLogo size={280} animated={true} />
           </div>
 
           <h1 className="join-editorial-headline">
-            Write code together. <em>Even offline.</em>
+            Write code together. Even{' '}
+            <span className="headline-offline">
+              offline<span className="headline-caret" aria-hidden="true">|</span>
+            </span>
           </h1>
 
           <p className="join-editorial-sub">
@@ -327,51 +370,24 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
           <ul className="join-features-list">
             <li className="join-feature-item">
               <span className="join-feature-bullet" aria-hidden="true">{'{ }'}</span>
-              <span>Live multiplayer editing with per-user undo and cursor awareness</span>
+              <span>Live editing with per-user undo</span>
             </li>
             <li className="join-feature-item">
               <span className="join-feature-bullet" aria-hidden="true">{'{ }'}</span>
-              <span>Conflict-free offline merge that safely synchronizes on reconnect</span>
+              <span>Offline edits merge automatically when you reconnect</span>
             </li>
             <li className="join-feature-item">
               <span className="join-feature-bullet" aria-hidden="true">{'{ }'}</span>
-              <span>Host review mode with isolated drafts, side-by-side diffs, and Python runtime</span>
+              <span>Review mode with drafts, diffs and Python in the browser</span>
             </li>
           </ul>
 
           <LiveTypingDemo />
-
-          <div className="join-supports-row">
-            <span className="join-supports-label">Supports</span>
-            <div className="join-supports-icons" role="list" aria-label="Supported programming languages">
-              {SUPPORTED_LANG_MARKS.map((lang) => (
-                <div
-                  key={lang.name}
-                  className="join-lang-badge"
-                  title={lang.name}
-                  style={{ '--brand-color': `#${lang.hex}` }}
-                >
-                  <svg
-                    role="img"
-                    viewBox="0 0 24 24"
-                    width="13"
-                    height="13"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path d={lang.icon.path} />
-                  </svg>
-                  <span className="join-lang-text">{lang.short}</span>
-                </div>
-              ))}
-            </div>
-          </div>
         </section>
 
         {/* Right Column: Interactive Card */}
         <div ref={cardRef} className="join-card">
           <div className="join-card-header">
-            <span className="join-card-kicker">Workspace Access</span>
             <h2 className="join-card-title">{tab === 'create' ? 'Create a room' : 'Join a room'}</h2>
           </div>
 
@@ -420,28 +436,6 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
             </div>
 
             <div className="form-group">
-              <label>Cursor Color</label>
-              <div className="join-color-swatches" role="radiogroup" aria-label="Collaborator cursor color">
-                {USER_COLORS.map((c) => {
-                  const isSelected = userColor.toLowerCase() === c.hex.toLowerCase()
-                  return (
-                    <button
-                      key={c.hex}
-                      type="button"
-                      role="radio"
-                      aria-checked={isSelected}
-                      className={`join-color-swatch ${isSelected ? 'selected' : ''}`}
-                      style={{ backgroundColor: c.hex }}
-                      onClick={() => setUserColor(c.hex)}
-                      title={c.name}
-                      aria-label={`Select cursor color ${c.name}`}
-                    />
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="form-group">
               <div className="room-label-row">
                 <label htmlFor="room-id">Room Code</label>
                 {tab === 'create' && (
@@ -462,6 +456,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
                 onChange={(e) => {
                   setRoomId(e.target.value)
                   setError('')
+                  setMissingRoomWarning(false)
                 }}
                 placeholder={tab === 'create' ? 'e.g. room-7429' : 'Paste room code'}
                 maxLength={32}
@@ -469,7 +464,20 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
                 spellCheck={false}
               />
 
-              {roomId.trim() && roomStatus && !roomStatus.checking && (
+              {missingRoomWarning && (
+                <div className="inline-missing-room-note">
+                  <span>Room has not been created yet. Create it first.</span>{' '}
+                  <button
+                    type="button"
+                    className="inline-create-link"
+                    onClick={() => handleTabChange('create')}
+                  >
+                    Create it instead
+                  </button>
+                </div>
+              )}
+
+              {roomId.trim() && roomStatus && !roomStatus.checking && !missingRoomWarning && (
                 <div
                   className={`room-status-badge ${roomStatus.exists ? 'status-exists' : 'status-not-created'}`}
                 >
@@ -480,7 +488,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
                       </span>
                     ) : (
                       <span>
-                        Room has not been created yet. Please create it first.
+                        Room code available.
                       </span>
                     )
                   ) : (
@@ -542,7 +550,7 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
               </div>
             )}
 
-            {shareUrl && (
+            {tab === 'create' && shareUrl && (
               <div className="form-group">
                 <label>Share Link</label>
                 <div className="share-link-box">
@@ -568,19 +576,9 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
               </div>
             )}
 
-            {tab === 'join' && roomStatus && !roomStatus.exists ? (
-              <button
-                type="button"
-                className="btn-flat btn-primary btn-join btn-warning"
-                onClick={() => handleTabChange('create')}
-              >
-                Room Not Created — Switch to Create
-              </button>
-            ) : (
-              <button type="submit" className="btn-flat btn-primary btn-join" disabled={isSubmitting}>
-                {isSubmitting ? 'Connecting…' : (tab === 'create' ? 'Create & Enter Room' : 'Join Room')}
-              </button>
-            )}
+            <button type="submit" className="btn-flat btn-primary btn-join" disabled={isSubmitting}>
+              {isSubmitting ? 'Connecting…' : (tab === 'create' ? 'Create room' : 'Join room')}
+            </button>
           </form>
 
           <footer className="join-footer">
@@ -588,6 +586,36 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
           </footer>
         </div>
       </div>
+
+      {/* Pinned Bottom Supports Strip */}
+      <footer className="join-bottom-supports-strip" role="region" aria-label="Supported languages">
+        <div className="supports-strip-inner">
+          <span className="supports-strip-label">Supports</span>
+          <div className="supports-strip-marks" role="list">
+            {SUPPORTED_LANG_MARKS.map((lang) => (
+              <div
+                key={lang.name}
+                className="supports-strip-item"
+                title={lang.name}
+                style={{ '--brand-color': `#${lang.hex}` }}
+                role="listitem"
+              >
+                <svg
+                  role="img"
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path d={lang.icon.path} />
+                </svg>
+                <span className="supports-strip-name">{lang.short}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </footer>
     </div>
   )
 }
