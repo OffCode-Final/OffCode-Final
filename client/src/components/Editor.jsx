@@ -159,12 +159,14 @@ function getEditorTheme(theme) {
         backgroundColor: 'var(--bg-editor)',
         color: 'var(--text-main)',
         fontFamily: 'var(--font-code)',
-        fontSize: '13.5px',
-        lineHeight: '1.6'
+        fontSize: '13px',
+        lineHeight: '1.6',
+        fontVariantLigatures: 'none'
       },
       '.cm-content': {
         caretColor: 'var(--editor-cursor)',
-        fontFamily: 'var(--font-code)'
+        fontFamily: 'var(--font-code)',
+        fontVariantLigatures: 'none'
       },
       '.cm-cursor, .cm-dropCursor': {
         borderLeft: '2px solid var(--editor-cursor)'
@@ -178,18 +180,19 @@ function getEditorTheme(theme) {
       '.cm-gutters': {
         backgroundColor: 'var(--editor-gutter-bg)',
         color: 'var(--editor-gutter-color)',
-        borderRight: '1px solid var(--border-color)'
+        borderRight: '1px solid var(--border-color)',
+        fontVariantNumeric: 'tabular-nums'
       },
       '.cm-activeLineGutter': {
         backgroundColor: 'var(--editor-active-line)',
         color: 'var(--text-main)'
       },
       '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
-        backgroundColor: isDark ? 'rgba(59, 130, 246, 0.25)' : 'rgba(37, 99, 235, 0.2)',
-        outline: isDark ? '1px solid #3b82f6' : '1px solid #2563eb'
+        backgroundColor: isDark ? 'rgba(91, 147, 247, 0.2)' : 'rgba(37, 99, 235, 0.15)',
+        outline: isDark ? '1px solid var(--accent-primary)' : '1px solid var(--accent-primary)'
       },
       '.cm-line': {
-        paddingLeft: '4px'
+        paddingLeft: '6px'
       }
     },
     { dark: isDark }
@@ -623,22 +626,24 @@ export default function Editor({
 
   const getTabFileIcon = (filename) => {
     const ext = getFileExtension(filename)
-    if (['md', 'txt'].includes(ext)) {
-      return <FileText size={13} className="tab-icon file-icon-md" />
-    }
-    if (ext === 'py') {
-      return <FileCode size={13} className="tab-icon file-icon-py" />
-    }
-    if (['js', 'jsx', 'mjs', 'ts', 'tsx'].includes(ext)) {
-      return <FileCode size={13} className="tab-icon file-icon-js" />
-    }
-    if (['html', 'htm'].includes(ext)) {
-      return <FileCode size={13} className="tab-icon file-icon-html" />
-    }
-    if (['css'].includes(ext)) {
-      return <FileCode size={13} className="tab-icon file-icon-css" />
-    }
-    return <FileCode size={13} className="tab-icon" />
+    let dotClass = 'file-icon'
+    if (ext === 'md') dotClass += ' file-icon-md'
+    else if (ext === 'txt') dotClass += ' file-icon-txt'
+    else if (ext === 'py') dotClass += ' file-icon-py'
+    else if (['js', 'jsx', 'mjs'].includes(ext)) dotClass += ' file-icon-js'
+    else if (['ts', 'tsx'].includes(ext)) dotClass += ' file-icon-ts'
+    else if (['html', 'htm'].includes(ext)) dotClass += ' file-icon-html'
+    else if (ext === 'css') dotClass += ' file-icon-css'
+    else if (ext === 'json') dotClass += ' file-icon-json'
+    else if (['c', 'h'].includes(ext)) dotClass += ' file-icon-c'
+    else if (['cpp', 'cxx', 'cc', 'hpp'].includes(ext)) dotClass += ' file-icon-cpp'
+    else if (ext === 'java') dotClass += ' file-icon-java'
+    else if (ext === 'php') dotClass += ' file-icon-php'
+    else if (ext === 'rs') dotClass += ' file-icon-rs'
+    else if (ext === 'go') dotClass += ' file-icon-go'
+    else if (ext === 'rb') dotClass += ' file-icon-rb'
+
+    return <span className={`tab-lang-dot ${dotClass}`} aria-hidden="true" />
   }
 
   return (
@@ -723,7 +728,9 @@ export default function Editor({
         <div className="editor-empty-state">
           <div className="editor-empty-card">
             <FileCode size={40} className="editor-empty-icon" />
-            <h3 className="editor-empty-title">No file open</h3>
+            <h3 className="editor-empty-title">
+              No file open<span className="signature-caret" aria-hidden="true" />
+            </h3>
             <p className="editor-empty-desc">Select a file from the explorer or create a new file to get started.</p>
             {onCreateFile && (
               <button

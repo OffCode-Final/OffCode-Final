@@ -137,8 +137,11 @@ export default function Sidebar({
 
   const getFileIcon = (filename) => {
     const ext = getFileExtension(filename)
-    if (['md', 'txt'].includes(ext)) {
+    if (ext === 'md') {
       return <FileText size={14} className="file-icon file-icon-md" />
+    }
+    if (ext === 'txt') {
+      return <FileText size={14} className="file-icon file-icon-txt" />
     }
     if (ext === 'py') {
       return <FileCode size={14} className="file-icon file-icon-py" />

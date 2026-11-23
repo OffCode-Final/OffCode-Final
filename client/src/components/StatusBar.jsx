@@ -28,7 +28,7 @@ export default function StatusBar({
       case 'online':
         return 'Online'
       case 'connecting':
-        return 'Connecting...'
+        return 'Connecting…'
       case 'offline':
       default:
         return 'Offline'
