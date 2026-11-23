@@ -673,11 +673,21 @@ export default function App() {
         if (addedDelta > 0) {
           const myUserId = workspace.getUserId ? workspace.getUserId() : null
           const joinedAt = getChatJoinedAt(session?.roomId, myUserId)
-          const cutoff = joinedAt - 2000
+          const cleanRoom = (session?.roomId || 'default').trim().toLowerCase()
+          let chatClearedAt = 0
+          let hiddenIds = new Set()
+          try {
+            const savedCleared = window.localStorage.getItem(`chatClearedAt:${cleanRoom}`)
+            if (savedCleared) chatClearedAt = parseInt(savedCleared, 10) || 0
+            const savedHidden = window.localStorage.getItem(`chatHidden:${cleanRoom}`)
+            if (savedHidden) hiddenIds = new Set(JSON.parse(savedHidden))
+          } catch (_) {}
 
+          const cutoff = Math.max(joinedAt - 2000, chatClearedAt)
           const latestItems = chatArray.toArray().slice(-addedDelta)
           const fromOthers = latestItems.filter((m) => {
             if (!m || m.userId === myUserId) return false
+            if (m.id && hiddenIds.has(m.id)) return false
             const mTime = getMessageTime(m)
             return mTime >= cutoff
           }).length
