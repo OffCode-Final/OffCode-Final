@@ -1,3 +1,5 @@
+import { Users, ChevronRight, Crown, PauseCircle, PlayCircle, ShieldCheck } from 'lucide-react'
+
 export default function PeoplePanel({
   users,
   activeFile,
@@ -9,13 +11,54 @@ export default function PeoplePanel({
   onTransferHost,
   onStopUser,
   onResumeUser,
-  frozenUserIds
+  frozenUserIds,
+  isCollapsed = false,
+  onToggleCollapse
 }) {
+  // Collapsed rail mode (40px)
+  if (isCollapsed) {
+    return (
+      <aside className="people-rail" onClick={onToggleCollapse} title="Expand People Panel">
+        <div className="people-rail-count-badge">
+          <Users size={14} strokeWidth={1.75} />
+          <span>{users.length}</span>
+        </div>
+
+        <div className="people-rail-avatars">
+          {users.slice(0, 5).map((u) => (
+            <div
+              key={u.clientId}
+              className="person-avatar rail-avatar"
+              style={{ backgroundColor: u.color || 'var(--accent-primary)' }}
+              title={u.name}
+            >
+              {(u.name || '?').charAt(0).toUpperCase()}
+            </div>
+          ))}
+          {users.length > 5 && (
+            <span className="people-rail-more">+{users.length - 5}</span>
+          )}
+        </div>
+      </aside>
+    )
+  }
+
   return (
     <aside className="people-panel">
       <div className="people-header">
-        <span className="people-title">PEOPLE</span>
-        <span className="people-count">{users.length}</span>
+        <div className="people-title-row">
+          <span className="people-title">PEOPLE</span>
+          <span className="people-count">{users.length}</span>
+        </div>
+        <button
+          type="button"
+          className="btn-icon-subtle btn-collapse-panel"
+          onClick={onToggleCollapse}
+          title="Collapse People Panel"
+          aria-label="Collapse People Panel"
+        >
+          <ChevronRight size={14} strokeWidth={1.75} />
+        </button>
       </div>
 
       <div className="people-list">
@@ -30,7 +73,11 @@ export default function PeoplePanel({
                   u.name?.toLowerCase() === hostId.toLowerCase() ||
                   String(u.clientId) === hostId)
             )
-            const isUserStopped = Boolean(frozenUserIds && (frozenUserIds.has(u.userId) || (u.clientId && frozenUserIds.has(String(u.clientId)))))
+            const isUserStopped = Boolean(
+              frozenUserIds &&
+                (frozenUserIds.has(u.userId) ||
+                  (u.clientId && frozenUserIds.has(String(u.clientId))))
+            )
 
             return (
               <div
@@ -64,7 +111,12 @@ export default function PeoplePanel({
                     <div className="person-name-line">
                       <span className="person-name">{u.name}</span>
                       {u.isYou && <span className="tag-muted">(you)</span>}
-                      {isUserHost && <span className="tag-muted host-tag-pill">host</span>}
+                      {isUserHost && (
+                        <span className="tag-muted host-tag-pill">
+                          <Crown size={10} strokeWidth={1.75} />
+                          <span>HOST</span>
+                        </span>
+                      )}
                       {isUserStopped && (
                         <span className="tag-stopped">
                           Stopped
@@ -98,37 +150,34 @@ export default function PeoplePanel({
                               }
                             }
                           }}
-                          title={isUserStopped ? `Resume ${u.name}'s editing` : `Stop ${u.name} from editing`}
+                          title={isUserStopped ? `Resume ${u.name}'s editing` : `Stop ${u.name}'s editing`}
+                          aria-label={isUserStopped ? `Resume ${u.name}'s editing` : `Stop ${u.name}'s editing`}
                         >
-                          {isUserStopped ? 'Resume' : 'Stop'}
+                          {isUserStopped ? (
+                            <PlayCircle size={13} strokeWidth={1.75} />
+                          ) : (
+                            <PauseCircle size={13} strokeWidth={1.75} />
+                          )}
                         </button>
 
-                        <button
-                          type="button"
-                          className="btn-ghost-action btn-make-host"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (window.confirm(`Make ${u.name} the host?`)) {
-                              if (onTransferHost) onTransferHost(u.userId, u.name)
-                            }
-                          }}
-                          title={`Make ${u.name} the host`}
-                        >
-                          Make host
-                        </button>
+                        {!isUserHost && (
+                          <button
+                            type="button"
+                            className="btn-ghost-action btn-make-host"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (window.confirm(`Transfer host privileges to ${u.name}?`)) {
+                                if (onTransferHost) onTransferHost(u.userId)
+                              }
+                            }}
+                            title={`Make ${u.name} the room host`}
+                            aria-label={`Make ${u.name} the room host`}
+                          >
+                            <ShieldCheck size={13} strokeWidth={1.75} />
+                          </button>
+                        )}
                       </>
                     )}
-                    <button
-                      type="button"
-                      className={`btn-ghost-action btn-follow ${isFollowing ? 'active' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (onToggleFollow) onToggleFollow(u.clientId)
-                      }}
-                      title={isFollowing ? `Stop following ${u.name}` : `Follow ${u.name}`}
-                    >
-                      {isFollowing ? 'Following' : 'Follow'}
-                    </button>
                   </div>
                 )}
               </div>

@@ -33,6 +33,7 @@ import ChatPanel, { getChatJoinedAt, getMessageTime } from './components/ChatPan
 import { improveCodeWithGemini } from './ai/gemini'
 import AiKeyModal from './components/AiKeyModal'
 import AiReviewModal from './components/AiReviewModal'
+import { DEFAULT_PREFS } from './components/CustomizePopover'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -131,6 +132,127 @@ export default function App() {
       return next
     })
   }, [])
+
+  // OffCode Layout State (resizable & collapsible Explorer & People)
+  const [layout, setLayout] = useState(() => {
+    const defaults = {
+      sidebarWidth: 240,
+      sidebarCollapsed: typeof window !== 'undefined' && window.innerWidth < 900,
+      peopleWidth: 260,
+      peopleCollapsed: typeof window !== 'undefined' && window.innerWidth < 900
+    }
+    try {
+      const saved = window.localStorage.getItem('offcode-layout')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return {
+          ...defaults,
+          ...parsed,
+          sidebarCollapsed: typeof window !== 'undefined' && window.innerWidth < 900 ? true : (parsed.sidebarCollapsed ?? defaults.sidebarCollapsed),
+          peopleCollapsed: typeof window !== 'undefined' && window.innerWidth < 900 ? true : (parsed.peopleCollapsed ?? defaults.peopleCollapsed)
+        }
+      }
+    } catch (_) {}
+    return defaults
+  })
+
+  const updateLayout = useCallback((updater) => {
+    setLayout((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater }
+      try {
+        window.localStorage.setItem('offcode-layout', JSON.stringify(next))
+      } catch (_) {}
+      return next
+    })
+  }, [])
+
+  // Ctrl+B (or Cmd+B) shortcut to toggle Explorer sidebar
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+        e.preventDefault()
+        updateLayout((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [updateLayout])
+
+  // Drag resizers for Sidebar & People
+  const handleSidebarResizeStart = useCallback((e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = layout.sidebarWidth
+
+    const onMouseMove = (moveEvent) => {
+      const delta = moveEvent.clientX - startX
+      const newWidth = Math.max(180, Math.min(420, startWidth + delta))
+      const peopleW = layout.peopleCollapsed ? 40 : layout.peopleWidth
+      if (window.innerWidth - newWidth - peopleW >= 360) {
+        updateLayout((prev) => ({ ...prev, sidebarWidth: newWidth }))
+      }
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [layout, updateLayout])
+
+  const handlePeopleResizeStart = useCallback((e) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = layout.peopleWidth
+
+    const onMouseMove = (moveEvent) => {
+      const delta = startX - moveEvent.clientX
+      const newWidth = Math.max(220, Math.min(420, startWidth + delta))
+      const sidebarW = layout.sidebarCollapsed ? 40 : layout.sidebarWidth
+      if (window.innerWidth - sidebarW - newWidth >= 360) {
+        updateLayout((prev) => ({ ...prev, peopleWidth: newWidth }))
+      }
+    }
+
+    const onMouseUp = () => {
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [layout, updateLayout])
+
+  // Editor preferences & Customize popover
+  const [editorPrefs, setEditorPrefs] = useState(() => {
+    try {
+      const saved = window.localStorage.getItem('offcode-editor-prefs')
+      if (saved) return { ...DEFAULT_PREFS, ...JSON.parse(saved) }
+    } catch (_) {}
+    return DEFAULT_PREFS
+  })
+
+  const handleUpdateEditorPrefs = useCallback((updater) => {
+    setEditorPrefs((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater }
+      try {
+        window.localStorage.setItem('offcode-editor-prefs', JSON.stringify(next))
+      } catch (_) {}
+      return next
+    })
+  }, [])
+
+  const [isCustomizeOpen, setIsCustomizeOpen] = useState(false)
 
   const workspaceRef = useRef(null)
   const prevHostRef = useRef(null)
@@ -1245,6 +1367,15 @@ export default function App() {
   const isHtml = ['html', 'htm'].includes(activeExt)
   const pendingCount = proposals.filter((p) => p.status === 'pending').length
 
+  const isOnlineExt = ['c', 'cpp', 'cxx', 'cc', 'java', 'php', 'rs', 'rust', 'go', 'rb', 'ruby'].includes(activeExt)
+  const isRunnableExt = ['py', 'js', 'jsx', 'mjs', 'html', 'htm', 'ts', 'tsx'].includes(activeExt) || isOnlineExt
+  const isOnline = typeof navigator === 'undefined' || navigator.onLine
+  const canRunActive = Boolean(activeFile && isRunnableExt && (isOnline || !isOnlineExt))
+  let runTooltipText = 'Run code (Ctrl+Enter)'
+  if (isOnlineExt) {
+    runTooltipText = isOnline ? 'Run code (Ctrl+Enter) (online)' : 'Needs internet'
+  }
+
   // Show Join screen if not connected
   if (!session || !workspace) {
     return <JoinScreen onJoin={handleJoin} theme={theme} onToggleTheme={handleToggleTheme} />
@@ -1293,6 +1424,10 @@ export default function App() {
         onOpenAiKeyModal={() => setIsAiKeyModalOpen(true)}
         onRemoveAiKey={handleRemoveAiKey}
         hasAiKey={Boolean(aiKey)}
+        onToggleCustomize={() => setIsCustomizeOpen((prev) => !prev)}
+        isCustomizeOpen={isCustomizeOpen}
+        canRunActive={canRunActive}
+        runTooltipText={runTooltipText}
       />
 
       {/* Stopped by Host Banner */}
@@ -1344,7 +1479,10 @@ export default function App() {
         )}
 
         {/* Left Sidebar: File explorer */}
-        <div className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''}`}>
+        <div
+          className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''} ${layout.sidebarCollapsed ? 'is-collapsed' : ''}`}
+          style={{ width: layout.sidebarCollapsed ? 40 : layout.sidebarWidth }}
+        >
           <Sidebar
             files={files}
             activeFile={activeFile}
@@ -1356,8 +1494,19 @@ export default function App() {
             isStopped={isCurrentUserStopped}
             isHost={isHost}
             onImportFolder={handleImportFolder}
+            isCollapsed={layout.sidebarCollapsed}
+            onToggleCollapse={() => updateLayout((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
           />
         </div>
+
+        {/* Draggable Resizer for Sidebar */}
+        {!layout.sidebarCollapsed && (
+          <div
+            className="panel-resizer panel-resizer-left"
+            onMouseDown={handleSidebarResizeStart}
+            title="Drag to resize Explorer"
+          />
+        )}
 
         {/* Center: CodeMirror 6 Editor with Bottom Output Panel */}
         <div className="editor-and-output-column">
@@ -1392,6 +1541,10 @@ export default function App() {
             theme={theme}
             onImproveWithAi={handleTriggerAi}
             isOffline={status === 'offline'}
+            editorPrefs={editorPrefs}
+            onChangeEditorPrefs={handleUpdateEditorPrefs}
+            isCustomizeOpen={isCustomizeOpen}
+            onToggleCustomize={() => setIsCustomizeOpen((prev) => !prev)}
           />
 
           {/* Bottom Output & Preview Panel */}
@@ -1407,8 +1560,20 @@ export default function App() {
           />
         </div>
 
+        {/* Draggable Resizer for People */}
+        {!layout.peopleCollapsed && (
+          <div
+            className="panel-resizer panel-resizer-right"
+            onMouseDown={handlePeopleResizeStart}
+            title="Drag to resize People"
+          />
+        )}
+
         {/* Right: People Panel */}
-        <div className={`people-panel-container ${isMobilePeopleOpen ? 'mobile-open' : ''}`}>
+        <div
+          className={`people-panel-container ${isMobilePeopleOpen ? 'mobile-open' : ''} ${layout.peopleCollapsed ? 'is-collapsed' : ''}`}
+          style={{ width: layout.peopleCollapsed ? 40 : layout.peopleWidth }}
+        >
           <PeoplePanel
             users={users}
             activeFile={activeFile}
@@ -1421,6 +1586,8 @@ export default function App() {
             onStopUser={handleStopUser}
             onResumeUser={handleResumeUser}
             frozenUserIds={frozenUserIds}
+            isCollapsed={layout.peopleCollapsed}
+            onToggleCollapse={() => updateLayout((prev) => ({ ...prev, peopleCollapsed: !prev.peopleCollapsed }))}
           />
         </div>
 

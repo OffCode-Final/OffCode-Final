@@ -1,16 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import {
   Play,
-  Square,
   Save,
   Undo2,
   Redo2,
   MoreVertical,
-  Download,
-  Terminal,
-  Wifi,
-  WifiOff,
-  LogOut,
   Copy,
   Check,
   GitPullRequest,
@@ -25,12 +19,48 @@ import {
   Users,
   Key,
   Trash2,
-  History
+  History,
+  Sliders
 } from 'lucide-react'
-import { getFileExtension } from '../utils/helpers'
+import { getFileExtension, copyToClipboard } from '../utils/helpers'
 import UpdateLogsModal from './UpdateLogsModal'
 import { UPDATE_LOGS } from '../data/updateLogs'
-import AnimatedLogo from './AnimatedLogo'
+
+function TopBarBrandMark() {
+  return (
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 100 100"
+      fill="none"
+      aria-hidden="true"
+      className="topbar-brand-mark"
+    >
+      <g transform="translate(6, 12) scale(0.72) translate(-115.9, -98.6)">
+        {/* Blue { */}
+        <path
+          d="M153.81640625 196.712890625V184.794921875C144.693359375 184.794921875 142.3203125 181.26171875 142.3203125 173.720703125V162.27734375C142.3203125 156.529296875 140.2109375 150.833984375 129.927734375 148.25V147.08984375C140.2109375 144.55859375 142.3203125 138.916015625 142.3203125 133.115234375V121.619140625C142.3203125 114.025390625 144.693359375 110.59765625 153.81640625 110.59765625V98.626953125C138.3125 98.626953125 127.66015625 101.52734375 127.66015625 120.08984375V129.318359375C127.66015625 136.806640625 124.91796875 140.181640625 117.166015625 140.498046875H115.900390625V154.841796875H117.166015625C124.91796875 155.158203125 127.66015625 158.5859375 127.66015625 166.07421875V175.25C127.66015625 193.865234375 138.3125 196.712890625 153.81640625 196.712890625Z"
+          fill="#3B82F6"
+        />
+        {/* Cursor line between braces */}
+        <line
+          x1="173"
+          y1="106"
+          x2="173"
+          y2="188"
+          stroke="var(--text-main)"
+          strokeWidth="11"
+          strokeLinecap="round"
+        />
+        {/* Orange } */}
+        <path
+          d="M192.521484375 196.712890625C207.97265625 196.712890625 218.625 193.865234375 218.625 175.25V166.07421875C218.625 158.216796875 221.630859375 154.841796875 230.384765625 154.7890625V140.55078125H230.279296875C221.630859375 140.498046875 218.625 137.17578125 218.625 129.318359375V120.08984375C218.625 101.52734375 207.97265625 98.626953125 192.521484375 98.626953125V110.59765625C201.64453125 110.59765625 204.017578125 114.078125 204.017578125 121.619140625V133.115234375C204.017578125 138.86328125 206.126953125 144.505859375 216.357421875 147.08984375V148.302734375C206.126953125 150.833984375 204.017578125 156.529296875 204.017578125 162.27734375V173.720703125C204.017578125 181.26171875 201.64453125 184.794921875 192.521484375 184.794921875Z"
+          fill="#F97316"
+        />
+      </g>
+    </svg>
+  )
+}
 
 export default function TopBar({
   roomId,
@@ -71,7 +101,11 @@ export default function TopBar({
   onToggleMobilePeople,
   onOpenAiKeyModal,
   onRemoveAiKey,
-  hasAiKey = false
+  hasAiKey = false,
+  onToggleCustomize,
+  isCustomizeOpen = false,
+  canRunActive = false,
+  runTooltipText = 'Run code (Ctrl+Enter)'
 }) {
   const [copied, setCopied] = useState(false)
   const [isMoreOpen, setIsMoreOpen] = useState(false)
@@ -113,25 +147,20 @@ export default function TopBar({
     }
   }
 
-  const handleCopyLink = () => {
-    const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`
-    navigator.clipboard.writeText(inviteUrl).then(() => {
+  const handleCopyLink = async () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '/'
+    const inviteUrl = `${origin}${pathname}?room=${encodeURIComponent(roomId)}`
+    const ok = await copyToClipboard(inviteUrl)
+    if (ok) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
-    })
+    }
   }
-
-  const ext = getFileExtension(activeFile)
-  const canRun = ['py', 'js', 'jsx', 'mjs', 'html', 'htm'].includes(ext)
-  const runTooltip = !activeFile
-    ? 'No file open'
-    : canRun
-    ? `Run ${activeFile} (Ctrl+Enter)`
-    : "Running this language is not supported offline"
 
   return (
     <header className="topbar">
-      {/* Left: Project title & Room identifier */}
+      {/* Left: Favicon mark, separator, room chip, host badge, mode switch, proposals */}
       <div className="topbar-left">
         <button
           type="button"
@@ -140,26 +169,39 @@ export default function TopBar({
           title="Toggle Explorer"
           aria-label="Toggle Explorer"
         >
-          <Folder size={15} />
+          <Folder size={16} strokeWidth={1.75} />
         </button>
+
         <div className="app-brand">
-          <AnimatedLogo size={76} animated={false} className="topbar-logo" />
-          <span className="brand-separator">/</span>
+          <TopBarBrandMark />
+          <span className="brand-separator" aria-hidden="true">/</span>
           <button
             type="button"
             className="btn-room-badge"
             onClick={handleCopyLink}
-            title={copied ? "Copied invite link!" : `Room: ${roomId} (click to copy link)`}
+            title={copied ? 'Copied invite link!' : `Room: ${roomId} (click to copy link)`}
+            aria-label={`Copy invite link for room ${roomId}`}
           >
             <span className="room-name">{roomId}</span>
-            {copied ? <Check size={11} className="room-copy-icon" /> : <Copy size={11} className="room-copy-icon" />}
+            {copied ? (
+              <Check size={12} strokeWidth={1.75} className="room-copy-icon" />
+            ) : (
+              <Copy size={12} strokeWidth={1.75} className="room-copy-icon" />
+            )}
           </button>
         </div>
+
+        {/* Host Badge */}
+        {isHost && (
+          <span className="host-tag">
+            <Crown size={12} strokeWidth={1.75} />
+            <span>Host</span>
+          </span>
+        )}
 
         {/* Host Mode Switch & Review Controls */}
         {isHost ? (
           <div className="topbar-mode-group">
-            <span className="host-tag"><Crown size={11} /> Host</span>
             <div className="topbar-mode-segmented" role="tablist">
               <div className={`mode-segmented-indicator ${mode === 'review' ? 'review' : 'live'}`} />
               <button
@@ -190,7 +232,7 @@ export default function TopBar({
               onClick={onOpenReviewDrawer}
               title="Open Proposals Review & Diff"
             >
-              <GitPullRequest size={13} />
+              <GitPullRequest size={14} strokeWidth={1.75} />
               <span>Proposals</span>
               {pendingProposalsCount > 0 && (
                 <span className="badge-count">{pendingProposalsCount}</span>
@@ -208,7 +250,7 @@ export default function TopBar({
                 disabled={!activeFile || isStopped}
                 title={isStopped ? 'Editing stopped by host' : 'Push draft changes for host review'}
               >
-                <Send size={13} />
+                <Send size={14} strokeWidth={1.75} />
                 <span>Push draft</span>
               </button>
             </div>
@@ -216,7 +258,7 @@ export default function TopBar({
         )}
       </div>
 
-      {/* Right: Grouped button actions with dividers */}
+      {/* Right: Grouped button actions with hairline dividers */}
       <div className="topbar-right">
         {/* Group 1: Undo / Redo */}
         <div className="topbar-group">
@@ -228,7 +270,7 @@ export default function TopBar({
             title={isStopped ? 'Editing stopped by host' : (canUndo ? `Undo  Ctrl+Z (${undoDepth})` : 'Undo  Ctrl+Z')}
             aria-label="Undo"
           >
-            <Undo2 size={15} />
+            <Undo2 size={16} strokeWidth={1.75} />
           </button>
           <button
             type="button"
@@ -238,7 +280,7 @@ export default function TopBar({
             title={isStopped ? 'Editing stopped by host' : (canRedo ? `Redo  Ctrl+Y (${redoDepth})` : 'Redo  Ctrl+Y')}
             aria-label="Redo"
           >
-            <Redo2 size={15} />
+            <Redo2 size={16} strokeWidth={1.75} />
           </button>
         </div>
 
@@ -253,7 +295,7 @@ export default function TopBar({
               onClick={onStopCode}
               title="Stop running execution"
             >
-              <Loader2 size={13} className="spin-icon" />
+              <Loader2 size={14} strokeWidth={1.75} className="spin-icon" />
               <span>Stop</span>
             </button>
           ) : (
@@ -261,37 +303,50 @@ export default function TopBar({
               type="button"
               className="btn-flat btn-primary btn-run"
               onClick={onRunCode}
-              disabled={!canRun}
-              title={runTooltip}
+              disabled={!canRunActive}
+              title={runTooltipText}
             >
-              <Play size={13} />
+              <Play size={14} strokeWidth={1.75} />
               <span>Run</span>
             </button>
           )}
 
           <button
             type="button"
-            className="btn-flat btn-secondary btn-save"
+            className="btn-toolbar btn-ghost"
             onClick={onSaveCurrentFile}
             disabled={!activeFile}
             title={`Save "${activeFile || 'current file'}" to computer (Ctrl+S)`}
+            aria-label="Save file"
           >
-            <Save size={13} />
+            <Save size={16} strokeWidth={1.75} />
             <span>Save</span>
           </button>
         </div>
 
         <div className="topbar-divider" />
 
-        {/* Group 3: Chat, Updates, Theme, More */}
+        {/* Group 3: Customize, Chat, Updates, Theme, Mobile People, More */}
         <div className="topbar-group">
           <button
             type="button"
-            className={`btn-flat btn-secondary btn-chat-toggle ${isChatOpen ? 'active' : ''}`}
+            className={`btn-toolbar btn-ghost btn-customize-toggle ${isCustomizeOpen ? 'active' : ''}`}
+            onClick={onToggleCustomize}
+            title="Customize editor"
+            aria-label="Customize editor"
+          >
+            <Sliders size={16} strokeWidth={1.75} />
+            <span>Customize</span>
+          </button>
+
+          <button
+            type="button"
+            className={`btn-toolbar btn-ghost btn-chat-toggle ${isChatOpen ? 'active' : ''}`}
             onClick={onToggleChat}
             title={isChatOpen ? 'Close chat' : (unreadChatCount > 0 ? `Open chat (${unreadChatCount} unread)` : 'Open chat')}
+            aria-label="Toggle Chat"
           >
-            <MessageSquare size={13} />
+            <MessageSquare size={16} strokeWidth={1.75} />
             <span>Chat</span>
             {unreadChatCount > 0 && !isChatOpen && (
               <span className="badge-unread-count">{unreadChatCount}</span>
@@ -300,11 +355,12 @@ export default function TopBar({
 
           <button
             type="button"
-            className={`btn-flat btn-secondary btn-update-logs ${isUpdateLogsOpen ? 'active' : ''}`}
+            className={`btn-toolbar btn-ghost btn-update-logs ${isUpdateLogsOpen ? 'active' : ''}`}
             onClick={() => setIsUpdateLogsOpen(!isUpdateLogsOpen)}
             title={`View update logs (${currentVersion})`}
+            aria-label="View update logs"
           >
-            <History size={13} />
+            <History size={16} strokeWidth={1.75} />
             <span>Updates</span>
             <span className="badge-update-tag">{currentVersion}</span>
           </button>
@@ -316,7 +372,7 @@ export default function TopBar({
             title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
           >
-            {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+            {theme === 'dark' ? <Sun size={16} strokeWidth={1.75} /> : <Moon size={16} strokeWidth={1.75} />}
           </button>
 
           <button
@@ -326,7 +382,7 @@ export default function TopBar({
             title="Toggle Collaborators"
             aria-label="Toggle Collaborators"
           >
-            <Users size={15} />
+            <Users size={16} strokeWidth={1.75} />
           </button>
 
           <div className="more-menu-wrapper" ref={moreRef} onKeyDown={handleDropdownKeyDown}>
@@ -338,8 +394,9 @@ export default function TopBar({
               title="More actions"
               aria-haspopup="true"
               aria-expanded={isMoreOpen}
+              aria-label="More actions"
             >
-              <MoreVertical size={16} />
+              <MoreVertical size={16} strokeWidth={1.75} />
             </button>
 
             {isMoreOpen && (
@@ -353,7 +410,7 @@ export default function TopBar({
                   }}
                   title={showUserChanges ? 'Hide collaborator changes' : 'Show collaborator changes with colored underlines'}
                 >
-                  <Highlighter size={14} />
+                  <Highlighter size={14} strokeWidth={1.75} />
                   <span style={{ flex: 1, textAlign: 'left' }}>Show User Changes</span>
                   <span
                     className="toggle-indicator-badge"
@@ -382,7 +439,7 @@ export default function TopBar({
                     if (onOpenAiKeyModal) onOpenAiKeyModal()
                   }}
                 >
-                  <Key size={14} />
+                  <Key size={14} strokeWidth={1.75} />
                   <span>Change AI key</span>
                 </button>
 
@@ -396,7 +453,7 @@ export default function TopBar({
                       if (onRemoveAiKey) onRemoveAiKey()
                     }}
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={14} strokeWidth={1.75} />
                     <span>Remove AI key</span>
                   </button>
                 )}
@@ -408,47 +465,12 @@ export default function TopBar({
                   role="menuitem"
                   className="dropdown-item"
                   onClick={() => {
-                    onDownloadAllZip()
                     setIsMoreOpen(false)
+                    if (onDownloadAllZip) onDownloadAllZip()
                   }}
                 >
-                  <Download size={14} />
-                  <span>Download all (.zip)</span>
-                </button>
-
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="dropdown-item"
-                  onClick={() => {
-                    onToggleDebug()
-                    setIsMoreOpen(false)
-                  }}
-                >
-                  <Terminal size={14} />
-                  <span>Debug panel</span>
-                </button>
-
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="dropdown-item"
-                  onClick={() => {
-                    onToggleOnline()
-                    setIsMoreOpen(false)
-                  }}
-                >
-                  {status === 'offline' ? (
-                    <>
-                      <Wifi size={14} />
-                      <span>Go online</span>
-                    </>
-                  ) : (
-                    <>
-                      <WifiOff size={14} />
-                      <span>Go offline</span>
-                    </>
-                  )}
+                  <Save size={14} strokeWidth={1.75} />
+                  <span>Download ZIP</span>
                 </button>
 
                 <div className="dropdown-divider" />
@@ -456,27 +478,13 @@ export default function TopBar({
                 <button
                   type="button"
                   role="menuitem"
-                  className="dropdown-item"
-                  onClick={() => {
-                    handleCopyLink()
-                    setIsMoreOpen(false)
-                  }}
-                >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                  <span>{copied ? 'Link copied' : 'Copy room link'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  role="menuitem"
                   className="dropdown-item text-danger"
                   onClick={() => {
                     setIsMoreOpen(false)
-                    onLeaveRoom()
+                    if (onLeaveRoom) onLeaveRoom()
                   }}
                 >
-                  <LogOut size={14} />
-                  <span>Exit room</span>
+                  <span>Leave Room</span>
                 </button>
               </div>
             )}
@@ -485,10 +493,7 @@ export default function TopBar({
       </div>
 
       {isUpdateLogsOpen && (
-        <UpdateLogsModal
-          isOpen={isUpdateLogsOpen}
-          onClose={() => setIsUpdateLogsOpen(false)}
-        />
+        <UpdateLogsModal onClose={() => setIsUpdateLogsOpen(false)} />
       )}
     </header>
   )
