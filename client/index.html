@@ -5,7 +5,23 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0f1115" />
-    <title>OffCode — Collaborative Code Editor</title>
+    <title>OffCode - Collaborative Code Editor That Works Offline</title>
+    <meta name="description" content="Live multiplayer editing with offline merge, per-user undo, review mode, and Python run in the browser. Build together seamlessly and reliably anywhere." />
+    <link rel="canonical" href="https://offcode.onrender.com/" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://offcode.onrender.com/" />
+    <meta property="og:title" content="OffCode - Collaborative Code Editor That Works Offline" />
+    <meta property="og:description" content="Live multiplayer editing with offline merge, per-user undo, review mode, and Python run in the browser. Build together seamlessly and reliably anywhere." />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="OffCode - Collaborative Code Editor That Works Offline" />
+    <meta name="twitter:description" content="Live multiplayer editing with offline merge, per-user undo, review mode, and Python run in the browser. Build together seamlessly and reliably anywhere." />
+
+    <!-- Google Site Verification: paste <meta name="google-site-verification" content="..." /> here -->
+
     <script>
       (function() {
         try {
@@ -24,7 +40,15 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <noscript>
+        <div style="padding: 2rem; max-width: 600px; margin: 0 auto; font-family: sans-serif; color: #f1f5f9;">
+          <h1>OffCode</h1>
+          <p>OffCode is a real-time collaborative code editor that works completely offline.</p>
+          <p>Collaborate with live multiplayer editing, offline merge, per-user undo, code review mode, and in-browser Python execution.</p>
+        </div>
+      </noscript>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

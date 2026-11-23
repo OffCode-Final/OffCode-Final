@@ -468,6 +468,15 @@ export default function JoinScreen({ onJoin, theme = 'dark', onToggleTheme }) {
             </button>
           )}
         </div>
+
+        {/* Crawlable SEO About Block */}
+        <div className="join-seo-block">
+          <h1 className="join-seo-title">OffCode</h1>
+          <p className="join-seo-text">
+            OffCode is a real-time collaborative code editor that works completely offline.
+            Collaborate with live multiplayer editing, offline merge, per-user undo, and in-browser Python execution.
+          </p>
+        </div>
       </div>
     </div>
   )
