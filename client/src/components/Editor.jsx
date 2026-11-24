@@ -515,6 +515,81 @@ const activeLineCompartment = new Compartment()
 const whitespaceCompartment = new Compartment()
 const aiTooltipCompartment = new Compartment()
 
+function createAiTooltipExtension({
+  onImproveWithAi,
+  isStopped = false,
+  readOnly = false,
+  isOffline = false
+}) {
+  return showTooltip.compute(['selection'], (state) => {
+    const { from, to } = state.selection.main
+    if (to - from < 3) return null
+
+    let disabledReason = null
+    if (isStopped) disabledReason = 'Editing stopped by host'
+    else if (readOnly) disabledReason = 'File is read-only'
+    else if (isOffline) disabledReason = 'AI needs internet'
+
+    return {
+      pos: Math.max(from, to),
+      above: true,
+      create(view) {
+        const dom = document.createElement('div')
+        dom.className = 'cm-ai-tooltip-content'
+
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'cm-ai-sparkle-btn'
+        button.title = disabledReason || 'Improve with AI'
+        button.setAttribute('aria-label', disabledReason || 'Improve with AI')
+
+        if (disabledReason) {
+          button.disabled = true
+        }
+
+        button.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+            <path d="M5 3v4"/>
+            <path d="M19 17v4"/>
+            <path d="M3 5h4"/>
+            <path d="M17 19h4"/>
+          </svg>
+        `
+
+        button.addEventListener('mousedown', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+        })
+
+        button.addEventListener('click', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (disabledReason) return
+
+          const sel = view.state.selection.main
+          if (sel.to - sel.from < 3) return
+          const selectedText = view.state.sliceDoc(sel.from, sel.to)
+          const fullText = view.state.doc.toString()
+
+          if (onImproveWithAi) {
+            onImproveWithAi({
+              selectedText,
+              from: sel.from,
+              to: sel.to,
+              fullText,
+              view
+            })
+          }
+        })
+
+        dom.appendChild(button)
+        return { dom }
+      }
+    }
+  })
+}
+
 function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563eb') {
   const isDark = theme !== 'light'
   const customColors = getThemeColors(prefs.syntaxTheme, isDark)
