@@ -83,28 +83,49 @@ export default function ChatPanel({
   const textareaRef = useRef(null)
 
   const cleanRoom = (session?.roomId || 'default').trim().toLowerCase()
-  const clearedKey = `chatClearedAt:${cleanRoom}`
-  const hiddenKey = `chatHidden:${cleanRoom}`
+  const storageKey = `offcode-chat-hidden:${cleanRoom}`
+
+  // Load persisted hidden data: { hiddenIds: string[], clearedBefore: number }
+  const initialData = useMemo(() => {
+    try {
+      const saved = window.localStorage.getItem(storageKey)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        return {
+          hiddenIds: Array.isArray(parsed.hiddenIds) ? new Set(parsed.hiddenIds) : new Set(),
+          clearedBefore: typeof parsed.clearedBefore === 'number' ? parsed.clearedBefore : 0
+        }
+      }
+      // Legacy fallbacks
+      const legacyCleared = window.localStorage.getItem(`chatClearedAt:${cleanRoom}`)
+      const legacyHidden = window.localStorage.getItem(`chatHidden:${cleanRoom}`)
+      return {
+        hiddenIds: legacyHidden ? new Set(JSON.parse(legacyHidden)) : new Set(),
+        clearedBefore: legacyCleared ? parseInt(legacyCleared, 10) || 0 : 0
+      }
+    } catch (_) {
+      return { hiddenIds: new Set(), clearedBefore: 0 }
+    }
+  }, [storageKey, cleanRoom])
 
   // Local chatClearedAt (hides messages prior to this on user's screen only)
-  const [chatClearedAt, setChatClearedAt] = useState(() => {
-    try {
-      const saved = window.localStorage.getItem(clearedKey)
-      return saved ? parseInt(saved, 10) || 0 : 0
-    } catch (_) {
-      return 0
-    }
-  })
+  const [chatClearedAt, setChatClearedAt] = useState(initialData.clearedBefore)
 
   // Local chatHidden (capped at 500 ids, hides only those messages on user's screen)
-  const [hiddenIds, setHiddenIds] = useState(() => {
+  const [hiddenIds, setHiddenIds] = useState(initialData.hiddenIds)
+  const [undoItem, setUndoItem] = useState(null)
+  const undoTimerRef = useRef(null)
+
+  // Helper to persist hidden state
+  const persistHiddenState = useCallback((newHiddenSet, newClearedBefore) => {
     try {
-      const saved = window.localStorage.getItem(hiddenKey)
-      return saved ? new Set(JSON.parse(saved)) : new Set()
-    } catch (_) {
-      return new Set()
-    }
-  })
+      const arr = Array.from(newHiddenSet).slice(-500)
+      window.localStorage.setItem(storageKey, JSON.stringify({
+        hiddenIds: arr,
+        clearedBefore: newClearedBefore
+      }))
+    } catch (_) {}
+  }, [storageKey])
 
   // Retrieve or initialize the joinedAt timestamp for this room
   const myUserId = workspace?.getUserId ? workspace.getUserId() : session?.userName
@@ -232,43 +253,32 @@ export default function ChatPanel({
     setIsConfirmClearOpen(false)
     const now = Date.now()
     setChatClearedAt(now)
-    try {
-      window.localStorage.setItem(clearedKey, String(now))
-    } catch (_) {}
+    persistHiddenState(hiddenIds, now)
   }
 
-  // Delete for everyone in shared room
-  const handleDeleteForEveryone = (msgId) => {
-    if (!msgId || !chatArray) return
-    const arr = chatArray.toArray()
-    const idx = arr.findIndex((m) => m.id === msgId)
-    if (idx !== -1) {
-      const old = arr[idx]
-      chatArray.delete(idx, 1)
-      chatArray.insert(idx, [{
-        ...old,
-        text: 'This message was deleted',
-        isDeleted: true
-      }])
-    }
-  }
-
-  // Delete single message for current user only
-  const handleDeleteMessageForMe = (msgId) => {
+  // Hide single message for current user only with 5-second Undo toast
+  const handleHideMessage = (msgId) => {
     if (!msgId) return
-    setHiddenIds((prev) => {
-      const next = new Set(prev)
-      next.add(msgId)
-      // Cap at 500 ids, dropping oldest
-      let arr = Array.from(next)
-      if (arr.length > 500) {
-        arr = arr.slice(arr.length - 500)
-      }
-      try {
-        window.localStorage.setItem(hiddenKey, JSON.stringify(arr))
-      } catch (_) {}
-      return new Set(arr)
-    })
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    const nextHidden = new Set(hiddenIds)
+    nextHidden.add(msgId)
+    setHiddenIds(nextHidden)
+    persistHiddenState(nextHidden, chatClearedAt)
+
+    setUndoItem({ msgId })
+    undoTimerRef.current = setTimeout(() => {
+      setUndoItem(null)
+    }, 5000)
+  }
+
+  const handleUndoHide = () => {
+    if (!undoItem) return
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    const nextHidden = new Set(hiddenIds)
+    nextHidden.delete(undoItem.msgId)
+    setHiddenIds(nextHidden)
+    persistHiddenState(nextHidden, chatClearedAt)
+    setUndoItem(null)
   }
 
   if (!isOpen) return null
@@ -331,24 +341,15 @@ export default function ChatPanel({
                   </span>
                   <div className="chat-message-meta-right">
                     <span className="chat-message-time">{formatChatTime(msg)}</span>
-                    {!msg.isDeleted && (
-                      <button
-                        type="button"
-                        className="btn-delete-msg-hover"
-                        onClick={() => {
-                          if (isOwn) {
-                            handleDeleteForEveryone(msg.id)
-                          } else {
-                            handleDeleteMessageForMe(msg.id)
-                          }
-                        }}
-                        title={isOwn ? 'Delete for everyone' : 'Delete for me'}
-                        aria-label={isOwn ? 'Delete for everyone' : 'Delete for me'}
-                        style={{ color: 'var(--color-danger, #ef4444)' }}
-                      >
-                        <Trash2 size={12} strokeWidth={1.75} />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="btn-delete-msg-hover"
+                      onClick={() => handleHideMessage(msg.id)}
+                      title="Hide message on your screen"
+                      aria-label="Hide message on your screen"
+                    >
+                      <Trash2 size={12} strokeWidth={1.75} />
+                    </button>
                   </div>
                 </div>
                 <div
@@ -374,6 +375,21 @@ export default function ChatPanel({
           <ArrowDown size={12} strokeWidth={2} />
           <span>New messages</span>
         </button>
+      )}
+
+      {/* 5-second Undo Toast for hidden message */}
+      {undoItem && (
+        <div className="chat-undo-toast" role="status" aria-live="polite">
+          <span>Message hidden</span>
+          <button
+            type="button"
+            className="btn-undo-action"
+            onClick={handleUndoHide}
+            aria-label="Undo hide message"
+          >
+            Undo
+          </button>
+        </div>
       )}
 
       {/* Input area */}
@@ -412,7 +428,7 @@ export default function ChatPanel({
           <div className="modal-card modal-delete" onClick={(e) => e.stopPropagation()}>
             <h4 className="modal-title">Clear Chat</h4>
             <p className="modal-desc">
-              Clear chat messages on your screen only? Other people in the room will still see their messages.
+              Clear chat on your screen? Other people keep their messages.
             </p>
             <div className="modal-actions">
               <button
@@ -427,7 +443,7 @@ export default function ChatPanel({
                 className="btn-flat btn-danger btn-confirm-clear-chat"
                 onClick={handleClearChatForMe}
               >
-                Clear on My Screen
+                Clear chat
               </button>
             </div>
           </div>

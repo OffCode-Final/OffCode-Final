@@ -1,15 +1,54 @@
-import { useState, useEffect, useRef } from 'react'
-import { Sliders, RotateCcw, X, Plus, Minus, Check } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  Sliders,
+  RotateCcw,
+  X,
+  Plus,
+  Minus,
+  Check,
+  Search,
+  Type,
+  Layout,
+  MousePointer,
+  Palette,
+  Settings
+} from 'lucide-react'
 
 export const DEFAULT_PREFS = {
+  // Font
   fontFamily: 'JetBrains Mono',
   fontSize: 13,
-  lineHeight: 'normal',
-  ligatures: false,
-  wordWrap: false,
+  lineHeight: 'normal', // 'compact' | 'normal' | 'relaxed'
+  ligatures: true,
+
+  // Display
   lineNumbers: true,
+  relativeLineNumbers: false,
+  wordWrap: false,
+  foldGutter: true,
+  indentGuides: true,
+  showWhitespace: false,
+  ruler: 'off', // 'off' | '80' | '100'
+
+  // Cursor
+  cursorStyle: 'line', // 'line' | 'thick' | 'block' | 'underline'
+  cursorBlink: 'smooth', // 'smooth' | 'blink' | 'solid'
+  smoothCaret: true,
+  caretColor: 'user', // 'user' | '#hex'
+  cursorGlow: false,
+  remoteCursorLabels: 'always', // 'always' | 'idle' | 'hide'
+
+  // Theme
+  syntaxTheme: 'OffCode',
+
+  // Behavior
   tabSize: 4,
-  syntaxTheme: 'OffCode'
+  autoCloseBrackets: true,
+  bracketMatching: true,
+  highlightActiveLine: true,
+  focusMode: false,
+  typingSparks: false
 }
 
 export function loadEditorPrefs() {
@@ -28,34 +67,116 @@ export function saveEditorPrefs(prefs) {
   } catch (_) {}
 }
 
-const FONT_FAMILIES = [
-  { label: 'JetBrains Mono', value: 'JetBrains Mono' },
-  { label: 'Fira Code', value: 'Fira Code' },
-  { label: 'Source Code Pro', value: 'Source Code Pro' },
-  { label: 'IBM Plex Mono', value: 'IBM Plex Mono' },
-  { label: 'System monospace', value: 'System monospace' }
+export const FONT_GROUPS = [
+  {
+    category: 'Popular',
+    fonts: [
+      'JetBrains Mono',
+      'Fira Code',
+      'Source Code Pro',
+      'IBM Plex Mono',
+      'Roboto Mono',
+      'Geist Mono',
+      'Cascadia Code',
+      'Ubuntu Mono',
+      'Inconsolata',
+      'Space Mono',
+      'DM Mono'
+    ]
+  },
+  {
+    category: 'Modern',
+    fonts: [
+      'Red Hat Mono',
+      'Azeret Mono',
+      'Martian Mono',
+      'Sometype Mono',
+      'Chivo Mono',
+      'Fragment Mono',
+      'Spline Sans Mono',
+      'Noto Sans Mono',
+      'Reddit Mono',
+      'Atkinson Hyperlegible Mono',
+      'Victor Mono'
+    ]
+  },
+  {
+    category: 'Classic',
+    fonts: [
+      'Courier Prime',
+      'PT Mono',
+      'Anonymous Pro',
+      'Share Tech Mono',
+      'Overpass Mono',
+      'Cousine',
+      'Fira Mono',
+      'Oxygen Mono',
+      'Lekton'
+    ]
+  },
+  {
+    category: 'Fun and retro',
+    fonts: [
+      'VT323',
+      'Silkscreen',
+      'Monofett',
+      'Major Mono Display',
+      'Syne Mono',
+      'Cutive Mono',
+      'Nova Mono',
+      'Share Tech'
+    ]
+  },
+  {
+    category: 'System monospace',
+    fonts: [
+      'Consolas',
+      'Menlo',
+      'Monaco',
+      'SF Mono',
+      'DejaVu Sans Mono',
+      'Lucida Console'
+    ]
+  }
 ]
 
-const SYNTAX_THEMES = [
-  'OffCode',
-  'GitHub',
-  'One',
-  'Solarized',
-  'Monokai',
-  'High contrast'
+export const SYNTAX_THEMES = [
+  { id: 'OffCode', name: 'OffCode', colors: ['#c678dd', '#61afef', '#98c379'] },
+  { id: 'Dracula', name: 'Dracula', colors: ['#ff79c6', '#8be9fd', '#50fa7b'] },
+  { id: 'One Dark', name: 'One Dark', colors: ['#c678dd', '#61afef', '#e5c07b'] },
+  { id: 'Nord', name: 'Nord', colors: ['#81a1c1', '#88c0d0', '#a3be8c'] },
+  { id: 'Tokyo Night', name: 'Tokyo Night', colors: ['#bb9af7', '#7aa2f7', '#9ece6a'] },
+  { id: 'Solarized Light', name: 'Solarized Light', colors: ['#859900', '#268bd2', '#b58900'] },
+  { id: 'Solarized Dark', name: 'Solarized Dark', colors: ['#2aa198', '#268bd2', '#cb4b16'] },
+  { id: 'GitHub Light', name: 'GitHub Light', colors: ['#cf222e', '#0550ae', '#116329'] },
+  { id: 'GitHub Dark', name: 'GitHub Dark', colors: ['#ff7b72', '#79c0ff', '#7ee787'] },
+  { id: 'Gruvbox Dark', name: 'Gruvbox Dark', colors: ['#fb4934', '#83a598', '#b8bb26'] },
+  { id: 'Monokai', name: 'Monokai', colors: ['#f92672', '#66d9ef', '#a6e22e'] }
 ]
 
 export default function CustomizePopover({
-  prefs,
+  prefs = DEFAULT_PREFS,
   onChangePrefs,
   isOpen,
   onClose,
   triggerRef
 }) {
   const popoverRef = useRef(null)
+  const [activeTab, setActiveTab] = useState('font') // 'font' | 'display' | 'cursor' | 'theme' | 'behavior'
+  const [fontSearch, setFontSearch] = useState('')
+  const [pos, setPos] = useState({ top: 50, right: 16 })
 
   useEffect(() => {
     if (!isOpen) return
+
+    if (triggerRef?.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      const rightDist = Math.max(16, window.innerWidth - rect.right)
+      setPos({
+        top: Math.min(window.innerHeight - 560, Math.max(10, rect.bottom + 6)),
+        right: rightDist
+      })
+    }
 
     const handleClickOutside = (e) => {
       if (
@@ -83,6 +204,15 @@ export default function CustomizePopover({
     }
   }, [isOpen, onClose, triggerRef])
 
+  const filteredFontGroups = useMemo(() => {
+    const q = fontSearch.trim().toLowerCase()
+    if (!q) return FONT_GROUPS
+    return FONT_GROUPS.map((g) => ({
+      ...g,
+      fonts: g.fonts.filter((f) => f.toLowerCase().includes(q))
+    })).filter((g) => g.fonts.length > 0)
+  }, [fontSearch])
+
   if (!isOpen) return null
 
   const update = (patch) => {
@@ -96,10 +226,18 @@ export default function CustomizePopover({
     saveEditorPrefs({ ...DEFAULT_PREFS })
   }
 
-  return (
+  const zoomPercent = Math.round(((prefs.fontSize || 13) / 13) * 100)
+
+  const content = (
     <div
       ref={popoverRef}
       className="customize-popover"
+      style={{
+        position: 'fixed',
+        top: `${pos.top}px`,
+        right: `${pos.right}px`,
+        zIndex: 10000
+      }}
       role="dialog"
       aria-label="Customize Editor Settings"
       tabIndex={-1}
@@ -119,135 +257,487 @@ export default function CustomizePopover({
         </button>
       </div>
 
+      {/* Tabs Header */}
+      <div className="customize-tabs" role="tablist">
+        <button
+          type="button"
+          className={`customize-tab-btn ${activeTab === 'font' ? 'active' : ''}`}
+          onClick={() => setActiveTab('font')}
+          role="tab"
+          aria-selected={activeTab === 'font'}
+        >
+          <Type size={12} />
+          <span>Font</span>
+        </button>
+        <button
+          type="button"
+          className={`customize-tab-btn ${activeTab === 'display' ? 'active' : ''}`}
+          onClick={() => setActiveTab('display')}
+          role="tab"
+          aria-selected={activeTab === 'display'}
+        >
+          <Layout size={12} />
+          <span>Display</span>
+        </button>
+        <button
+          type="button"
+          className={`customize-tab-btn ${activeTab === 'cursor' ? 'active' : ''}`}
+          onClick={() => setActiveTab('cursor')}
+          role="tab"
+          aria-selected={activeTab === 'cursor'}
+        >
+          <MousePointer size={12} />
+          <span>Cursor</span>
+        </button>
+        <button
+          type="button"
+          className={`customize-tab-btn ${activeTab === 'theme' ? 'active' : ''}`}
+          onClick={() => setActiveTab('theme')}
+          role="tab"
+          aria-selected={activeTab === 'theme'}
+        >
+          <Palette size={12} />
+          <span>Theme</span>
+        </button>
+        <button
+          type="button"
+          className={`customize-tab-btn ${activeTab === 'behavior' ? 'active' : ''}`}
+          onClick={() => setActiveTab('behavior')}
+          role="tab"
+          aria-selected={activeTab === 'behavior'}
+        >
+          <Settings size={12} />
+          <span>Behavior</span>
+        </button>
+      </div>
+
       <div className="customize-body">
-        {/* Font Family */}
-        <div className="customize-row">
-          <label className="customize-label" htmlFor="pref-font-family">Font family</label>
-          <select
-            id="pref-font-family"
-            className="customize-select"
-            value={prefs.fontFamily}
-            onChange={(e) => update({ fontFamily: e.target.value })}
-          >
-            {FONT_FAMILIES.map((f) => (
-              <option key={f.value} value={f.value}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* TAB 1: FONT */}
+        {activeTab === 'font' && (
+          <div className="customize-tab-panel">
+            {/* Searchable Font Picker */}
+            <div className="customize-section">
+              <label className="customize-label">Font family</label>
+              <div className="font-search-wrap">
+                <Search size={12} className="font-search-icon" />
+                <input
+                  type="text"
+                  className="font-search-input"
+                  placeholder="Search fonts..."
+                  value={fontSearch}
+                  onChange={(e) => setFontSearch(e.target.value)}
+                />
+              </div>
 
-        {/* Font Size with Zoom buttons */}
-        <div className="customize-row">
-          <span className="customize-label">Font size</span>
-          <div className="customize-stepper">
-            <button
-              type="button"
-              className="btn-stepper"
-              onClick={() => update({ fontSize: Math.max(11, prefs.fontSize - 1) })}
-              disabled={prefs.fontSize <= 11}
-              aria-label="Decrease font size"
-              title="Ctrl+Minus"
-            >
-              <Minus size={12} />
-            </button>
-            <span className="stepper-value">{prefs.fontSize}px</span>
-            <button
-              type="button"
-              className="btn-stepper"
-              onClick={() => update({ fontSize: Math.min(24, prefs.fontSize + 1) })}
-              disabled={prefs.fontSize >= 24}
-              aria-label="Increase font size"
-              title="Ctrl+Plus"
-            >
-              <Plus size={12} />
-            </button>
+              <div className="font-picker-scroll">
+                {filteredFontGroups.map((g) => (
+                  <div key={g.category} className="font-group">
+                    <div className="font-group-title">{g.category}</div>
+                    <div className="font-group-list">
+                      {g.fonts.map((f) => {
+                        const isSelected = prefs.fontFamily === f
+                        return (
+                          <div
+                            key={f}
+                            className={`font-picker-item ${isSelected ? 'active' : ''}`}
+                            onClick={() => update({ fontFamily: f })}
+                          >
+                            <div className="font-picker-name" style={{ fontFamily: `"${f}", monospace` }}>
+                              {f}
+                            </div>
+                            <div className="font-picker-preview" style={{ fontFamily: `"${f}", monospace` }}>
+                              const x = 42;
+                            </div>
+                            {isSelected && <Check size={12} className="font-picker-check" />}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Font Size Slider & Stepper */}
+            <div className="customize-row">
+              <div className="customize-label-col">
+                <span className="customize-label">Font size</span>
+                <span className="customize-subhint">Zoom: Ctrl+Plus/Minus/0/Wheel</span>
+              </div>
+              <div className="customize-stepper">
+                <button
+                  type="button"
+                  className="btn-stepper"
+                  onClick={() => update({ fontSize: Math.max(10, (prefs.fontSize || 13) - 1) })}
+                  disabled={(prefs.fontSize || 13) <= 10}
+                  aria-label="Decrease font size"
+                >
+                  <Minus size={12} />
+                </button>
+                <input
+                  type="range"
+                  min="10"
+                  max="32"
+                  value={prefs.fontSize || 13}
+                  onChange={(e) => update({ fontSize: parseInt(e.target.value, 10) })}
+                  className="customize-range"
+                />
+                <button
+                  type="button"
+                  className="btn-stepper"
+                  onClick={() => update({ fontSize: Math.min(32, (prefs.fontSize || 13) + 1) })}
+                  disabled={(prefs.fontSize || 13) >= 32}
+                  aria-label="Increase font size"
+                >
+                  <Plus size={12} />
+                </button>
+                <span className="stepper-value">{prefs.fontSize || 13}px ({zoomPercent}%)</span>
+              </div>
+            </div>
+
+            {/* Line Height */}
+            <div className="customize-row">
+              <span className="customize-label">Line height</span>
+              <div className="customize-segmented">
+                {['compact', 'normal', 'relaxed'].map((lh) => (
+                  <button
+                    key={lh}
+                    type="button"
+                    className={`customize-seg-btn ${prefs.lineHeight === lh ? 'active' : ''}`}
+                    onClick={() => update({ lineHeight: lh })}
+                  >
+                    {lh.charAt(0).toUpperCase() + lh.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Ligatures */}
+            <div className="customize-toggle-group">
+              <label className="customize-toggle-row">
+                <div className="toggle-text-wrap">
+                  <span className="toggle-label">Font ligatures</span>
+                  <span className="toggle-hint">Works with Fira Code, JetBrains Mono, Cascadia Code and similar</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.ligatures)}
+                  onChange={(e) => update({ ligatures: e.target.checked })}
+                />
+              </label>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Line Height */}
-        <div className="customize-row">
-          <span className="customize-label">Line height</span>
-          <div className="customize-segmented">
-            {['compact', 'normal', 'relaxed'].map((lh) => (
-              <button
-                key={lh}
-                type="button"
-                className={`customize-seg-btn ${prefs.lineHeight === lh ? 'active' : ''}`}
-                onClick={() => update({ lineHeight: lh })}
-              >
-                {lh.charAt(0).toUpperCase() + lh.slice(1)}
-              </button>
-            ))}
+        {/* TAB 2: DISPLAY */}
+        {activeTab === 'display' && (
+          <div className="customize-tab-panel">
+            <div className="customize-toggle-group">
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Line numbers</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.lineNumbers)}
+                  onChange={(e) => update({ lineNumbers: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Relative line numbers</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.relativeLineNumbers)}
+                  onChange={(e) => update({ relativeLineNumbers: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Word wrap</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.wordWrap)}
+                  onChange={(e) => update({ wordWrap: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Fold gutter</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.foldGutter)}
+                  onChange={(e) => update({ foldGutter: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Indent guides</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.indentGuides)}
+                  onChange={(e) => update({ indentGuides: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Show whitespace</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.showWhitespace)}
+                  onChange={(e) => update({ showWhitespace: e.target.checked })}
+                />
+              </label>
+            </div>
+
+            {/* Column Ruler */}
+            <div className="customize-row" style={{ marginTop: '12px' }}>
+              <span className="customize-label">Column ruler</span>
+              <div className="customize-segmented">
+                {[
+                  { id: 'off', label: 'Off' },
+                  { id: '80', label: 'Col 80' },
+                  { id: '100', label: 'Col 100' }
+                ].map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    className={`customize-seg-btn ${prefs.ruler === r.id ? 'active' : ''}`}
+                    onClick={() => update({ ruler: r.id })}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Syntax Theme Preset */}
-        <div className="customize-row">
-          <label className="customize-label" htmlFor="pref-syntax-theme">Syntax theme</label>
-          <select
-            id="pref-syntax-theme"
-            className="customize-select"
-            value={prefs.syntaxTheme}
-            onChange={(e) => update({ syntaxTheme: e.target.value })}
-          >
-            {SYNTAX_THEMES.map((themeName) => (
-              <option key={themeName} value={themeName}>
-                {themeName}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* TAB 3: CURSOR */}
+        {activeTab === 'cursor' && (
+          <div className="customize-tab-panel">
+            {/* Cursor Style */}
+            <div className="customize-row">
+              <span className="customize-label">Cursor style</span>
+              <div className="customize-segmented">
+                {[
+                  { id: 'line', label: 'Line' },
+                  { id: 'thick', label: 'Thick' },
+                  { id: 'block', label: 'Block' },
+                  { id: 'underline', label: 'Underline' }
+                ].map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={`customize-seg-btn ${prefs.cursorStyle === s.id ? 'active' : ''}`}
+                    onClick={() => update({ cursorStyle: s.id })}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-        {/* Tab Size */}
-        <div className="customize-row">
-          <span className="customize-label">Tab size</span>
-          <div className="customize-segmented">
-            {[2, 4, 8].map((size) => (
-              <button
-                key={size}
-                type="button"
-                className={`customize-seg-btn ${prefs.tabSize === size ? 'active' : ''}`}
-                onClick={() => update({ tabSize: size })}
-              >
-                {size}
-              </button>
-            ))}
+            {/* Cursor Blink */}
+            <div className="customize-row">
+              <span className="customize-label">Cursor blink</span>
+              <div className="customize-segmented">
+                {[
+                  { id: 'smooth', label: 'Smooth' },
+                  { id: 'blink', label: 'Blink' },
+                  { id: 'solid', label: 'Solid' }
+                ].map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className={`customize-seg-btn ${prefs.cursorBlink === b.id ? 'active' : ''}`}
+                    onClick={() => update({ cursorBlink: b.id })}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Caret Color */}
+            <div className="customize-row">
+              <span className="customize-label">My caret color</span>
+              <div className="caret-color-choice">
+                <button
+                  type="button"
+                  className={`customize-seg-btn ${prefs.caretColor === 'user' ? 'active' : ''}`}
+                  onClick={() => update({ caretColor: 'user' })}
+                  title="Follow user color"
+                >
+                  User color
+                </button>
+                <input
+                  type="color"
+                  className="caret-color-picker"
+                  value={prefs.caretColor === 'user' ? '#2563eb' : prefs.caretColor}
+                  onChange={(e) => update({ caretColor: e.target.value })}
+                  title="Pick custom caret color"
+                />
+              </div>
+            </div>
+
+            {/* Remote Cursor Labels */}
+            <div className="customize-row">
+              <span className="customize-label">Remote labels</span>
+              <div className="customize-segmented">
+                {[
+                  { id: 'always', label: 'Always' },
+                  { id: 'idle', label: 'Fade idle' },
+                  { id: 'hide', label: 'Hide' }
+                ].map((rl) => (
+                  <button
+                    key={rl.id}
+                    type="button"
+                    className={`customize-seg-btn ${prefs.remoteCursorLabels === rl.id ? 'active' : ''}`}
+                    onClick={() => update({ remoteCursorLabels: rl.id })}
+                  >
+                    {rl.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="customize-toggle-group">
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Smooth caret movement (~80ms)</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.smoothCaret)}
+                  onChange={(e) => update({ smoothCaret: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Cursor glow</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.cursorGlow)}
+                  onChange={(e) => update({ cursorGlow: e.target.checked })}
+                />
+              </label>
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Toggle Switches: Ligatures, Word wrap, Line numbers */}
-        <div className="customize-toggle-group">
-          <label className="customize-toggle-row">
-            <span className="toggle-label">Font ligatures</span>
-            <input
-              type="checkbox"
-              className="customize-checkbox"
-              checked={prefs.ligatures}
-              onChange={(e) => update({ ligatures: e.target.checked })}
-            />
-          </label>
+        {/* TAB 4: THEME */}
+        {activeTab === 'theme' && (
+          <div className="customize-tab-panel">
+            <div className="theme-grid">
+              {SYNTAX_THEMES.map((th) => {
+                const isSelected = prefs.syntaxTheme === th.id
+                return (
+                  <div
+                    key={th.id}
+                    className={`theme-card ${isSelected ? 'active' : ''}`}
+                    onClick={() => update({ syntaxTheme: th.id })}
+                  >
+                    <div className="theme-card-header">
+                      <span className="theme-card-name">{th.name}</span>
+                      {isSelected && <Check size={12} className="theme-card-check" />}
+                    </div>
+                    <div className="theme-card-dots">
+                      {th.colors.map((c, i) => (
+                        <span key={i} className="theme-dot" style={{ backgroundColor: c }} />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
-          <label className="customize-toggle-row">
-            <span className="toggle-label">Word wrap</span>
-            <input
-              type="checkbox"
-              className="customize-checkbox"
-              checked={prefs.wordWrap}
-              onChange={(e) => update({ wordWrap: e.target.checked })}
-            />
-          </label>
+        {/* TAB 5: BEHAVIOR */}
+        {activeTab === 'behavior' && (
+          <div className="customize-tab-panel">
+            {/* Tab Size */}
+            <div className="customize-row">
+              <span className="customize-label">Tab size</span>
+              <div className="customize-segmented">
+                {[2, 4, 8].map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    className={`customize-seg-btn ${prefs.tabSize === size ? 'active' : ''}`}
+                    onClick={() => update({ tabSize: size })}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-          <label className="customize-toggle-row">
-            <span className="toggle-label">Line numbers</span>
-            <input
-              type="checkbox"
-              className="customize-checkbox"
-              checked={prefs.lineNumbers}
-              onChange={(e) => update({ lineNumbers: e.target.checked })}
-            />
-          </label>
-        </div>
+            <div className="customize-toggle-group">
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Auto-close brackets</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.autoCloseBrackets)}
+                  onChange={(e) => update({ autoCloseBrackets: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Bracket matching</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.bracketMatching)}
+                  onChange={(e) => update({ bracketMatching: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <span className="toggle-label">Highlight active line</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.highlightActiveLine)}
+                  onChange={(e) => update({ highlightActiveLine: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <div className="toggle-text-wrap">
+                  <span className="toggle-label">Focus mode</span>
+                  <span className="toggle-hint">Hides sidebars and status bar for distraction-free coding</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.focusMode)}
+                  onChange={(e) => update({ focusMode: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <div className="toggle-text-wrap">
+                  <span className="toggle-label">Typing sparks</span>
+                  <span className="toggle-hint">Tiny fading sparks near caret (capped at 8 particles)</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.typingSparks)}
+                  onChange={(e) => update({ typingSparks: e.target.checked })}
+                />
+              </label>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="customize-footer">
@@ -262,4 +752,9 @@ export default function CustomizePopover({
       </div>
     </div>
   )
+
+  if (typeof document !== 'undefined') {
+    return createPortal(content, document.body)
+  }
+  return content
 }

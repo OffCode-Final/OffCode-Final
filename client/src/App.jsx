@@ -17,6 +17,7 @@ import {
   getDefaultServerUrl,
   resolveHtmlAssets,
   SUPPORTED_EXTENSIONS,
+  validateFileName,
   pickUniqueColor,
   COLLABORATOR_PALETTE
 } from './utils/helpers'
@@ -146,13 +147,17 @@ export default function App() {
       peopleCollapsed: typeof window !== 'undefined' && window.innerWidth < 900
     }
     try {
+      const explicitCollapsed = window.localStorage.getItem('offcode-sidebar-collapsed')
+      if (explicitCollapsed !== null) {
+        defaults.sidebarCollapsed = explicitCollapsed === 'true'
+      }
       const saved = window.localStorage.getItem('offcode-layout')
       if (saved) {
         const parsed = JSON.parse(saved)
         return {
           ...defaults,
           ...parsed,
-          sidebarCollapsed: typeof window !== 'undefined' && window.innerWidth < 900 ? true : (parsed.sidebarCollapsed ?? defaults.sidebarCollapsed),
+          sidebarCollapsed: explicitCollapsed !== null ? explicitCollapsed === 'true' : (parsed.sidebarCollapsed ?? defaults.sidebarCollapsed),
           peopleCollapsed: typeof window !== 'undefined' && window.innerWidth < 900 ? true : (parsed.peopleCollapsed ?? defaults.peopleCollapsed)
         }
       }
@@ -165,6 +170,7 @@ export default function App() {
       const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater }
       try {
         window.localStorage.setItem('offcode-layout', JSON.stringify(next))
+        window.localStorage.setItem('offcode-sidebar-collapsed', String(Boolean(next.sidebarCollapsed)))
       } catch (_) {}
       return next
     })
@@ -256,6 +262,17 @@ export default function App() {
     })
   }, [])
 
+  // Exit focus mode with Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && editorPrefs.focusMode) {
+        handleUpdateEditorPrefs((prev) => ({ ...prev, focusMode: false }))
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [editorPrefs.focusMode, handleUpdateEditorPrefs])
+
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false)
 
   const workspaceRef = useRef(null)
@@ -268,6 +285,8 @@ export default function App() {
 
   const [showOnlineNotice, setShowOnlineNotice] = useState(false)
   const [outputFooterNote, setOutputFooterNote] = useState('')
+  const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false)
+  const [modalFileName, setModalFileName] = useState('')
 
   const handleDismissOnlineNotice = useCallback(() => {
     setShowOnlineNotice(false)
@@ -783,10 +802,17 @@ export default function App() {
           let chatClearedAt = 0
           let hiddenIds = new Set()
           try {
-            const savedCleared = window.localStorage.getItem(`chatClearedAt:${cleanRoom}`)
-            if (savedCleared) chatClearedAt = parseInt(savedCleared, 10) || 0
-            const savedHidden = window.localStorage.getItem(`chatHidden:${cleanRoom}`)
-            if (savedHidden) hiddenIds = new Set(JSON.parse(savedHidden))
+            const rawHidden = window.localStorage.getItem(`offcode-chat-hidden:${cleanRoom}`)
+            if (rawHidden) {
+              const parsed = JSON.parse(rawHidden)
+              if (parsed.clearedBefore) chatClearedAt = parsed.clearedBefore
+              if (Array.isArray(parsed.hiddenIds)) hiddenIds = new Set(parsed.hiddenIds)
+            } else {
+              const savedCleared = window.localStorage.getItem(`chatClearedAt:${cleanRoom}`)
+              if (savedCleared) chatClearedAt = parseInt(savedCleared, 10) || 0
+              const savedHidden = window.localStorage.getItem(`chatHidden:${cleanRoom}`)
+              if (savedHidden) hiddenIds = new Set(JSON.parse(savedHidden))
+            }
           } catch (_) {}
 
           const cutoff = Math.max(joinedAt - 2000, chatClearedAt)
@@ -1114,13 +1140,19 @@ export default function App() {
 
   const handleCreateFile = (fileName) => {
     if (!workspace || isCurrentUserStopped) return
-    const initialContent = getInitialTemplate(fileName)
-    const text = workspace.createFile(fileName, initialContent)
+    const val = validateFileName(fileName, files, false)
+    if (!val.valid) {
+      showToast(val.error, 'error')
+      return
+    }
+    const cleanName = fileName.trim()
+    const initialContent = getInitialTemplate(cleanName)
+    const text = workspace.createFile(cleanName, initialContent)
     if (text) {
       setFiles(workspace.listFiles())
-      setActiveFile(fileName)
-      setOpenFiles((prev) => (prev.includes(fileName) ? prev : [...prev, fileName]))
-      logEvent('file', `Created new file "${fileName}"`)
+      setActiveFile(cleanName)
+      setOpenFiles((prev) => (prev.includes(cleanName) ? prev : [...prev, cleanName]))
+      logEvent('file', `Created new file "${cleanName}"`)
     }
   }
 
@@ -1196,9 +1228,10 @@ export default function App() {
           continue
         }
 
-        // Check extension
-        const ext = getFileExtension(relPath)
-        if (!ext || !allowedExts.includes(ext)) {
+        // Check extension and filename validation against allowlist
+        const fileNameSegment = parts[parts.length - 1]
+        const val = validateFileName(fileNameSegment, candidates.map((c) => c.relPath), false)
+        if (!val.valid) {
           skippedCount++
           continue
         }
@@ -1475,7 +1508,7 @@ export default function App() {
     addOutput('stderr', `Running ${ext.toUpperCase()} is not supported offline.`)
   }, [activeFile, activeYText, addOutput, logEvent, workspace])
 
-  // Global Keyboard Shortcuts (Ctrl+S for Save, Ctrl+Enter for Run)
+  // Global Keyboard Shortcuts (Ctrl+S for Save, Ctrl+Enter for Run, Ctrl+` for Output toggle)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -1485,6 +1518,10 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault()
         handleRunCode()
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === '`' || e.code === 'Backquote')) {
+        e.preventDefault()
+        setIsOutputOpen((prev) => !prev)
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -1667,28 +1704,30 @@ export default function App() {
         )}
 
         {/* Left Sidebar: File explorer */}
-        <div
-          className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''} ${layout.sidebarCollapsed ? 'is-collapsed' : ''}`}
-          style={{ width: layout.sidebarCollapsed ? 40 : layout.sidebarWidth }}
-        >
-          <Sidebar
-            files={files}
-            activeFile={activeFile}
-            onSelectFile={handleSelectFile}
-            onCreateFile={handleCreateFile}
-            onDeleteFile={handleDeleteFile}
-            onClearAllFiles={handleClearAllFiles}
-            users={users}
-            isStopped={isCurrentUserStopped}
-            isHost={isHost}
-            onImportFolder={handleImportFolder}
-            isCollapsed={layout.sidebarCollapsed}
-            onToggleCollapse={() => updateLayout((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
-          />
-        </div>
+        {!editorPrefs.focusMode && (
+          <div
+            className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''} ${layout.sidebarCollapsed ? 'is-collapsed' : ''}`}
+            style={{ width: layout.sidebarCollapsed ? 40 : layout.sidebarWidth }}
+          >
+            <Sidebar
+              files={files}
+              activeFile={activeFile}
+              onSelectFile={handleSelectFile}
+              onCreateFile={handleCreateFile}
+              onDeleteFile={handleDeleteFile}
+              onClearAllFiles={handleClearAllFiles}
+              users={users}
+              isStopped={isCurrentUserStopped}
+              isHost={isHost}
+              onImportFolder={handleImportFolder}
+              isCollapsed={layout.sidebarCollapsed}
+              onToggleCollapse={() => updateLayout((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
+            />
+          </div>
+        )}
 
         {/* Draggable Resizer for Sidebar */}
-        {!layout.sidebarCollapsed && (
+        {!editorPrefs.focusMode && !layout.sidebarCollapsed && (
           <div
             className="panel-resizer panel-resizer-left"
             onMouseDown={handleSidebarResizeStart}
@@ -1699,15 +1738,22 @@ export default function App() {
 
         {/* Center: CodeMirror 6 Editor with Bottom Output Panel */}
         <div className="editor-and-output-column">
+          {editorPrefs.focusMode && (
+            <button
+              type="button"
+              className="btn-exit-focus-mode"
+              onClick={() => handleUpdateEditorPrefs((prev) => ({ ...prev, focusMode: false }))}
+              title="Exit Focus Mode (Esc)"
+            >
+              Exit Focus Mode
+            </button>
+          )}
           <Editor
             activeFile={activeFile}
             openFiles={openFiles.length > 0 ? openFiles : (activeFile ? [activeFile] : [])}
             onSelectTab={handleSelectTab}
             onCloseTab={handleCloseTab}
-            onCreateFile={() => {
-              const name = window.prompt('Enter file name (e.g. main.py, index.html):', 'untitled.py')
-              if (name && name.trim()) handleCreateFile(name.trim())
-            }}
+            onCreateFile={() => setIsNewFileModalOpen(true)}
             ytext={activeYText}
             awareness={workspace.awareness}
             remoteUsersViewingThisFile={remoteUsersInSameFile}
@@ -1753,7 +1799,7 @@ export default function App() {
         </div>
 
         {/* Draggable Resizer for People */}
-        {!layout.peopleCollapsed && (
+        {!editorPrefs.focusMode && !layout.peopleCollapsed && (
           <div
             className="panel-resizer panel-resizer-right"
             onMouseDown={handlePeopleResizeStart}
@@ -1763,26 +1809,28 @@ export default function App() {
         )}
 
         {/* Right: People Panel */}
-        <div
-          className={`people-panel-container ${isMobilePeopleOpen ? 'mobile-open' : ''} ${layout.peopleCollapsed ? 'is-collapsed' : ''}`}
-          style={{ width: layout.peopleCollapsed ? 40 : layout.peopleWidth }}
-        >
-          <PeoplePanel
-            users={users}
-            activeFile={activeFile}
-            onJumpToUser={handleJumpToUser}
-            followingUserId={followingUserId}
-            onToggleFollow={handleToggleFollow}
-            hostId={hostId}
-            isHost={isHost}
-            onTransferHost={handleTransferHost}
-            onStopUser={handleStopUser}
-            onResumeUser={handleResumeUser}
-            frozenUserIds={frozenUserIds}
-            isCollapsed={layout.peopleCollapsed}
-            onToggleCollapse={() => updateLayout((prev) => ({ ...prev, peopleCollapsed: !prev.peopleCollapsed }))}
-          />
-        </div>
+        {!editorPrefs.focusMode && (
+          <div
+            className={`people-panel-container ${isMobilePeopleOpen ? 'mobile-open' : ''} ${layout.peopleCollapsed ? 'is-collapsed' : ''}`}
+            style={{ width: layout.peopleCollapsed ? 40 : layout.peopleWidth }}
+          >
+            <PeoplePanel
+              users={users}
+              activeFile={activeFile}
+              onJumpToUser={handleJumpToUser}
+              followingUserId={followingUserId}
+              onToggleFollow={handleToggleFollow}
+              hostId={hostId}
+              isHost={isHost}
+              onTransferHost={handleTransferHost}
+              onStopUser={handleStopUser}
+              onResumeUser={handleResumeUser}
+              frozenUserIds={frozenUserIds}
+              isCollapsed={layout.peopleCollapsed}
+              onToggleCollapse={() => updateLayout((prev) => ({ ...prev, peopleCollapsed: !prev.peopleCollapsed }))}
+            />
+          </div>
+        )}
 
         {/* Collapsible Chat Sidebar */}
         <ChatPanel
@@ -1795,17 +1843,19 @@ export default function App() {
       </div>
 
       {/* Bottom Status Bar */}
-      <StatusBar
-        status={status}
-        onToggleOnline={handleToggleOnline}
-        usersCount={users.length}
-        activeLanguage={getLanguageName(activeFile)}
-        cursorPos={cursorPos}
-        isHost={isHost}
-        mode={mode}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
-      />
+      {!editorPrefs.focusMode && (
+        <StatusBar
+          status={status}
+          onToggleOnline={handleToggleOnline}
+          usersCount={users.length}
+          activeLanguage={getLanguageName(activeFile)}
+          cursorPos={cursorPos}
+          isHost={isHost}
+          mode={mode}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+        />
+      )}
 
       {/* Host Review Proposals Drawer */}
       <ReviewDrawer
@@ -1877,6 +1927,82 @@ export default function App() {
         pendingProposalsCount={pendingCount}
         pointersReceivedCount={pointersReceivedCount}
       />
+
+      {/* Create New File Modal */}
+      {isNewFileModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            setIsNewFileModalOpen(false)
+            setModalFileName('')
+          }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '400px' }}
+          >
+            <h4 className="modal-title">Create New File</h4>
+            <p className="modal-desc" style={{ marginBottom: '12px' }}>
+              Enter a file name with a supported extension (.py, .js, .ts, .html, .css, etc.)
+            </p>
+            <input
+              type="text"
+              className="new-file-input"
+              value={modalFileName}
+              onChange={(e) => setModalFileName(e.target.value)}
+              placeholder="e.g. main.py, index.html"
+              autoFocus
+              spellCheck={false}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const val = validateFileName(modalFileName, files, false)
+                  if (val.valid) {
+                    handleCreateFile(modalFileName)
+                    setIsNewFileModalOpen(false)
+                    setModalFileName('')
+                  }
+                } else if (e.key === 'Escape') {
+                  setIsNewFileModalOpen(false)
+                  setModalFileName('')
+                }
+              }}
+            />
+            {modalFileName && !validateFileName(modalFileName, files, false).valid && (
+              <span className="new-file-error" style={{ display: 'block', marginBottom: '10px' }}>
+                {validateFileName(modalFileName, files, false).error}
+              </span>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-flat btn-secondary"
+                onClick={() => {
+                  setIsNewFileModalOpen(false)
+                  setModalFileName('')
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-primary"
+                disabled={!modalFileName || !validateFileName(modalFileName, files, false).valid}
+                onClick={() => {
+                  const val = validateFileName(modalFileName, files, false)
+                  if (val.valid) {
+                    handleCreateFile(modalFileName)
+                    setIsNewFileModalOpen(false)
+                    setModalFileName('')
+                  }
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Leave Room & Shutdown Warning Modal */}
       {isLeaveModalOpen && (

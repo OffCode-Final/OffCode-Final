@@ -368,6 +368,16 @@ export default function TopBar({
 
           <button
             type="button"
+            className={`btn-icon-bar btn-customize-toggle ${isCustomizeOpen ? 'active' : ''}`}
+            onClick={onToggleCustomize}
+            title="Customize editor"
+            aria-label="Customize editor"
+          >
+            <Sliders size={16} strokeWidth={1.75} />
+          </button>
+
+          <button
+            type="button"
             className="btn-icon-bar btn-mobile-people"
             onClick={onToggleMobilePeople}
             title="Toggle Collaborators"
