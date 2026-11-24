@@ -43,7 +43,7 @@ import { ruby } from '@codemirror/legacy-modes/mode/ruby'
 import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension } from '../utils/helpers'
 import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
-import CustomizePopover, { DEFAULT_PREFS, saveEditorPrefs } from './CustomizePopover'
+import CustomizePopover, { DEFAULT_PREFS, saveEditorPrefs, ensureGoogleFontLoaded } from './CustomizePopover'
 
 // Calibrate user colors for light vs dark theme (lighten in dark, deepen in light)
 export function getCalibratedColor(hexOrRgb, theme) {
@@ -1163,24 +1163,16 @@ export default function Editor({
     }
 
     const fontName = editorPrefs.fontFamily || 'JetBrains Mono'
-    if (document.fonts && document.fonts.load) {
-      document.fonts
-        .load(`400 14px "${fontName}"`)
-        .catch(() => {})
-        .finally(() => {
+    ensureGoogleFontLoaded(fontName).finally(() => {
+      if (!cancelled && viewRef.current) {
+        viewRef.current.requestMeasure()
+        requestAnimationFrame(() => {
           if (!cancelled && viewRef.current) {
-            viewRef.current.requestMeasure()
-            requestAnimationFrame(() => {
-              if (!cancelled && viewRef.current) {
-                applyCursorVars(viewRef.current.defaultCharacterWidth)
-              }
-            })
+            applyCursorVars(viewRef.current.defaultCharacterWidth)
           }
         })
-    } else {
-      view.requestMeasure()
-      applyCursorVars(view.defaultCharacterWidth)
-    }
+      }
+    })
 
     return () => {
       cancelled = true
@@ -1306,6 +1298,7 @@ export default function Editor({
             ref={customizeBtnRef}
             type="button"
             className={`btn-icon-subtle btn-customize-editor ${isCustomizeOpen ? 'active' : ''}`}
+            onMouseDown={(e) => e.preventDefault()}
             onClick={onToggleCustomize}
             title="Customize editor"
             aria-label="Customize editor"

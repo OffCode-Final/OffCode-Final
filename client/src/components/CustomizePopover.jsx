@@ -154,8 +154,51 @@ export const SYNTAX_THEMES = [
   { id: 'Monokai', name: 'Monokai', colors: ['#f92672', '#66d9ef', '#a6e22e'] }
 ]
 
+const BUNDLED_FONTS = new Set([
+  'JetBrains Mono',
+  'Fira Code',
+  'Source Code Pro',
+  'IBM Plex Mono'
+])
+
+const SYSTEM_MONO_FONTS = new Set([
+  'Consolas',
+  'Menlo',
+  'Monaco',
+  'SF Mono',
+  'DejaVu Sans Mono',
+  'Lucida Console'
+])
+
+const loadedGoogleFonts = new Set()
+
+export function ensureGoogleFontLoaded(fontName) {
+  if (!fontName || BUNDLED_FONTS.has(fontName) || SYSTEM_MONO_FONTS.has(fontName)) {
+    return Promise.resolve()
+  }
+  if (typeof document === 'undefined') return Promise.resolve()
+  if (!loadedGoogleFonts.has(fontName)) {
+    loadedGoogleFonts.add(fontName)
+    const id = `gf-${fontName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
+    if (!document.getElementById(id)) {
+      const link = document.createElement('link')
+      link.id = id
+      link.rel = 'stylesheet'
+      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontName).replace(/%20/g, '+')}:wght@400;500;700&display=swap`
+      document.head.appendChild(link)
+    }
+  }
+  if (document.fonts && document.fonts.load) {
+    return document.fonts.load(`400 14px "${fontName}"`).catch(() => {})
+  }
+  return Promise.resolve()
+}
+
 function detectFontAvailable(fontName) {
   if (typeof document === 'undefined') return true
+  if (BUNDLED_FONTS.has(fontName) || !SYSTEM_MONO_FONTS.has(fontName)) {
+    return true
+  }
   if (document.fonts) {
     for (const face of document.fonts) {
       const fam = face.family.replace(/^["']|["']$/g, '')
@@ -296,7 +339,7 @@ export default function CustomizePopover({
       </div>
 
       {/* Tabs Header */}
-      <div className="customize-tabs" role="tablist">
+      <div className="customize-tabs" role="tablist" onMouseDown={(e) => e.preventDefault()}>
         <button
           type="button"
           className={`customize-tab-btn ${activeTab === 'font' ? 'active' : ''}`}
@@ -380,13 +423,10 @@ export default function CustomizePopover({
                             key={f}
                             className={`font-picker-item ${isSelected ? 'active' : ''} ${!isAvailable ? 'disabled' : ''}`}
                             aria-disabled={!isAvailable}
+                            onMouseDown={(e) => e.preventDefault()}
                             onClick={async () => {
                               if (!isAvailable) return
-                              if (document.fonts && document.fonts.load) {
-                                try {
-                                  await document.fonts.load(`400 14px "${f}"`)
-                                } catch (_) {}
-                              }
+                              await ensureGoogleFontLoaded(f)
                               update({ fontFamily: f })
                             }}
                           >
@@ -569,7 +609,11 @@ export default function CustomizePopover({
 
         {/* TAB 3: CURSOR */}
         {activeTab === 'cursor' && (
-          <div className="customize-tab-panel">
+          <div className="customize-tab-panel" onMouseDown={(e) => {
+            if (e.target.tagName !== 'INPUT' || e.target.type === 'checkbox') {
+              e.preventDefault()
+            }
+          }}>
             {/* Cursor Style */}
             <div className="customize-row">
               <span className="customize-label">Cursor style</span>
