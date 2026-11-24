@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { EditorState, Compartment } from '@codemirror/state'
 import {
   EditorView,
+  drawSelection,
   lineNumbers,
   highlightActiveLineGutter,
   highlightActiveLine,
@@ -42,7 +43,7 @@ import { ruby } from '@codemirror/legacy-modes/mode/ruby'
 import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension } from '../utils/helpers'
 import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
-import CustomizePopover, { DEFAULT_PREFS, saveEditorPrefs } from './CustomizePopover'
+import CustomizePopover, { DEFAULT_PREFS, saveEditorPrefs, ensureGoogleFontLoaded } from './CustomizePopover'
 
 // Calibrate user colors for light vs dark theme (lighten in dark, deepen in light)
 export function getCalibratedColor(hexOrRgb, theme) {
@@ -490,7 +491,7 @@ function getThemeColors(preset, isDark) {
 }
 
 function getFontFamilyString(family) {
-  return `"${family || 'JetBrains Mono'}", Consolas, "Liberation Mono", Menlo, Courier, monospace`
+  return `"${family || 'JetBrains Mono'}", ui-monospace, monospace`
 }
 
 function getLineHeightValue(lh) {
@@ -504,6 +505,7 @@ function getLineHeightValue(lh) {
 
 const themeCompartment = new Compartment()
 const syntaxCompartment = new Compartment()
+const drawSelectionCompartment = new Compartment()
 const lineNumbersCompartment = new Compartment()
 const foldGutterCompartment = new Compartment()
 const wordWrapCompartment = new Compartment()
@@ -590,42 +592,58 @@ function createAiTooltipExtension({
   })
 }
 
+function getCaretColorValue(prefs = DEFAULT_PREFS, currentUserColor = '#6366f1') {
+  return prefs.caretColor === 'user' ? (currentUserColor || '#6366f1') : (prefs.caretColor || '#6366f1')
+}
+
+function getCursorCssVars(prefs = DEFAULT_PREFS, currentUserColor = '#6366f1', charWidth = 8) {
+  const caretCol = getCaretColorValue(prefs, currentUserColor)
+  const cw = `${Number.isFinite(charWidth) && charWidth > 0 ? charWidth : 8}px`
+
+  let width = '2px'
+  let borderLeft = `2px solid ${caretCol}`
+  let borderBottom = 'none'
+  let background = 'transparent'
+
+  if (prefs.cursorStyle === 'thick') {
+    width = '4px'
+    borderLeft = `4px solid ${caretCol}`
+  } else if (prefs.cursorStyle === 'block') {
+    width = cw
+    borderLeft = 'none'
+    background = `color-mix(in srgb, ${caretCol} 70%, transparent)`
+  } else if (prefs.cursorStyle === 'underline') {
+    width = cw
+    borderLeft = 'none'
+    borderBottom = `2px solid ${caretCol}`
+  }
+
+  let animation = 'cm-smooth-blink 1.1s ease-in-out infinite'
+  if (prefs.cursorBlink === 'blink') animation = 'cm-blink 1.06s steps(1) infinite'
+  else if (prefs.cursorBlink === 'solid') animation = 'none'
+
+  return {
+    '--cursor-color': caretCol,
+    '--cursor-char-width': cw,
+    '--cursor-width': width,
+    '--cursor-border-left': borderLeft,
+    '--cursor-border-bottom': borderBottom,
+    '--cursor-background': background,
+    '--cursor-shadow': prefs.cursorGlow ? `0 0 8px ${caretCol}` : 'none',
+    '--cursor-transition': prefs.smoothCaret
+      ? 'left 80ms cubic-bezier(0.2, 0, 0, 1), top 80ms cubic-bezier(0.2, 0, 0, 1)'
+      : 'none',
+    '--cursor-animation': animation
+  }
+}
+
 function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563eb') {
   const isDark = theme !== 'light'
   const customColors = getThemeColors(prefs.syntaxTheme, isDark)
-  const fontFamily = getFontFamilyString(prefs.fontFamily)
   const fontSize = `${prefs.fontSize || 13}px`
   const lineHeight = getLineHeightValue(prefs.lineHeight)
   const ligatures = prefs.ligatures ? 'normal' : 'none'
   const fontFeatureSettings = prefs.ligatures ? '"liga" 1, "calt" 1' : '"liga" 0, "calt" 0'
-
-  const caretCol = prefs.caretColor === 'user' ? (currentUserColor || '#2563eb') : (prefs.caretColor || '#2563eb')
-
-  let cursorBlinkAnim = 'cm-smooth-blink 1s ease-in-out infinite'
-  if (prefs.cursorBlink === 'blink') cursorBlinkAnim = 'cm-blink 1s steps(1) infinite'
-  if (prefs.cursorBlink === 'solid') cursorBlinkAnim = 'none !important'
-
-  const cursorStyleObj = {
-    borderLeft: '2px solid ' + caretCol
-  }
-  if (prefs.cursorStyle === 'thick') {
-    cursorStyleObj.borderLeft = '3.5px solid ' + caretCol
-  } else if (prefs.cursorStyle === 'block') {
-    cursorStyleObj.borderLeft = 'none'
-    cursorStyleObj.backgroundColor = caretCol
-    cursorStyleObj.opacity = '0.45'
-  } else if (prefs.cursorStyle === 'underline') {
-    cursorStyleObj.borderLeft = 'none'
-    cursorStyleObj.borderBottom = '2.5px solid ' + caretCol
-  }
-
-  if (prefs.smoothCaret) {
-    cursorStyleObj.transition = 'left 80ms cubic-bezier(0.2, 0, 0, 1), top 80ms cubic-bezier(0.2, 0, 0, 1)'
-  }
-
-  if (prefs.cursorGlow) {
-    cursorStyleObj.boxShadow = `0 0 8px ${caretCol}`
-  }
 
   let rulerBg = 'none'
   if (prefs.ruler === '80' || prefs.ruler === '100') {
@@ -637,27 +655,40 @@ function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563e
     '&': {
       backgroundColor: customColors ? customColors.bg : 'var(--bg-editor)',
       color: customColors ? customColors.fg : 'var(--text-main)',
-      fontFamily,
       fontSize,
       lineHeight,
       fontVariantLigatures: ligatures,
       fontFeatureSettings
     },
     '.cm-scroller': {
+      fontFamily: 'var(--editor-font)',
       backgroundImage: rulerBg,
       backgroundRepeat: 'no-repeat',
       backgroundAttachment: 'local',
       paddingTop: '24px' // Bug 6: prevent line 1 remote tags from clipping
     },
     '.cm-content': {
-      caretColor: caretCol,
-      fontFamily,
+      caretColor: 'transparent !important',
+      fontFamily: 'var(--editor-font)',
       fontVariantLigatures: ligatures,
       fontFeatureSettings
     },
+    '.cm-tooltip': {
+      fontFamily: 'var(--editor-font)'
+    },
+    '.cm-cursorLayer': {
+      animation: 'var(--cursor-animation) !important',
+      zIndex: 100,
+      pointerEvents: 'none'
+    },
     '.cm-cursor, .cm-dropCursor': {
-      ...cursorStyleObj,
-      animation: cursorBlinkAnim
+      width: 'var(--cursor-width, 2px)',
+      borderLeft: 'var(--cursor-border-left)',
+      borderBottom: 'var(--cursor-border-bottom)',
+      backgroundColor: 'var(--cursor-background)',
+      boxShadow: 'var(--cursor-shadow)',
+      transition: 'var(--cursor-transition)',
+      boxSizing: 'border-box'
     },
     '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
       backgroundColor: (customColors ? customColors.selection : 'var(--editor-selection)') + ' !important'
@@ -666,6 +697,7 @@ function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563e
       backgroundColor: customColors ? customColors.activeLine : 'var(--editor-active-line)'
     },
     '.cm-gutters': {
+      fontFamily: 'var(--editor-font)',
       backgroundColor: customColors ? customColors.gutterBg : 'var(--editor-gutter-bg)',
       color: 'var(--editor-gutter-color)',
       borderRight: '1px solid var(--border-color)',
@@ -863,10 +895,12 @@ export default function Editor({
       wordWrapCompartment.of(editorPrefs.wordWrap ? EditorView.lineWrapping : []),
       themeCompartment.of(getEditorTheme(theme, editorPrefs, currentUserColor)),
       syntaxCompartment.of(getSyntaxTheme(theme, editorPrefs.syntaxTheme)),
+      drawSelectionCompartment.of(drawSelection({ cursorBlinkRate: 0 })),
       getLanguageSupport(activeFile),
       placeholder('Start typing, or press Ctrl+Enter to run'),
       EditorState.readOnly.of(Boolean(readOnly || isStopped)),
       EditorView.editable.of(!readOnly && !isStopped),
+      EditorView.contentAttributes.of({ tabindex: '0' }),
       autocompletion({ activateOnTyping: true }),
       keymap.of((readOnly || isStopped) ? defaultKeymap : [{ key: 'Tab', run: acceptCompletion }, indentWithTab, ...yUndoManagerKeymap, ...defaultKeymap]),
       yCollab(ytext, awareness, { undoManager: (readOnly || isStopped) ? false : fileUndoManager }),
@@ -966,6 +1000,13 @@ export default function Editor({
 
     viewRef.current = view
     view.focus()
+
+    if (editorRef.current) {
+      const vars = getCursorCssVars(editorPrefs, currentUserColor, view.defaultCharacterWidth)
+      for (const [k, v] of Object.entries(vars)) {
+        editorRef.current.style.setProperty(k, v)
+      }
+    }
 
     try {
       if (onCursorChange) {
@@ -1072,11 +1113,28 @@ export default function Editor({
   useEffect(() => {
     if (!viewRef.current) return
 
+    let cancelled = false
+    const view = viewRef.current
+
+    const applyCursorVars = (cw) => {
+      if (!editorRef.current) return
+      const vars = getCursorCssVars(editorPrefs, currentUserColor, cw)
+      for (const [k, v] of Object.entries(vars)) {
+        editorRef.current.style.setProperty(k, v)
+      }
+    }
+
+    if (editorRef.current) {
+      editorRef.current.style.setProperty('--editor-font', getFontFamilyString(editorPrefs.fontFamily))
+      applyCursorVars(view.defaultCharacterWidth)
+    }
+
     try {
-      viewRef.current.dispatch({
+      view.dispatch({
         effects: [
           themeCompartment.reconfigure(getEditorTheme(theme, editorPrefs, currentUserColor)),
           syntaxCompartment.reconfigure(getSyntaxTheme(theme, editorPrefs.syntaxTheme)),
+          drawSelectionCompartment.reconfigure(drawSelection({ cursorBlinkRate: 0 })),
           lineNumbersCompartment.reconfigure(
             editorPrefs.lineNumbers
               ? lineNumbers({
@@ -1103,14 +1161,50 @@ export default function Editor({
     } catch (err) {
       console.warn('[Editor] Failed reconfiguring editor compartments:', err)
     }
+
+    const fontName = editorPrefs.fontFamily || 'JetBrains Mono'
+    ensureGoogleFontLoaded(fontName).finally(() => {
+      if (!cancelled && viewRef.current) {
+        viewRef.current.requestMeasure()
+        requestAnimationFrame(() => {
+          if (!cancelled && viewRef.current) {
+            applyCursorVars(viewRef.current.defaultCharacterWidth)
+          }
+        })
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [theme, editorPrefs, currentUserColor])
 
-  // Bug 6: Detect remote carets near right edge and flip tag left
+  // Broadcast local caret style and color over awareness
+  useEffect(() => {
+    if (!awareness) return
+    awareness.setLocalStateField('caret', {
+      style: editorPrefs.cursorStyle || 'line',
+      color: getCaretColorValue(editorPrefs, currentUserColor)
+    })
+  }, [awareness, editorPrefs.cursorStyle, editorPrefs.caretColor, currentUserColor])
+
+  // Bug 6: Detect remote carets near right edge and flip tag left + apply remote caret style
   useEffect(() => {
     if (!scrollerNode) return
     const checkCaretFlips = () => {
       const scrollerRect = scrollerNode.getBoundingClientRect()
       const carets = scrollerNode.querySelectorAll('.cm-ySelectionCaret')
+      const remoteCaretByName = new Map()
+      if (awareness) {
+        const myId = awareness.clientID
+        awareness.getStates().forEach((state, cid) => {
+          if (cid === myId) return
+          const name = state?.user?.name
+          if (name && state?.caret) {
+            remoteCaretByName.set(name, state.caret)
+          }
+        })
+      }
       carets.forEach((caret) => {
         const rect = caret.getBoundingClientRect()
         // If within 28px of visible right edge, align tag to the left
@@ -1119,12 +1213,18 @@ export default function Editor({
         } else {
           caret.classList.remove('tag-flip-left')
         }
+        const info = caret.querySelector('.cm-ySelectionInfo')
+        const remoteCaret = info ? remoteCaretByName.get(info.textContent) : null
+        if (remoteCaret) {
+          if (remoteCaret.style) caret.setAttribute('data-caret-style', remoteCaret.style)
+          if (remoteCaret.color) caret.style.setProperty('--remote-caret-color', remoteCaret.color)
+        }
       })
     }
 
     const interval = setInterval(checkCaretFlips, 120)
     return () => clearInterval(interval)
-  }, [scrollerNode, activeFile])
+  }, [scrollerNode, activeFile, awareness])
 
   // Scroll to line when jumped or following a peer
   useEffect(() => {
@@ -1198,6 +1298,7 @@ export default function Editor({
             ref={customizeBtnRef}
             type="button"
             className={`btn-icon-subtle btn-customize-editor ${isCustomizeOpen ? 'active' : ''}`}
+            onMouseDown={(e) => e.preventDefault()}
             onClick={onToggleCustomize}
             title="Customize editor"
             aria-label="Customize editor"
@@ -1212,6 +1313,7 @@ export default function Editor({
           isOpen={isCustomizeOpen}
           onClose={() => onToggleCustomize && onToggleCustomize()}
           triggerRef={customizeBtnRef}
+          currentUserColor={currentUserColor}
         />
       </div>
 
@@ -1274,12 +1376,13 @@ export default function Editor({
         </div>
       ) : (
         <div
-          className="editor-canvas"
+          className={`editor-canvas remote-labels-${editorPrefs.remoteCursorLabels || 'always'}`}
           ref={editorRef}
           style={{
             fontSize: `${editorPrefs.fontSize || 13}px`,
-            fontFamily: getFontFamilyString(editorPrefs.fontFamily),
-            lineHeight: getLineHeightValue(editorPrefs.lineHeight)
+            '--editor-font': getFontFamilyString(editorPrefs.fontFamily),
+            lineHeight: getLineHeightValue(editorPrefs.lineHeight),
+            ...getCursorCssVars(editorPrefs, currentUserColor, viewRef.current?.defaultCharacterWidth)
           }}
         >
           {scrollerNode &&

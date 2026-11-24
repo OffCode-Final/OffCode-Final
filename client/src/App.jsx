@@ -1771,7 +1771,7 @@ export default function App() {
             showUserChanges={showUserChanges}
             currentUserId={workspace?.getUserId ? workspace.getUserId() : session?.userName}
             currentUserName={session?.userName || 'Anonymous'}
-            currentUserColor={session?.userColor || '#6366f1'}
+            currentUserColor={currentUserColor || session?.userColor || '#6366f1'}
             users={users}
             theme={theme}
             onImproveWithAi={handleTriggerAi}
