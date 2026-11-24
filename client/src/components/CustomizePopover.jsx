@@ -37,6 +37,7 @@ export const DEFAULT_PREFS = {
   smoothCaret: true,
   caretColor: 'user', // 'user' | '#hex'
   cursorGlow: false,
+  customPointer: false,
   remoteCursorLabels: 'always', // 'always' | 'idle' | 'hide'
 
   // Theme
@@ -722,6 +723,19 @@ export default function CustomizePopover({
                   className="customize-checkbox"
                   checked={Boolean(prefs.cursorGlow)}
                   onChange={(e) => update({ cursorGlow: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <div className="customize-label-col">
+                  <span className="toggle-label">Custom editor pointer</span>
+                  <span className="customize-subhint">Show your colored pointer instead of OS cursor</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.customPointer)}
+                  onChange={(e) => update({ customPointer: e.target.checked })}
                 />
               </label>
             </div>

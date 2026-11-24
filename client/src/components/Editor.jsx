@@ -767,6 +767,7 @@ export default function Editor({
   const editorRef = useRef(null)
   const viewRef = useRef(null)
   const customizeBtnRef = useRef(null)
+  const localPointerRef = useRef(null)
   const [scrollerNode, setScrollerNode] = useState(null)
   const typingTimerRef = useRef(null)
 
@@ -1053,6 +1054,10 @@ export default function Editor({
 
       const x = Math.round(e.clientX - rect.left + scroller.scrollLeft)
       const y = Math.round(e.clientY - rect.top + scroller.scrollTop)
+      if (localPointerRef.current) {
+        localPointerRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`
+        localPointerRef.current.style.opacity = '1'
+      }
       const pointerData = { file: activeFile, x, y, timestamp: Date.now() }
 
       const now = Date.now()
@@ -1076,6 +1081,9 @@ export default function Editor({
     }
 
     const clearPointer = () => {
+      if (localPointerRef.current) {
+        localPointerRef.current.style.opacity = '0'
+      }
       if (throttleTimer) {
         clearTimeout(throttleTimer)
         throttleTimer = null
@@ -1376,7 +1384,7 @@ export default function Editor({
         </div>
       ) : (
         <div
-          className={`editor-canvas remote-labels-${editorPrefs.remoteCursorLabels || 'always'}`}
+          className={`editor-canvas remote-labels-${editorPrefs.remoteCursorLabels || 'always'} ${editorPrefs.customPointer ? 'custom-pointer-active' : ''}`}
           ref={editorRef}
           style={{
             fontSize: `${editorPrefs.fontSize || 13}px`,
@@ -1387,14 +1395,45 @@ export default function Editor({
         >
           {scrollerNode &&
             createPortal(
-              <RemotePointersLayer
-                awareness={awareness}
-                activeFile={activeFile}
-                scrollerNode={scrollerNode}
-                theme={theme}
-                frozenUserIds={frozenUserIds}
-                onPointersChange={onPointersChange}
-              />,
+              <>
+                <RemotePointersLayer
+                  awareness={awareness}
+                  activeFile={activeFile}
+                  scrollerNode={scrollerNode}
+                  theme={theme}
+                  frozenUserIds={frozenUserIds}
+                  onPointersChange={onPointersChange}
+                />
+                {editorPrefs.customPointer && (
+                  <div
+                    ref={localPointerRef}
+                    className="local-custom-pointer"
+                    aria-hidden="true"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 18 18"
+                      fill="none"
+                      className="remote-pointer-arrow"
+                      style={{
+                        filter: editorPrefs.cursorGlow
+                          ? `drop-shadow(0 0 6px ${getCaretColorValue(editorPrefs, currentUserColor)}) drop-shadow(0 1.5px 3px rgba(0, 0, 0, 0.35))`
+                          : 'drop-shadow(0 1.5px 3px rgba(0, 0, 0, 0.35))'
+                      }}
+                    >
+                      <path
+                        d="M1.5 1.5 L7.5 16.5 L10.5 10.5 L16.5 7.5 Z"
+                        fill={getCaretColorValue(editorPrefs, currentUserColor)}
+                        stroke="#FFFFFF"
+                        strokeWidth="1.5"
+                        strokeLinejoin="round"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </div>
+                )}
+              </>,
               scrollerNode
             )}
         </div>
