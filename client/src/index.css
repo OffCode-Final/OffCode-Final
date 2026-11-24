@@ -1277,32 +1277,84 @@ button:disabled {
 }
 
 /* Collaborative Remote Cursors (y-codemirror.next) */
+/* Remote Text Selection: person's color at ~18% opacity with 3px rounded corners */
 .cm-ySelection {
-  opacity: 0.18;
-  border-radius: 2px;
+  opacity: 0.18 !important;
+  border-radius: 3px !important;
 }
+
+/* Remote Text Caret: 2px line in person's color with rounded ends and faint glow */
 .cm-ySelectionCaret {
-  position: relative;
-  border-left: 2px solid;
-  margin-left: -1px;
-  margin-right: -1px;
+  position: relative !important;
+  border-left: 2px solid !important;
+  border-right: none !important;
+  border-radius: 1px !important;
+  margin-left: -1px !important;
+  margin-right: -1px !important;
+  box-sizing: border-box !important;
+  display: inline-block !important;
+  box-shadow: 0 0 4px currentColor !important;
 }
+
 .cm-ySelectionCaretDot {
-  display: inline-block;
-  position: absolute;
-  top: -1.35em;
-  left: -2px;
-  font-size: 11px;
-  font-family: var(--font-ui);
-  padding: 1px 5px;
-  border-radius: var(--radius-xs);
-  color: #ffffff;
-  white-space: nowrap;
-  pointer-events: none;
-  font-weight: 500;
-  line-height: 1.2;
-  box-shadow: var(--shadow-sm);
-  transition: opacity 0.3s ease;
+  display: none !important;
+}
+
+/* Remote Name Flag: 18px high, 6px horizontal padding, 6px radius with square bottom-left corner */
+.cm-ySelectionInfo {
+  position: absolute !important;
+  top: -19px !important;
+  left: 0 !important;
+  height: 18px !important;
+  line-height: 18px !important;
+  padding: 0 6px !important;
+  border-radius: 6px 6px 6px 0 !important;
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  font-family: var(--font-ui, system-ui, sans-serif) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.25) !important;
+  white-space: nowrap !important;
+  pointer-events: auto !important;
+  user-select: none !important;
+  z-index: 101 !important;
+  opacity: 0.6 !important;
+  transition: opacity 0.2s ease, transform 0.15s ease !important;
+  animation: remote-tag-scale-in 120ms cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+@keyframes remote-tag-scale-in {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+}
+
+.cm-ySelectionCaret:hover .cm-ySelectionInfo,
+.cm-ySelectionInfo:hover,
+.cm-ySelectionCaret.moving .cm-ySelectionInfo {
+  opacity: 1 !important;
+}
+
+/* Tag flips left when caret is near the right edge */
+.cm-ySelectionCaret.tag-flip-left .cm-ySelectionInfo {
+  left: auto !important;
+  right: 0 !important;
+  border-radius: 6px 6px 0 6px !important;
+}
+
+/* Theme calibration for remote selection & caret in CodeMirror */
+[data-theme='dark'] .cm-ySelectionCaret,
+[data-theme='dark'] .cm-ySelection {
+  filter: brightness(1.2) saturate(1.1);
+}
+[data-theme='light'] .cm-ySelectionCaret,
+[data-theme='light'] .cm-ySelection {
+  filter: brightness(0.85) contrast(1.15);
 }
 
 /* ==========================================================================
@@ -1566,8 +1618,9 @@ button:disabled {
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 10;
-  overflow: visible;
+  z-index: 50;
+  overflow: hidden !important;
+  contain: paint !important;
 }
 
 .remote-pointer {
@@ -1577,10 +1630,10 @@ button:disabled {
   pointer-events: none;
   user-select: none;
   transform: translate3d(0, 0, 0);
-  transition: transform 60ms linear, opacity 0.3s ease;
   will-change: transform, opacity;
-  z-index: 20;
+  z-index: 50;
   opacity: 1;
+  transition: opacity 0.25s ease;
 }
 
 .remote-pointer.faded {
@@ -1589,17 +1642,16 @@ button:disabled {
 
 .remote-pointer-arrow {
   display: block;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
 .remote-pointer-badge {
   position: absolute;
-  left: 11px;
-  top: 11px;
+  left: 12px;
+  top: 12px;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-family: var(--font-ui);
+  font-family: var(--font-ui, system-ui, sans-serif);
   font-size: 11px;
   font-weight: 500;
   line-height: 1.2;
@@ -1608,7 +1660,7 @@ button:disabled {
   white-space: nowrap;
   pointer-events: none;
   user-select: none;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
 }
 
 .pointer-tag-stopped {
@@ -1619,6 +1671,42 @@ button:disabled {
   padding: 1px 5px;
   border-radius: var(--radius-xs);
   border: 1px solid var(--color-danger);
+}
+
+/* Typing animated dots inside name flag/badge */
+@keyframes typing-dot-bounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-2px);
+    opacity: 1;
+  }
+}
+
+.typing-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.typing-dots span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background-color: currentColor;
+  display: inline-block;
+  animation: typing-dot-bounce 1s infinite ease-in-out;
+}
+
+.typing-dots span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.typing-dots span:nth-child(3) {
+  animation-delay: 0.32s;
 }
 .btn-follow:hover {
   color: var(--text-main);

@@ -44,6 +44,250 @@ import { getFileExtension } from '../utils/helpers'
 import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
 import CustomizePopover, { DEFAULT_PREFS, saveEditorPrefs } from './CustomizePopover'
 
+// Calibrate user colors for light vs dark theme (lighten in dark, deepen in light)
+export function getCalibratedColor(hexOrRgb, theme) {
+  if (!hexOrRgb) return theme === 'dark' ? '#60a5fa' : '#2563eb'
+  let hex = String(hexOrRgb).replace('#', '')
+  if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('')
+  if (hex.length !== 6) return theme === 'dark' ? '#60a5fa' : '#2563eb'
+
+  const r = parseInt(hex.substring(0, 2), 16) || 0
+  const g = parseInt(hex.substring(2, 4), 16) || 0
+  const b = parseInt(hex.substring(4, 6), 16) || 0
+
+  const rN = r / 255, gN = g / 255, bN = b / 255
+  const max = Math.max(rN, gN, bN), min = Math.min(rN, gN, bN)
+  let h = 0, s = 0, l = (max + min) / 2
+
+  if (max !== min) {
+    const d = max - min
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min)
+    switch (max) {
+      case rN: h = (gN - bN) / d + (gN < bN ? 6 : 0); break
+      case gN: h = (bN - rN) / d + 2; break
+      case bN: h = (rN - gN) / d + 4; break
+    }
+    h /= 6
+  }
+
+  // Calibration: lighten in dark, deepen in light
+  if (theme === 'dark') {
+    if (l < 0.62) l = 0.65
+    if (s < 0.45) s = 0.75
+  } else {
+    if (l > 0.42) l = 0.38
+    if (s < 0.45) s = 0.85
+  }
+
+  return `hsl(${Math.round(h * 360)}, ${Math.round(s * 100)}%, ${Math.round(l * 100)}%)`
+}
+
+export function getAutoContrastTextColor(calibratedHsl) {
+  if (!calibratedHsl) return '#FFFFFF'
+  const match = String(calibratedHsl).match(/hsl\(\s*\d+\s*,\s*\d+%\s*,\s*(\d+)%\s*\)/)
+  if (match) {
+    const l = parseInt(match[1], 10)
+    return l > 55 ? '#111827' : '#FFFFFF'
+  }
+  return '#FFFFFF'
+}
+
+// Remote collaborative mouse pointers with lerp interpolation
+function RemotePointersLayer({
+  awareness,
+  activeFile,
+  scrollerNode,
+  theme,
+  frozenUserIds,
+  onPointersChange
+}) {
+  const [activeClients, setActiveClients] = useState([])
+  const targetsRef = useRef(new Map())
+  const positionsRef = useRef(new Map())
+  const pointersDataRef = useRef(new Map())
+  const elementRefs = useRef(new Map())
+
+  useEffect(() => {
+    if (!awareness || !activeFile) {
+      setActiveClients([])
+      targetsRef.current.clear()
+      positionsRef.current.clear()
+      pointersDataRef.current.clear()
+      if (onPointersChange) onPointersChange(0)
+      return
+    }
+
+    const updateFromAwareness = () => {
+      const states = awareness.getStates()
+      const myClientId = awareness.clientID
+      const now = Date.now()
+      const activeIds = []
+
+      states.forEach((state, clientId) => {
+        if (clientId === myClientId) return
+        const ptr = state?.pointer
+
+        // Ignore if not in current file or invalid coordinates (ignore null, NaN)
+        if (
+          !ptr ||
+          ptr.file !== activeFile ||
+          !Number.isFinite(ptr.x) ||
+          !Number.isFinite(ptr.y)
+        ) {
+          targetsRef.current.delete(clientId)
+          positionsRef.current.delete(clientId)
+          pointersDataRef.current.delete(clientId)
+          return
+        }
+
+        // Hide when idle for 5 seconds
+        const lastMoved = ptr.timestamp || now
+        if (now - lastMoved >= 5000) {
+          targetsRef.current.delete(clientId)
+          positionsRef.current.delete(clientId)
+          pointersDataRef.current.delete(clientId)
+          return
+        }
+
+        // Clamp positions to the editor content box
+        const maxW = scrollerNode ? scrollerNode.scrollWidth : 2000
+        const maxH = scrollerNode ? scrollerNode.scrollHeight : 5000
+        const clampedX = Math.max(0, Math.min(ptr.x, maxW))
+        const clampedY = Math.max(0, Math.min(ptr.y, maxH))
+
+        const resolvedUserId = state?.userId || state?.user?.userId || state?.user?.id || `client_${clientId}`
+        const isUserStopped = Boolean(
+          frozenUserIds && (
+            frozenUserIds.has(resolvedUserId) ||
+            (state?.userId && frozenUserIds.has(state.userId)) ||
+            (state?.user?.id && frozenUserIds.has(state.user.id))
+          )
+        )
+
+        const rawColor = state?.user?.color || '#3b82f6'
+        const calibratedColor = getCalibratedColor(rawColor, theme)
+        const autoContrastText = getAutoContrastTextColor(calibratedColor)
+
+        targetsRef.current.set(clientId, { x: clampedX, y: clampedY })
+        if (!positionsRef.current.has(clientId)) {
+          positionsRef.current.set(clientId, { x: clampedX, y: clampedY })
+        }
+        pointersDataRef.current.set(clientId, {
+          name: state?.user?.name || 'Anonymous',
+          color: calibratedColor,
+          textColor: autoContrastText,
+          isStopped: isUserStopped,
+          isTyping: Boolean(state?.isTyping)
+        })
+
+        activeIds.push(clientId)
+      })
+
+      setActiveClients(activeIds)
+      if (onPointersChange) {
+        onPointersChange(activeIds.length)
+      }
+    }
+
+    awareness.on('change', updateFromAwareness)
+    const interval = setInterval(updateFromAwareness, 1000)
+    updateFromAwareness()
+
+    return () => {
+      awareness.off('change', updateFromAwareness)
+      clearInterval(interval)
+      if (onPointersChange) {
+        onPointersChange(0)
+      }
+    }
+  }, [awareness, activeFile, scrollerNode, theme, frozenUserIds, onPointersChange])
+
+  // requestAnimationFrame lerp loop for smooth 60fps interpolation
+  useEffect(() => {
+    let animId = null
+    const loop = () => {
+      positionsRef.current.forEach((pos, clientId) => {
+        const target = targetsRef.current.get(clientId)
+        if (!target) return
+        pos.x += (target.x - pos.x) * 0.28
+        pos.y += (target.y - pos.y) * 0.28
+
+        const el = elementRefs.current.get(clientId)
+        if (el) {
+          el.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0)`
+        }
+      })
+      animId = requestAnimationFrame(loop)
+    }
+    animId = requestAnimationFrame(loop)
+    return () => {
+      if (animId) cancelAnimationFrame(animId)
+    }
+  }, [])
+
+  if (activeClients.length === 0) return null
+
+  return (
+    <div className="remote-pointers-container" aria-hidden="true">
+      {activeClients.map((clientId) => {
+        const data = pointersDataRef.current.get(clientId)
+        const pos = positionsRef.current.get(clientId) || { x: 0, y: 0 }
+        if (!data) return null
+
+        return (
+          <div
+            key={clientId}
+            ref={(node) => {
+              if (node) elementRefs.current.set(clientId, node)
+              else elementRefs.current.delete(clientId)
+            }}
+            className="remote-pointer"
+            style={{
+              transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`
+            }}
+          >
+            {/* Crisp 18px SVG pointer with 1.5px white outline and subtle shadow */}
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 18 18"
+              fill="none"
+              className="remote-pointer-arrow"
+              style={{ filter: 'drop-shadow(0 1.5px 3px rgba(0, 0, 0, 0.35))' }}
+            >
+              <path
+                d="M1.5 1.5 L7.5 16.5 L10.5 10.5 L16.5 7.5 Z"
+                fill={data.color}
+                stroke="#FFFFFF"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+                strokeLinecap="round"
+              />
+            </svg>
+            <div
+              className="remote-pointer-badge"
+              style={{
+                backgroundColor: data.color,
+                color: data.textColor
+              }}
+            >
+              <span>{data.name}</span>
+              {data.isTyping && (
+                <span className="typing-dots" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                </span>
+              )}
+              {data.isStopped && <span className="pointer-tag-stopped">Stopped</span>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // 11 Syntax Theme Presets defined for both dark & light
 function createHighlightStyle(preset, isDark) {
   switch (preset) {
@@ -417,9 +661,7 @@ export default function Editor({
   const viewRef = useRef(null)
   const customizeBtnRef = useRef(null)
   const [scrollerNode, setScrollerNode] = useState(null)
-  const [remotePointers, setRemotePointers] = useState([])
-  const pointerTimestampsRef = useRef(new Map())
-  const lastKnownPosRef = useRef(new Map())
+  const typingTimerRef = useRef(null)
 
   // Language extension selector supporting all requested languages
   const getLanguageSupport = (fileName) => {
@@ -611,6 +853,14 @@ export default function Editor({
         }
       }),
       EditorView.updateListener.of((update) => {
+        if (update.docChanged && awareness) {
+          awareness.setLocalStateField('isTyping', true)
+          if (typingTimerRef.current) clearTimeout(typingTimerRef.current)
+          typingTimerRef.current = setTimeout(() => {
+            if (awareness) awareness.setLocalStateField('isTyping', false)
+          }, 1200)
+        }
+
         if (update.selectionSet || update.docChanged) {
           const head = update.state.selection.main.head
           const line = update.state.doc.lineAt(head)
@@ -674,19 +924,20 @@ export default function Editor({
     const handleMouseMove = (e) => {
       if (!awareness || !activeFile) return
       const rect = scroller.getBoundingClientRect()
-      // Only broadcast if cursor is within the editor content boundaries
+      // Only broadcast if cursor is strictly within the editor content boundaries
       if (
         e.clientX < rect.left ||
         e.clientX > rect.right ||
         e.clientY < rect.top ||
         e.clientY > rect.bottom
       ) {
+        clearPointer()
         return
       }
 
       const x = Math.round(e.clientX - rect.left + scroller.scrollLeft)
       const y = Math.round(e.clientY - rect.top + scroller.scrollTop)
-      const pointerData = { file: activeFile, x, y }
+      const pointerData = { file: activeFile, x, y, timestamp: Date.now() }
 
       const now = Date.now()
       if (now - lastSendTime >= 50) {
@@ -779,81 +1030,26 @@ export default function Editor({
     }
   }, [theme, editorPrefs, currentUserColor])
 
-  // Track and filter remote mouse pointers in the same file
+  // Bug 6: Detect remote carets near right edge and flip tag left
   useEffect(() => {
-    if (!awareness || !activeFile) {
-      setRemotePointers([])
-      if (onPointersChange) {
-        onPointersChange(0)
-      }
-      return
-    }
-
-    const updatePointers = () => {
-      const states = awareness.getStates()
-      const myClientId = awareness.clientID
-      const now = Date.now()
-      const list = []
-
-      states.forEach((state, clientId) => {
-        if (clientId === myClientId) return
-        const ptr = state?.pointer
-        if (
-          ptr &&
-          ptr.file === activeFile &&
-          typeof ptr.x === 'number' &&
-          typeof ptr.y === 'number'
-        ) {
-          const prevPos = lastKnownPosRef.current.get(clientId)
-          if (!prevPos || prevPos.x !== ptr.x || prevPos.y !== ptr.y) {
-            lastKnownPosRef.current.set(clientId, { x: ptr.x, y: ptr.y })
-            pointerTimestampsRef.current.set(clientId, now)
-          }
-
-          const lastMoved = pointerTimestampsRef.current.get(clientId) || now
-          const isFaded = now - lastMoved >= 5000
-          const resolvedUserId = state?.userId || state?.user?.userId || state?.user?.id || `client_${clientId}`
-          const isUserStopped = Boolean(
-            frozenUserIds && (
-              frozenUserIds.has(resolvedUserId) ||
-              (state?.userId && frozenUserIds.has(state.userId)) ||
-              (state?.user?.id && frozenUserIds.has(state.user.id))
-            )
-          )
-
-          list.push({
-            clientId,
-            x: ptr.x,
-            y: ptr.y,
-            name: state?.user?.name || 'Anonymous',
-            color: state?.user?.color || '#3b82f6',
-            isFaded,
-            isStopped: isUserStopped
-          })
+    if (!scrollerNode) return
+    const checkCaretFlips = () => {
+      const scrollerRect = scrollerNode.getBoundingClientRect()
+      const carets = scrollerNode.querySelectorAll('.cm-ySelectionCaret')
+      carets.forEach((caret) => {
+        const rect = caret.getBoundingClientRect()
+        // If within 28px of visible right edge, align tag to the left
+        if (rect.right > scrollerRect.right - 28) {
+          caret.classList.add('tag-flip-left')
         } else {
-          lastKnownPosRef.current.delete(clientId)
-          pointerTimestampsRef.current.delete(clientId)
+          caret.classList.remove('tag-flip-left')
         }
       })
-
-      setRemotePointers(list)
-      if (onPointersChange) {
-        onPointersChange(list.length)
-      }
     }
 
-    awareness.on('change', updatePointers)
-    const interval = setInterval(updatePointers, 1000)
-    updatePointers()
-
-    return () => {
-      awareness.off('change', updatePointers)
-      clearInterval(interval)
-      if (onPointersChange) {
-        onPointersChange(0)
-      }
-    }
-  }, [awareness, activeFile, onPointersChange, frozenUserIds])
+    const interval = setInterval(checkCaretFlips, 120)
+    return () => clearInterval(interval)
+  }, [scrollerNode, activeFile])
 
   // Scroll to line when jumped or following a peer
   useEffect(() => {
@@ -1013,44 +1209,14 @@ export default function Editor({
         >
           {scrollerNode &&
             createPortal(
-              <div className="remote-pointers-container" aria-hidden="true">
-                {remotePointers.map((p) => (
-                  <div
-                    key={p.clientId}
-                    className={`remote-pointer ${p.isFaded ? 'faded' : ''}`}
-                    style={{
-                      transform: `translate3d(${p.x}px, ${p.y}px, 0)`,
-                      color: p.color
-                    }}
-                  >
-                    <svg
-                      width="16"
-                      height="16"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      className="remote-pointer-arrow"
-                    >
-                      <path
-                        d="M0 0 L5.5 15.5 L8.5 9.5 L14.5 8.5 Z"
-                        fill={p.color}
-                        stroke={theme === 'dark' ? '#0B0C0F' : '#FFFFFF'}
-                        strokeWidth="1.2"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                    <div
-                      className="remote-pointer-badge"
-                      style={{
-                        backgroundColor: p.color,
-                        color: '#FFFFFF'
-                      }}
-                    >
-                      <span>{p.name}</span>
-                      {p.isStopped && <span className="pointer-tag-stopped">Stopped</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>,
+              <RemotePointersLayer
+                awareness={awareness}
+                activeFile={activeFile}
+                scrollerNode={scrollerNode}
+                theme={theme}
+                frozenUserIds={frozenUserIds}
+                onPointersChange={onPointersChange}
+              />,
               scrollerNode
             )}
         </div>
