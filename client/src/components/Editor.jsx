@@ -490,7 +490,7 @@ function getThemeColors(preset, isDark) {
 }
 
 function getFontFamilyString(family) {
-  return `"${family || 'JetBrains Mono'}", Consolas, "Liberation Mono", Menlo, Courier, monospace`
+  return `"${family || 'JetBrains Mono'}", ui-monospace, monospace`
 }
 
 function getLineHeightValue(lh) {
@@ -593,7 +593,6 @@ function createAiTooltipExtension({
 function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563eb') {
   const isDark = theme !== 'light'
   const customColors = getThemeColors(prefs.syntaxTheme, isDark)
-  const fontFamily = getFontFamilyString(prefs.fontFamily)
   const fontSize = `${prefs.fontSize || 13}px`
   const lineHeight = getLineHeightValue(prefs.lineHeight)
   const ligatures = prefs.ligatures ? 'normal' : 'none'
@@ -637,13 +636,13 @@ function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563e
     '&': {
       backgroundColor: customColors ? customColors.bg : 'var(--bg-editor)',
       color: customColors ? customColors.fg : 'var(--text-main)',
-      fontFamily,
       fontSize,
       lineHeight,
       fontVariantLigatures: ligatures,
       fontFeatureSettings
     },
     '.cm-scroller': {
+      fontFamily: 'var(--editor-font)',
       backgroundImage: rulerBg,
       backgroundRepeat: 'no-repeat',
       backgroundAttachment: 'local',
@@ -651,9 +650,12 @@ function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563e
     },
     '.cm-content': {
       caretColor: caretCol,
-      fontFamily,
+      fontFamily: 'var(--editor-font)',
       fontVariantLigatures: ligatures,
       fontFeatureSettings
+    },
+    '.cm-tooltip': {
+      fontFamily: 'var(--editor-font)'
     },
     '.cm-cursor, .cm-dropCursor': {
       ...cursorStyleObj,
@@ -666,6 +668,7 @@ function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563e
       backgroundColor: customColors ? customColors.activeLine : 'var(--editor-active-line)'
     },
     '.cm-gutters': {
+      fontFamily: 'var(--editor-font)',
       backgroundColor: customColors ? customColors.gutterBg : 'var(--editor-gutter-bg)',
       color: 'var(--editor-gutter-color)',
       borderRight: '1px solid var(--border-color)',
@@ -1072,8 +1075,15 @@ export default function Editor({
   useEffect(() => {
     if (!viewRef.current) return
 
+    let cancelled = false
+    const view = viewRef.current
+
+    if (editorRef.current) {
+      editorRef.current.style.setProperty('--editor-font', getFontFamilyString(editorPrefs.fontFamily))
+    }
+
     try {
-      viewRef.current.dispatch({
+      view.dispatch({
         effects: [
           themeCompartment.reconfigure(getEditorTheme(theme, editorPrefs, currentUserColor)),
           syntaxCompartment.reconfigure(getSyntaxTheme(theme, editorPrefs.syntaxTheme)),
@@ -1102,6 +1112,24 @@ export default function Editor({
       })
     } catch (err) {
       console.warn('[Editor] Failed reconfiguring editor compartments:', err)
+    }
+
+    const fontName = editorPrefs.fontFamily || 'JetBrains Mono'
+    if (document.fonts && document.fonts.load) {
+      document.fonts
+        .load(`400 14px "${fontName}"`)
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled && viewRef.current) {
+            viewRef.current.requestMeasure()
+          }
+        })
+    } else {
+      view.requestMeasure()
+    }
+
+    return () => {
+      cancelled = true
     }
   }, [theme, editorPrefs, currentUserColor])
 
@@ -1278,7 +1306,7 @@ export default function Editor({
           ref={editorRef}
           style={{
             fontSize: `${editorPrefs.fontSize || 13}px`,
-            fontFamily: getFontFamilyString(editorPrefs.fontFamily),
+            '--editor-font': getFontFamilyString(editorPrefs.fontFamily),
             lineHeight: getLineHeightValue(editorPrefs.lineHeight)
           }}
         >

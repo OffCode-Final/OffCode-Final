@@ -154,6 +154,33 @@ export const SYNTAX_THEMES = [
   { id: 'Monokai', name: 'Monokai', colors: ['#f92672', '#66d9ef', '#a6e22e'] }
 ]
 
+function detectFontAvailable(fontName) {
+  if (typeof document === 'undefined') return true
+  if (document.fonts) {
+    for (const face of document.fonts) {
+      const fam = face.family.replace(/^["']|["']$/g, '')
+      if (fam === fontName) return true
+    }
+  }
+  try {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return true
+    const sample = 'mmmmmmmmmmwwwwwwwwww1234567890'
+    for (const fallback of ['monospace', 'sans-serif', 'serif']) {
+      ctx.font = `16px ${fallback}`
+      const baseWidth = ctx.measureText(sample).width
+      ctx.font = `16px "${fontName}", ${fallback}`
+      if (Math.abs(ctx.measureText(sample).width - baseWidth) > 0.1) {
+        return true
+      }
+    }
+    return false
+  } catch (_) {
+    return true
+  }
+}
+
 export default function CustomizePopover({
   prefs = DEFAULT_PREFS,
   onChangePrefs,
@@ -203,6 +230,16 @@ export default function CustomizePopover({
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [isOpen, onClose, triggerRef])
+
+  const fontAvailability = useMemo(() => {
+    const map = {}
+    for (const g of FONT_GROUPS) {
+      for (const f of g.fonts) {
+        map[f] = detectFontAvailable(f)
+      }
+    }
+    return map
+  }, [isOpen])
 
   const filteredFontGroups = useMemo(() => {
     const q = fontSearch.trim().toLowerCase()
@@ -336,16 +373,27 @@ export default function CustomizePopover({
                     <div className="font-group-list">
                       {g.fonts.map((f) => {
                         const isSelected = prefs.fontFamily === f
+                        const isAvailable = fontAvailability[f] !== false
                         return (
                           <div
                             key={f}
-                            className={`font-picker-item ${isSelected ? 'active' : ''}`}
-                            onClick={() => update({ fontFamily: f })}
+                            className={`font-picker-item ${isSelected ? 'active' : ''} ${!isAvailable ? 'disabled' : ''}`}
+                            aria-disabled={!isAvailable}
+                            onClick={async () => {
+                              if (!isAvailable) return
+                              if (document.fonts && document.fonts.load) {
+                                try {
+                                  await document.fonts.load(`400 14px "${f}"`)
+                                } catch (_) {}
+                              }
+                              update({ fontFamily: f })
+                            }}
                           >
-                            <div className="font-picker-name" style={{ fontFamily: `"${f}", monospace` }}>
+                            <div className="font-picker-name" style={{ fontFamily: `"${f}", ui-monospace, monospace` }}>
                               {f}
+                              {!isAvailable && <span className="font-picker-not-installed">(not installed)</span>}
                             </div>
-                            <div className="font-picker-preview" style={{ fontFamily: `"${f}", monospace` }}>
+                            <div className="font-picker-preview" style={{ fontFamily: `"${f}", ui-monospace, monospace` }}>
                               const x = 42;
                             </div>
                             {isSelected && <Check size={12} className="font-picker-check" />}

@@ -1261,19 +1261,18 @@ button:disabled {
 /* CodeMirror Sizing & Font */
 .cm-editor {
   height: 100%;
-  font-family: inherit !important;
   font-size: inherit !important;
   line-height: inherit !important;
 }
 
 .cm-scroller {
-  font-family: inherit !important;
+  font-family: var(--editor-font);
   line-height: inherit !important;
   overflow: auto;
 }
 
 .cm-content {
-  font-family: inherit !important;
+  font-family: var(--editor-font);
 }
 
 /* Collaborative Remote Cursors (y-codemirror.next) */
@@ -4090,6 +4089,21 @@ button:disabled {
   background: var(--bg-surface);
   color: var(--accent-primary);
   font-weight: 600;
+}
+
+.font-picker-item.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.font-picker-item.disabled:hover {
+  background: transparent;
+}
+
+.font-picker-not-installed {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 6px;
 }
 
 .font-picker-name {
