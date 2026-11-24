@@ -1339,6 +1339,51 @@ button:disabled {
   opacity: 1 !important;
 }
 
+/* Remote cursor label visibility modes */
+.remote-labels-always .cm-ySelectionInfo {
+  opacity: 0.85 !important;
+}
+
+@keyframes remote-label-fade-idle {
+  0%, 85% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.remote-labels-idle .cm-ySelectionInfo {
+  animation: remote-label-fade-idle 3.5s ease forwards !important;
+}
+
+.remote-labels-idle .cm-ySelectionCaret:hover .cm-ySelectionInfo {
+  opacity: 1 !important;
+  animation: none !important;
+}
+
+.remote-labels-hide .cm-ySelectionInfo {
+  display: none !important;
+}
+
+/* Remote caret styles shared via awareness */
+.cm-ySelectionCaret[data-caret-style="thick"] {
+  border-left-width: 4px !important;
+}
+
+.cm-ySelectionCaret[data-caret-style="block"] {
+  border-left: none !important;
+  width: var(--cursor-char-width, 8px) !important;
+  background-color: var(--remote-caret-color, currentColor) !important;
+  opacity: 0.7 !important;
+}
+
+.cm-ySelectionCaret[data-caret-style="underline"] {
+  border-left: none !important;
+  width: var(--cursor-char-width, 8px) !important;
+  border-bottom: 2px solid var(--remote-caret-color, currentColor) !important;
+}
+
 /* Tag flips left when caret is near the right edge */
 .cm-ySelectionCaret.tag-flip-left .cm-ySelectionInfo {
   left: auto !important;

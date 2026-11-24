@@ -186,7 +186,8 @@ export default function CustomizePopover({
   onChangePrefs,
   isOpen,
   onClose,
-  triggerRef
+  triggerRef,
+  currentUserColor = '#6366f1'
 }) {
   const popoverRef = useRef(null)
   const [activeTab, setActiveTab] = useState('font') // 'font' | 'display' | 'cursor' | 'theme' | 'behavior'
@@ -627,7 +628,11 @@ export default function CustomizePopover({
                 <input
                   type="color"
                   className="caret-color-picker"
-                  value={prefs.caretColor === 'user' ? '#2563eb' : prefs.caretColor}
+                  value={
+                    prefs.caretColor === 'user'
+                      ? (currentUserColor && /^#[0-9a-fA-F]{6}$/.test(currentUserColor) ? currentUserColor : '#6366f1')
+                      : (prefs.caretColor && /^#[0-9a-fA-F]{6}$/.test(prefs.caretColor) ? prefs.caretColor : '#6366f1')
+                  }
                   onChange={(e) => update({ caretColor: e.target.value })}
                   title="Pick custom caret color"
                 />
