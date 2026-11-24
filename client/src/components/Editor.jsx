@@ -8,9 +8,10 @@ import {
   highlightActiveLine,
   keymap,
   placeholder,
-  showTooltip
+  showTooltip,
+  highlightWhitespace
 } from '@codemirror/view'
-import { defaultKeymap } from '@codemirror/commands'
+import { defaultKeymap, indentWithTab } from '@codemirror/commands'
 import {
   bracketMatching,
   foldGutter,
@@ -21,7 +22,7 @@ import {
   StreamLanguage
 } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
-import { autocompletion, acceptCompletion } from '@codemirror/autocomplete'
+import { autocompletion, acceptCompletion, closeBrackets } from '@codemirror/autocomplete'
 import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
 import { X, Send, FileCode, Plus, Sliders } from 'lucide-react'
 
@@ -41,135 +42,140 @@ import { ruby } from '@codemirror/legacy-modes/mode/ruby'
 import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension } from '../utils/helpers'
 import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
-import CustomizePopover, { DEFAULT_PREFS } from './CustomizePopover'
+import CustomizePopover, { DEFAULT_PREFS, saveEditorPrefs } from './CustomizePopover'
 
-// 6 Syntax Theme Presets defined for both dark & light
+// 11 Syntax Theme Presets defined for both dark & light
 function createHighlightStyle(preset, isDark) {
   switch (preset) {
-    case 'GitHub':
-      return isDark
-        ? HighlightStyle.define([
-            { tag: t.keyword, color: '#ff7b72' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#c9d1d9' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#d2a8ff' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#79c0ff' },
-            { tag: [t.typeName, t.className, t.number], color: '#ffa657' },
-            { tag: [t.operator, t.operatorKeyword], color: '#ff7b72' },
-            { tag: [t.meta, t.comment], color: '#8b949e', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#a5d6ff' },
-            { tag: t.invalid, color: '#f85149' }
-          ])
-        : HighlightStyle.define([
-            { tag: t.keyword, color: '#cf222e' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#24292f' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#8250df' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#0550ae' },
-            { tag: [t.typeName, t.className, t.number], color: '#953800' },
-            { tag: [t.operator, t.operatorKeyword], color: '#0a3069' },
-            { tag: [t.meta, t.comment], color: '#6e7781', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#0a3069' },
-            { tag: t.invalid, color: '#cf222e' }
-          ])
+    case 'Dracula':
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#ff79c6' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#f8f8f2' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#50fa7b' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#bd93f9' },
+        { tag: [t.typeName, t.className, t.number], color: '#bd93f9' },
+        { tag: [t.operator, t.operatorKeyword], color: '#ff79c6' },
+        { tag: [t.meta, t.comment], color: '#6272a4', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#f1fa8c' },
+        { tag: t.invalid, color: '#ff5555' }
+      ])
 
-    case 'One':
-      return isDark
-        ? HighlightStyle.define([
-            { tag: t.keyword, color: '#c678dd' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#abb2bf' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#61afef' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#d19a66' },
-            { tag: [t.typeName, t.className, t.number], color: '#e5c07b' },
-            { tag: [t.operator, t.operatorKeyword], color: '#56b6c2' },
-            { tag: [t.meta, t.comment], color: '#5c6370', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#98c379' },
-            { tag: t.invalid, color: '#e06c75' }
-          ])
-        : HighlightStyle.define([
-            { tag: t.keyword, color: '#a626a4' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#383a42' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#4078f2' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#986801' },
-            { tag: [t.typeName, t.className, t.number], color: '#c18401' },
-            { tag: [t.operator, t.operatorKeyword], color: '#0184bc' },
-            { tag: [t.meta, t.comment], color: '#a0a1a7', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#50a14f' },
-            { tag: t.invalid, color: '#e45649' }
-          ])
+    case 'One Dark':
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#c678dd' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#abb2bf' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#61afef' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#d19a66' },
+        { tag: [t.typeName, t.className, t.number], color: '#e5c07b' },
+        { tag: [t.operator, t.operatorKeyword], color: '#56b6c2' },
+        { tag: [t.meta, t.comment], color: '#5c6370', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#98c379' },
+        { tag: t.invalid, color: '#e06c75' }
+      ])
 
-    case 'Solarized':
-      return isDark
-        ? HighlightStyle.define([
-            { tag: t.keyword, color: '#859900' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#839496' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#268bd2' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#cb4b16' },
-            { tag: [t.typeName, t.className, t.number], color: '#b58900' },
-            { tag: [t.operator, t.operatorKeyword], color: '#2aa198' },
-            { tag: [t.meta, t.comment], color: '#586e75', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#2aa198' },
-            { tag: t.invalid, color: '#dc322f' }
-          ])
-        : HighlightStyle.define([
-            { tag: t.keyword, color: '#859900' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#657b83' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#268bd2' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#cb4b16' },
-            { tag: [t.typeName, t.className, t.number], color: '#b58900' },
-            { tag: [t.operator, t.operatorKeyword], color: '#2aa198' },
-            { tag: [t.meta, t.comment], color: '#93a1a1', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#2aa198' },
-            { tag: t.invalid, color: '#dc322f' }
-          ])
+    case 'Nord':
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#81a1c1' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#d8dee9' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#88c0d0' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#ebcb8b' },
+        { tag: [t.typeName, t.className, t.number], color: '#b48ead' },
+        { tag: [t.operator, t.operatorKeyword], color: '#81a1c1' },
+        { tag: [t.meta, t.comment], color: '#4c566a', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#a3be8c' },
+        { tag: t.invalid, color: '#bf616a' }
+      ])
+
+    case 'Tokyo Night':
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#bb9af7' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#c0caf5' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#7aa2f7' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#ff9e64' },
+        { tag: [t.typeName, t.className, t.number], color: '#2ac3de' },
+        { tag: [t.operator, t.operatorKeyword], color: '#89ddff' },
+        { tag: [t.meta, t.comment], color: '#565f89', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#9ece6a' },
+        { tag: t.invalid, color: '#f7768e' }
+      ])
+
+    case 'Solarized Light':
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#859900' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#657b83' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#268bd2' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#b58900' },
+        { tag: [t.typeName, t.className, t.number], color: '#d33682' },
+        { tag: [t.operator, t.operatorKeyword], color: '#b58900' },
+        { tag: [t.meta, t.comment], color: '#93a1a1', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#2aa198' },
+        { tag: t.invalid, color: '#dc322f' }
+      ])
+
+    case 'Solarized Dark':
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#859900' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#839496' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#268bd2' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#cb4b16' },
+        { tag: [t.typeName, t.className, t.number], color: '#b58900' },
+        { tag: [t.operator, t.operatorKeyword], color: '#2aa198' },
+        { tag: [t.meta, t.comment], color: '#586e75', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#2aa198' },
+        { tag: t.invalid, color: '#dc322f' }
+      ])
+
+    case 'GitHub Light':
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#cf222e' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#24292f' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#8250df' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#0550ae' },
+        { tag: [t.typeName, t.className, t.number], color: '#953800' },
+        { tag: [t.operator, t.operatorKeyword], color: '#0a3069' },
+        { tag: [t.meta, t.comment], color: '#6e7781', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#116329' },
+        { tag: t.invalid, color: '#cf222e' }
+      ])
+
+    case 'GitHub Dark':
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#ff7b72' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#c9d1d9' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#d2a8ff' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#79c0ff' },
+        { tag: [t.typeName, t.className, t.number], color: '#ffa657' },
+        { tag: [t.operator, t.operatorKeyword], color: '#ff7b72' },
+        { tag: [t.meta, t.comment], color: '#8b949e', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#7ee787' },
+        { tag: t.invalid, color: '#f85149' }
+      ])
+
+    case 'Gruvbox Dark':
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#fb4934' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#ebdbb2' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#b8bb26' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#fabd2f' },
+        { tag: [t.typeName, t.className, t.number], color: '#d3869b' },
+        { tag: [t.operator, t.operatorKeyword], color: '#fe8019' },
+        { tag: [t.meta, t.comment], color: '#928374', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#b8bb26' },
+        { tag: t.invalid, color: '#cc241d' }
+      ])
 
     case 'Monokai':
-      return isDark
-        ? HighlightStyle.define([
-            { tag: t.keyword, color: '#f92672' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#f8f8f2' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#a6e22e' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#ae81ff' },
-            { tag: [t.typeName, t.className, t.number], color: '#66d9ef' },
-            { tag: [t.operator, t.operatorKeyword], color: '#fd971f' },
-            { tag: [t.meta, t.comment], color: '#75715e', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#e6db74' },
-            { tag: t.invalid, color: '#f92672' }
-          ])
-        : HighlightStyle.define([
-            { tag: t.keyword, color: '#d7005f' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#272822' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#718c00' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#8959a8' },
-            { tag: [t.typeName, t.className, t.number], color: '#3e999f' },
-            { tag: [t.operator, t.operatorKeyword], color: '#e78c45' },
-            { tag: [t.meta, t.comment], color: '#8e908c', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#e78c45' },
-            { tag: t.invalid, color: '#c82829' }
-          ])
-
-    case 'High contrast':
-      return isDark
-        ? HighlightStyle.define([
-            { tag: t.keyword, color: '#58a6ff' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#ffffff' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#ffff00' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#ff7b72' },
-            { tag: [t.typeName, t.className, t.number], color: '#7ee787' },
-            { tag: [t.operator, t.operatorKeyword], color: '#ffffff' },
-            { tag: [t.meta, t.comment], color: '#8b949e', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#3fb950' },
-            { tag: t.invalid, color: '#ff0000' }
-          ])
-        : HighlightStyle.define([
-            { tag: t.keyword, color: '#0000ff' },
-            { tag: [t.name, t.deleted, t.character, t.macroName], color: '#000000' },
-            { tag: [t.function(t.variableName), t.labelName], color: '#7900b5' },
-            { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#a00000' },
-            { tag: [t.typeName, t.className, t.number], color: '#006400' },
-            { tag: [t.operator, t.operatorKeyword], color: '#000000' },
-            { tag: [t.meta, t.comment], color: '#555555', fontStyle: 'italic' },
-            { tag: [t.string, t.inserted], color: '#006400' },
-            { tag: t.invalid, color: '#cc0000' }
-          ])
+      return HighlightStyle.define([
+        { tag: t.keyword, color: '#f92672' },
+        { tag: [t.name, t.deleted, t.character, t.macroName], color: '#f8f8f2' },
+        { tag: [t.function(t.variableName), t.labelName], color: '#a6e22e' },
+        { tag: [t.color, t.constant(t.name), t.standard(t.name)], color: '#ae81ff' },
+        { tag: [t.typeName, t.className, t.number], color: '#66d9ef' },
+        { tag: [t.operator, t.operatorKeyword], color: '#fd971f' },
+        { tag: [t.meta, t.comment], color: '#75715e', fontStyle: 'italic' },
+        { tag: [t.string, t.inserted], color: '#e6db74' },
+        { tag: t.invalid, color: '#f92672' }
+      ])
 
     case 'OffCode':
     default:
@@ -211,164 +217,163 @@ function createHighlightStyle(preset, isDark) {
   }
 }
 
-function getFontFamilyString(family) {
-  switch (family) {
-    case 'Fira Code':
-      return '"Fira Code", Consolas, monospace'
-    case 'Source Code Pro':
-      return '"Source Code Pro", Consolas, monospace'
-    case 'IBM Plex Mono':
-      return '"IBM Plex Mono", Consolas, monospace'
-    case 'System monospace':
-      return 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
-    case 'JetBrains Mono':
+function getThemeColors(preset, isDark) {
+  switch (preset) {
+    case 'Dracula':
+      return { bg: '#282a36', fg: '#f8f8f2', gutterBg: '#21222c', activeLine: 'rgba(255, 255, 255, 0.05)', selection: 'rgba(68, 71, 90, 0.6)' }
+    case 'One Dark':
+      return { bg: '#282c34', fg: '#abb2bf', gutterBg: '#21252b', activeLine: '#2c313a', selection: '#3e4451' }
+    case 'Nord':
+      return { bg: '#2e3440', fg: '#d8dee9', gutterBg: '#242933', activeLine: '#3b4252', selection: '#434c5e' }
+    case 'Tokyo Night':
+      return { bg: '#1a1b26', fg: '#c0caf5', gutterBg: '#16161e', activeLine: '#292e42', selection: '#33467c' }
+    case 'Solarized Light':
+      return { bg: '#fdf6e3', fg: '#657b83', gutterBg: '#eee8d5', activeLine: '#eee8d5', selection: '#d3368222' }
+    case 'Solarized Dark':
+      return { bg: '#002b36', fg: '#839496', gutterBg: '#073642', activeLine: '#073642', selection: '#2aa19822' }
+    case 'GitHub Light':
+      return { bg: '#ffffff', fg: '#24292f', gutterBg: '#f6f8fa', activeLine: '#f6f8fa', selection: '#b3d7ff' }
+    case 'GitHub Dark':
+      return { bg: '#0d1117', fg: '#c9d1d9', gutterBg: '#010409', activeLine: '#161b22', selection: '#1f6feb44' }
+    case 'Gruvbox Dark':
+      return { bg: '#282828', fg: '#ebdbb2', gutterBg: '#1d2021', activeLine: '#3c3836', selection: '#504945' }
+    case 'Monokai':
+      return { bg: '#272822', fg: '#f8f8f2', gutterBg: '#1e1f1c', activeLine: '#3e3d32', selection: '#49483e' }
+    case 'OffCode':
     default:
-      return '"JetBrains Mono", Consolas, monospace'
+      return null
   }
+}
+
+function getFontFamilyString(family) {
+  return `"${family || 'JetBrains Mono'}", Consolas, "Liberation Mono", Menlo, Courier, monospace`
 }
 
 function getLineHeightValue(lh) {
   switch (lh) {
-    case 'compact': return '1.4'
-    case 'relaxed': return '1.8'
+    case 'compact': return '1.35'
+    case 'relaxed': return '1.75'
     case 'normal':
-    default: return '1.6'
+    default: return '1.55'
   }
 }
 
 const themeCompartment = new Compartment()
 const syntaxCompartment = new Compartment()
 const lineNumbersCompartment = new Compartment()
+const foldGutterCompartment = new Compartment()
 const wordWrapCompartment = new Compartment()
 const tabSizeCompartment = new Compartment()
+const indentUnitCompartment = new Compartment()
+const bracketMatchingCompartment = new Compartment()
+const closeBracketsCompartment = new Compartment()
+const activeLineCompartment = new Compartment()
+const whitespaceCompartment = new Compartment()
 const aiTooltipCompartment = new Compartment()
 
-function createAiTooltipExtension({
-  onImproveWithAi,
-  isStopped = false,
-  readOnly = false,
-  isOffline = false
-}) {
-  return showTooltip.compute(['selection'], (state) => {
-    const { from, to } = state.selection.main
-    if (to - from < 3) return null
-
-    let disabledReason = null
-    if (isStopped) disabledReason = 'Editing stopped by host'
-    else if (readOnly) disabledReason = 'File is read-only'
-    else if (isOffline) disabledReason = 'AI needs internet'
-
-    return {
-      pos: Math.max(from, to),
-      above: true,
-      create(view) {
-        const dom = document.createElement('div')
-        dom.className = 'cm-ai-tooltip-content'
-
-        const button = document.createElement('button')
-        button.type = 'button'
-        button.className = 'cm-ai-sparkle-btn'
-        button.title = disabledReason || 'Improve with AI'
-        button.setAttribute('aria-label', disabledReason || 'Improve with AI')
-
-        if (disabledReason) {
-          button.disabled = true
-        }
-
-        button.innerHTML = `
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-            <path d="M5 3v4"/>
-            <path d="M19 17v4"/>
-            <path d="M3 5h4"/>
-            <path d="M17 19h4"/>
-          </svg>
-        `
-
-        button.addEventListener('mousedown', (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-        })
-
-        button.addEventListener('click', (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          if (disabledReason) return
-
-          const sel = view.state.selection.main
-          if (sel.to - sel.from < 3) return
-          const selectedText = view.state.sliceDoc(sel.from, sel.to)
-          const fullText = view.state.doc.toString()
-
-          if (onImproveWithAi) {
-            onImproveWithAi({
-              selectedText,
-              from: sel.from,
-              to: sel.to,
-              fullText,
-              view
-            })
-          }
-        })
-
-        dom.appendChild(button)
-        return { dom }
-      }
-    }
-  })
-}
-
-function getEditorTheme(theme, prefs = DEFAULT_PREFS) {
+function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563eb') {
   const isDark = theme !== 'light'
+  const customColors = getThemeColors(prefs.syntaxTheme, isDark)
   const fontFamily = getFontFamilyString(prefs.fontFamily)
   const fontSize = `${prefs.fontSize || 13}px`
   const lineHeight = getLineHeightValue(prefs.lineHeight)
   const ligatures = prefs.ligatures ? 'normal' : 'none'
+  const fontFeatureSettings = prefs.ligatures ? '"liga" 1, "calt" 1' : '"liga" 0, "calt" 0'
 
-  return EditorView.theme(
-    {
-      '&': {
-        backgroundColor: 'var(--bg-editor)',
-        color: 'var(--text-main)',
-        fontFamily,
-        fontSize,
-        lineHeight,
-        fontVariantLigatures: ligatures
-      },
-      '.cm-content': {
-        caretColor: 'var(--editor-cursor)',
-        fontFamily,
-        fontVariantLigatures: ligatures
-      },
-      '.cm-cursor, .cm-dropCursor': {
-        borderLeft: '2px solid var(--editor-cursor)'
-      },
-      '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
-        backgroundColor: 'var(--editor-selection) !important'
-      },
-      '.cm-activeLine': {
-        backgroundColor: 'var(--editor-active-line)'
-      },
-      '.cm-gutters': {
-        backgroundColor: 'var(--editor-gutter-bg)',
-        color: 'var(--editor-gutter-color)',
-        borderRight: '1px solid var(--border-color)',
-        fontVariantNumeric: 'tabular-nums'
-      },
-      '.cm-activeLineGutter': {
-        backgroundColor: 'var(--editor-active-line)',
-        color: 'var(--text-main)'
-      },
-      '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
-        backgroundColor: isDark ? 'rgba(91, 147, 247, 0.2)' : 'rgba(37, 99, 235, 0.15)',
-        outline: '1px solid var(--accent-primary)'
-      },
-      '.cm-line': {
-        paddingLeft: '6px'
-      }
+  const caretCol = prefs.caretColor === 'user' ? (currentUserColor || '#2563eb') : (prefs.caretColor || '#2563eb')
+
+  let cursorBlinkAnim = 'cm-smooth-blink 1s ease-in-out infinite'
+  if (prefs.cursorBlink === 'blink') cursorBlinkAnim = 'cm-blink 1s steps(1) infinite'
+  if (prefs.cursorBlink === 'solid') cursorBlinkAnim = 'none !important'
+
+  const cursorStyleObj = {
+    borderLeft: '2px solid ' + caretCol
+  }
+  if (prefs.cursorStyle === 'thick') {
+    cursorStyleObj.borderLeft = '3.5px solid ' + caretCol
+  } else if (prefs.cursorStyle === 'block') {
+    cursorStyleObj.borderLeft = 'none'
+    cursorStyleObj.backgroundColor = caretCol
+    cursorStyleObj.opacity = '0.45'
+  } else if (prefs.cursorStyle === 'underline') {
+    cursorStyleObj.borderLeft = 'none'
+    cursorStyleObj.borderBottom = '2.5px solid ' + caretCol
+  }
+
+  if (prefs.smoothCaret) {
+    cursorStyleObj.transition = 'left 80ms cubic-bezier(0.2, 0, 0, 1), top 80ms cubic-bezier(0.2, 0, 0, 1)'
+  }
+
+  if (prefs.cursorGlow) {
+    cursorStyleObj.boxShadow = `0 0 8px ${caretCol}`
+  }
+
+  let rulerBg = 'none'
+  if (prefs.ruler === '80' || prefs.ruler === '100') {
+    const col = prefs.ruler === '80' ? 80 : 100
+    rulerBg = `linear-gradient(to right, transparent calc(${col}ch - 1px), var(--border-color) calc(${col}ch - 1px), var(--border-color) ${col}ch, transparent ${col}ch)`
+  }
+
+  const baseTheme = {
+    '&': {
+      backgroundColor: customColors ? customColors.bg : 'var(--bg-editor)',
+      color: customColors ? customColors.fg : 'var(--text-main)',
+      fontFamily,
+      fontSize,
+      lineHeight,
+      fontVariantLigatures: ligatures,
+      fontFeatureSettings
     },
-    { dark: isDark }
-  )
+    '.cm-scroller': {
+      backgroundImage: rulerBg,
+      backgroundRepeat: 'no-repeat',
+      backgroundAttachment: 'local',
+      paddingTop: '24px' // Bug 6: prevent line 1 remote tags from clipping
+    },
+    '.cm-content': {
+      caretColor: caretCol,
+      fontFamily,
+      fontVariantLigatures: ligatures,
+      fontFeatureSettings
+    },
+    '.cm-cursor, .cm-dropCursor': {
+      ...cursorStyleObj,
+      animation: cursorBlinkAnim
+    },
+    '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
+      backgroundColor: (customColors ? customColors.selection : 'var(--editor-selection)') + ' !important'
+    },
+    '.cm-activeLine': {
+      backgroundColor: customColors ? customColors.activeLine : 'var(--editor-active-line)'
+    },
+    '.cm-gutters': {
+      backgroundColor: customColors ? customColors.gutterBg : 'var(--editor-gutter-bg)',
+      color: 'var(--editor-gutter-color)',
+      borderRight: '1px solid var(--border-color)',
+      fontVariantNumeric: 'tabular-nums'
+    },
+    '.cm-activeLineGutter': {
+      backgroundColor: customColors ? customColors.activeLine : 'var(--editor-active-line)',
+      color: 'var(--text-main)'
+    },
+    '&.cm-focused .cm-matchingBracket, &.cm-focused .cm-nonmatchingBracket': {
+      backgroundColor: isDark ? 'rgba(91, 147, 247, 0.2)' : 'rgba(37, 99, 235, 0.15)',
+      outline: '1px solid var(--accent-primary)'
+    },
+    '.cm-line': {
+      paddingLeft: '6px'
+    }
+  }
+
+  if (prefs.indentGuides) {
+    baseTheme['.cm-line'] = {
+      paddingLeft: '6px',
+      backgroundImage: `repeating-linear-gradient(to right, ${isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)'} 0 1px, transparent 1px ${prefs.tabSize || 4}ch)`,
+      backgroundRepeat: 'repeat-y'
+    }
+  }
+
+  return EditorView.theme(baseTheme, { dark: customColors ? true : isDark })
 }
 
 function getSyntaxTheme(theme, syntaxPreset = 'OffCode') {
@@ -461,25 +466,40 @@ export default function Editor({
     }
   }
 
-  // Zoom handlers for shortcuts
+  const [zoomToast, setZoomToast] = useState(null)
+  const zoomToastTimerRef = useRef(null)
+
+  const showZoomToast = useCallback((text) => {
+    if (zoomToastTimerRef.current) clearTimeout(zoomToastTimerRef.current)
+    setZoomToast(text)
+    zoomToastTimerRef.current = setTimeout(() => {
+      setZoomToast(null)
+    }, 1200)
+  }, [])
+
+  // Zoom handlers for shortcuts (Ctrl+=, Ctrl+-, Ctrl+0, Ctrl+wheel)
   const handleZoom = useCallback(
     (delta) => {
       if (!onChangeEditorPrefs) return
       const cur = editorPrefs.fontSize || 13
-      const next = Math.max(11, Math.min(24, cur + delta))
+      const next = Math.max(10, Math.min(32, cur + delta))
       if (next !== cur) {
-        onChangeEditorPrefs({ ...editorPrefs, fontSize: next })
+        const updated = { ...editorPrefs, fontSize: next }
+        onChangeEditorPrefs(updated)
+        saveEditorPrefs(updated)
+        showZoomToast(`${Math.round((next / 13) * 100)}%`)
       }
     },
-    [editorPrefs, onChangeEditorPrefs]
+    [editorPrefs, onChangeEditorPrefs, showZoomToast]
   )
 
   const handleResetZoom = useCallback(() => {
     if (!onChangeEditorPrefs) return
-    if (editorPrefs.fontSize !== 13) {
-      onChangeEditorPrefs({ ...editorPrefs, fontSize: 13 })
-    }
-  }, [editorPrefs, onChangeEditorPrefs])
+    const updated = { ...editorPrefs, fontSize: 13 }
+    onChangeEditorPrefs(updated)
+    saveEditorPrefs(updated)
+    showZoomToast('100%')
+  }, [editorPrefs, onChangeEditorPrefs, showZoomToast])
 
   useEffect(() => {
     if (!editorRef.current || !activeFile || !ytext) {
@@ -501,23 +521,37 @@ export default function Editor({
 
     // Extensions list
     const extensions = [
-      lineNumbersCompartment.of(editorPrefs.lineNumbers ? lineNumbers() : []),
+      lineNumbersCompartment.of(
+        editorPrefs.lineNumbers
+          ? lineNumbers({
+              formatNumber: editorPrefs.relativeLineNumbers
+                ? (lineNo, state) => {
+                    const currentLine = state.doc.lineAt(state.selection.main.head).number
+                    const diff = Math.abs(lineNo - currentLine)
+                    return diff === 0 ? String(lineNo) : String(diff)
+                  }
+                : (n) => String(n)
+            })
+          : []
+      ),
       highlightActiveLineGutter(),
-      foldGutter(),
-      bracketMatching(),
-      highlightActiveLine(),
+      foldGutterCompartment.of(editorPrefs.foldGutter ? foldGutter() : []),
+      bracketMatchingCompartment.of(editorPrefs.bracketMatching ? bracketMatching() : []),
+      activeLineCompartment.of(editorPrefs.highlightActiveLine ? highlightActiveLine() : []),
       indentOnInput(),
       tabSizeCompartment.of(EditorState.tabSize.of(editorPrefs.tabSize || 4)),
-      indentUnit.of(' '.repeat(editorPrefs.tabSize || 4)),
+      indentUnitCompartment.of(indentUnit.of(' '.repeat(editorPrefs.tabSize || 4))),
+      closeBracketsCompartment.of(editorPrefs.autoCloseBrackets ? closeBrackets() : []),
+      whitespaceCompartment.of(editorPrefs.showWhitespace ? highlightWhitespace() : []),
       wordWrapCompartment.of(editorPrefs.wordWrap ? EditorView.lineWrapping : []),
-      themeCompartment.of(getEditorTheme(theme, editorPrefs)),
+      themeCompartment.of(getEditorTheme(theme, editorPrefs, currentUserColor)),
       syntaxCompartment.of(getSyntaxTheme(theme, editorPrefs.syntaxTheme)),
       getLanguageSupport(activeFile),
       placeholder('Start typing, or press Ctrl+Enter to run'),
       EditorState.readOnly.of(Boolean(readOnly || isStopped)),
       EditorView.editable.of(!readOnly && !isStopped),
       autocompletion({ activateOnTyping: true }),
-      keymap.of((readOnly || isStopped) ? defaultKeymap : [{ key: 'Tab', run: acceptCompletion }, ...yUndoManagerKeymap, ...defaultKeymap]),
+      keymap.of((readOnly || isStopped) ? defaultKeymap : [{ key: 'Tab', run: acceptCompletion }, indentWithTab, ...yUndoManagerKeymap, ...defaultKeymap]),
       yCollab(ytext, awareness, { undoManager: (readOnly || isStopped) ? false : fileUndoManager }),
       userChangesCompartment.of(
         createUserChangesExtension({
@@ -715,17 +749,35 @@ export default function Editor({
     try {
       viewRef.current.dispatch({
         effects: [
-          themeCompartment.reconfigure(getEditorTheme(theme, editorPrefs)),
+          themeCompartment.reconfigure(getEditorTheme(theme, editorPrefs, currentUserColor)),
           syntaxCompartment.reconfigure(getSyntaxTheme(theme, editorPrefs.syntaxTheme)),
-          lineNumbersCompartment.reconfigure(editorPrefs.lineNumbers ? lineNumbers() : []),
+          lineNumbersCompartment.reconfigure(
+            editorPrefs.lineNumbers
+              ? lineNumbers({
+                  formatNumber: editorPrefs.relativeLineNumbers
+                    ? (lineNo, state) => {
+                        const currentLine = state.doc.lineAt(state.selection.main.head).number
+                        const diff = Math.abs(lineNo - currentLine)
+                        return diff === 0 ? String(lineNo) : String(diff)
+                      }
+                    : (n) => String(n)
+                })
+              : []
+          ),
+          foldGutterCompartment.reconfigure(editorPrefs.foldGutter ? foldGutter() : []),
           wordWrapCompartment.reconfigure(editorPrefs.wordWrap ? EditorView.lineWrapping : []),
-          tabSizeCompartment.reconfigure(EditorState.tabSize.of(editorPrefs.tabSize || 4))
+          tabSizeCompartment.reconfigure(EditorState.tabSize.of(editorPrefs.tabSize || 4)),
+          indentUnitCompartment.reconfigure(indentUnit.of(' '.repeat(editorPrefs.tabSize || 4))),
+          bracketMatchingCompartment.reconfigure(editorPrefs.bracketMatching ? bracketMatching() : []),
+          closeBracketsCompartment.reconfigure(editorPrefs.autoCloseBrackets ? closeBrackets() : []),
+          activeLineCompartment.reconfigure(editorPrefs.highlightActiveLine ? highlightActiveLine() : []),
+          whitespaceCompartment.reconfigure(editorPrefs.showWhitespace ? highlightWhitespace() : [])
         ]
       })
     } catch (err) {
       console.warn('[Editor] Failed reconfiguring editor compartments:', err)
     }
-  }, [theme, editorPrefs])
+  }, [theme, editorPrefs, currentUserColor])
 
   // Track and filter remote mouse pointers in the same file
   useEffect(() => {
@@ -826,6 +878,11 @@ export default function Editor({
 
   return (
     <main className="editor-container" role="region" aria-label="Code Editor">
+      {zoomToast && (
+        <div className="editor-zoom-toast" role="status" aria-live="polite">
+          {zoomToast}
+        </div>
+      )}
       {/* Tab bar (36px high, scrollable, with Customize button) */}
       <div className="editor-tab-bar" role="tablist">
         <div className="tab-scroll-container">

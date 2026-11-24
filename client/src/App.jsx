@@ -257,6 +257,17 @@ export default function App() {
     })
   }, [])
 
+  // Exit focus mode with Escape key
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && editorPrefs.focusMode) {
+        handleUpdateEditorPrefs((prev) => ({ ...prev, focusMode: false }))
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [editorPrefs.focusMode, handleUpdateEditorPrefs])
+
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false)
 
   const workspaceRef = useRef(null)
@@ -1684,28 +1695,30 @@ export default function App() {
         )}
 
         {/* Left Sidebar: File explorer */}
-        <div
-          className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''} ${layout.sidebarCollapsed ? 'is-collapsed' : ''}`}
-          style={{ width: layout.sidebarCollapsed ? 40 : layout.sidebarWidth }}
-        >
-          <Sidebar
-            files={files}
-            activeFile={activeFile}
-            onSelectFile={handleSelectFile}
-            onCreateFile={handleCreateFile}
-            onDeleteFile={handleDeleteFile}
-            onClearAllFiles={handleClearAllFiles}
-            users={users}
-            isStopped={isCurrentUserStopped}
-            isHost={isHost}
-            onImportFolder={handleImportFolder}
-            isCollapsed={layout.sidebarCollapsed}
-            onToggleCollapse={() => updateLayout((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
-          />
-        </div>
+        {!editorPrefs.focusMode && (
+          <div
+            className={`sidebar-container ${isMobileSidebarOpen ? 'mobile-open' : ''} ${layout.sidebarCollapsed ? 'is-collapsed' : ''}`}
+            style={{ width: layout.sidebarCollapsed ? 40 : layout.sidebarWidth }}
+          >
+            <Sidebar
+              files={files}
+              activeFile={activeFile}
+              onSelectFile={handleSelectFile}
+              onCreateFile={handleCreateFile}
+              onDeleteFile={handleDeleteFile}
+              onClearAllFiles={handleClearAllFiles}
+              users={users}
+              isStopped={isCurrentUserStopped}
+              isHost={isHost}
+              onImportFolder={handleImportFolder}
+              isCollapsed={layout.sidebarCollapsed}
+              onToggleCollapse={() => updateLayout((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
+            />
+          </div>
+        )}
 
         {/* Draggable Resizer for Sidebar */}
-        {!layout.sidebarCollapsed && (
+        {!editorPrefs.focusMode && !layout.sidebarCollapsed && (
           <div
             className="panel-resizer panel-resizer-left"
             onMouseDown={handleSidebarResizeStart}
@@ -1716,6 +1729,16 @@ export default function App() {
 
         {/* Center: CodeMirror 6 Editor with Bottom Output Panel */}
         <div className="editor-and-output-column">
+          {editorPrefs.focusMode && (
+            <button
+              type="button"
+              className="btn-exit-focus-mode"
+              onClick={() => handleUpdateEditorPrefs((prev) => ({ ...prev, focusMode: false }))}
+              title="Exit Focus Mode (Esc)"
+            >
+              Exit Focus Mode
+            </button>
+          )}
           <Editor
             activeFile={activeFile}
             openFiles={openFiles.length > 0 ? openFiles : (activeFile ? [activeFile] : [])}
@@ -1767,7 +1790,7 @@ export default function App() {
         </div>
 
         {/* Draggable Resizer for People */}
-        {!layout.peopleCollapsed && (
+        {!editorPrefs.focusMode && !layout.peopleCollapsed && (
           <div
             className="panel-resizer panel-resizer-right"
             onMouseDown={handlePeopleResizeStart}
@@ -1777,26 +1800,28 @@ export default function App() {
         )}
 
         {/* Right: People Panel */}
-        <div
-          className={`people-panel-container ${isMobilePeopleOpen ? 'mobile-open' : ''} ${layout.peopleCollapsed ? 'is-collapsed' : ''}`}
-          style={{ width: layout.peopleCollapsed ? 40 : layout.peopleWidth }}
-        >
-          <PeoplePanel
-            users={users}
-            activeFile={activeFile}
-            onJumpToUser={handleJumpToUser}
-            followingUserId={followingUserId}
-            onToggleFollow={handleToggleFollow}
-            hostId={hostId}
-            isHost={isHost}
-            onTransferHost={handleTransferHost}
-            onStopUser={handleStopUser}
-            onResumeUser={handleResumeUser}
-            frozenUserIds={frozenUserIds}
-            isCollapsed={layout.peopleCollapsed}
-            onToggleCollapse={() => updateLayout((prev) => ({ ...prev, peopleCollapsed: !prev.peopleCollapsed }))}
-          />
-        </div>
+        {!editorPrefs.focusMode && (
+          <div
+            className={`people-panel-container ${isMobilePeopleOpen ? 'mobile-open' : ''} ${layout.peopleCollapsed ? 'is-collapsed' : ''}`}
+            style={{ width: layout.peopleCollapsed ? 40 : layout.peopleWidth }}
+          >
+            <PeoplePanel
+              users={users}
+              activeFile={activeFile}
+              onJumpToUser={handleJumpToUser}
+              followingUserId={followingUserId}
+              onToggleFollow={handleToggleFollow}
+              hostId={hostId}
+              isHost={isHost}
+              onTransferHost={handleTransferHost}
+              onStopUser={handleStopUser}
+              onResumeUser={handleResumeUser}
+              frozenUserIds={frozenUserIds}
+              isCollapsed={layout.peopleCollapsed}
+              onToggleCollapse={() => updateLayout((prev) => ({ ...prev, peopleCollapsed: !prev.peopleCollapsed }))}
+            />
+          </div>
+        )}
 
         {/* Collapsible Chat Sidebar */}
         <ChatPanel
@@ -1809,17 +1834,19 @@ export default function App() {
       </div>
 
       {/* Bottom Status Bar */}
-      <StatusBar
-        status={status}
-        onToggleOnline={handleToggleOnline}
-        usersCount={users.length}
-        activeLanguage={getLanguageName(activeFile)}
-        cursorPos={cursorPos}
-        isHost={isHost}
-        mode={mode}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
-      />
+      {!editorPrefs.focusMode && (
+        <StatusBar
+          status={status}
+          onToggleOnline={handleToggleOnline}
+          usersCount={users.length}
+          activeLanguage={getLanguageName(activeFile)}
+          cursorPos={cursorPos}
+          isHost={isHost}
+          mode={mode}
+          theme={theme}
+          onToggleTheme={handleToggleTheme}
+        />
+      )}
 
       {/* Host Review Proposals Drawer */}
       <ReviewDrawer
