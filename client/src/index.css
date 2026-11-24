@@ -4244,18 +4244,64 @@ button:disabled {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px;
+  padding: 3px;
   border-radius: var(--radius-xs);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: opacity 0.15s ease, color 0.15s ease;
 }
-.chat-message-item:hover .btn-delete-msg-hover {
+.chat-message-item:hover .btn-delete-msg-hover,
+.chat-message-item:focus-within .btn-delete-msg-hover,
+.btn-delete-msg-hover:focus {
   opacity: 1;
 }
 .btn-delete-msg-hover:hover {
-  color: var(--color-danger);
+  color: var(--color-danger, #ef4444);
+}
+.btn-delete-msg-hover:focus-visible,
+.btn-clear-chat:focus-visible {
+  outline: 2px solid var(--accent-primary, #2563eb);
+  outline-offset: 1px;
+}
+@media (hover: none) {
+  .btn-delete-msg-hover {
+    opacity: 0.65;
+  }
+}
+.chat-undo-toast {
+  position: absolute;
+  bottom: 80px;
+  left: 12px;
+  right: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm, 6px);
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-main);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+  animation: slideUpFade 0.15s ease;
+}
+.btn-undo-action {
+  background: transparent;
+  border: none;
+  color: var(--accent-primary, #2563eb);
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-xs, 4px);
+}
+.btn-undo-action:hover {
+  text-decoration: underline;
+}
+.btn-undo-action:focus-visible {
+  outline: 2px solid var(--accent-primary, #2563eb);
 }
 .chat-new-messages-pill {
   position: absolute;

@@ -786,10 +786,17 @@ export default function App() {
           let chatClearedAt = 0
           let hiddenIds = new Set()
           try {
-            const savedCleared = window.localStorage.getItem(`chatClearedAt:${cleanRoom}`)
-            if (savedCleared) chatClearedAt = parseInt(savedCleared, 10) || 0
-            const savedHidden = window.localStorage.getItem(`chatHidden:${cleanRoom}`)
-            if (savedHidden) hiddenIds = new Set(JSON.parse(savedHidden))
+            const rawHidden = window.localStorage.getItem(`offcode-chat-hidden:${cleanRoom}`)
+            if (rawHidden) {
+              const parsed = JSON.parse(rawHidden)
+              if (parsed.clearedBefore) chatClearedAt = parsed.clearedBefore
+              if (Array.isArray(parsed.hiddenIds)) hiddenIds = new Set(parsed.hiddenIds)
+            } else {
+              const savedCleared = window.localStorage.getItem(`chatClearedAt:${cleanRoom}`)
+              if (savedCleared) chatClearedAt = parseInt(savedCleared, 10) || 0
+              const savedHidden = window.localStorage.getItem(`chatHidden:${cleanRoom}`)
+              if (savedHidden) hiddenIds = new Set(JSON.parse(savedHidden))
+            }
           } catch (_) {}
 
           const cutoff = Math.max(joinedAt - 2000, chatClearedAt)
