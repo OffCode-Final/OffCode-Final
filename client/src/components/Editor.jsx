@@ -93,6 +93,51 @@ export function getAutoContrastTextColor(calibratedHsl) {
   return '#FFFFFF'
 }
 
+function renderPointerSvg({ shape = 'arrow', size = 'md', color = '#6366f1', glow = false }) {
+  const px = size === 'sm' ? 14 : size === 'lg' ? 24 : 18
+  const filter = glow
+    ? `drop-shadow(0 0 6px ${color}) drop-shadow(0 1.5px 3px rgba(0, 0, 0, 0.35))`
+    : 'drop-shadow(0 1.5px 3px rgba(0, 0, 0, 0.35))'
+
+  if (shape === 'crosshair') {
+    return (
+      <svg width={px} height={px} viewBox="0 0 18 18" fill="none" className="remote-pointer-arrow" style={{ filter }}>
+        <path d="M9 1.5 V16.5 M1.5 9 H16.5" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" />
+        <path d="M9 1.5 V16.5 M1.5 9 H16.5" stroke={color} strokeWidth="1.75" strokeLinecap="round" />
+        <circle cx="9" cy="9" r="2" fill={color} stroke="#FFFFFF" strokeWidth="1" />
+      </svg>
+    )
+  }
+  if (shape === 'dot') {
+    return (
+      <svg width={px} height={px} viewBox="0 0 18 18" fill="none" className="remote-pointer-arrow" style={{ filter }}>
+        <circle cx="9" cy="9" r="5.5" fill={color} stroke="#FFFFFF" strokeWidth="2" />
+      </svg>
+    )
+  }
+  if (shape === 'ring') {
+    return (
+      <svg width={px} height={px} viewBox="0 0 18 18" fill="none" className="remote-pointer-arrow" style={{ filter }}>
+        <circle cx="9" cy="9" r="6.5" stroke="#FFFFFF" strokeWidth="3" />
+        <circle cx="9" cy="9" r="6.5" stroke={color} strokeWidth="1.75" />
+        <circle cx="9" cy="9" r="2" fill={color} />
+      </svg>
+    )
+  }
+  return (
+    <svg width={px} height={px} viewBox="0 0 18 18" fill="none" className="remote-pointer-arrow" style={{ filter }}>
+      <path
+        d="M1.5 1.5 L7.5 16.5 L10.5 10.5 L16.5 7.5 Z"
+        fill={color}
+        stroke="#FFFFFF"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}
+
 // Remote collaborative mouse pointers with lerp interpolation
 function RemotePointersLayer({
   awareness,
@@ -165,8 +210,8 @@ function RemotePointersLayer({
           )
         )
 
-        const rawColor = state?.user?.color || '#3b82f6'
-        const calibratedColor = getCalibratedColor(rawColor, theme)
+        const rawColor = state?.pointerStyle?.color || state?.user?.color || '#3b82f6'
+        const calibratedColor = state?.pointerStyle?.color ? rawColor : getCalibratedColor(rawColor, theme)
         const autoContrastText = getAutoContrastTextColor(calibratedColor)
 
         targetsRef.current.set(clientId, { x: clampedX, y: clampedY })
@@ -177,6 +222,9 @@ function RemotePointersLayer({
           name: state?.user?.name || 'Anonymous',
           color: calibratedColor,
           textColor: autoContrastText,
+          shape: state?.pointerStyle?.shape || 'arrow',
+          size: state?.pointerStyle?.size || 'md',
+          glow: Boolean(state?.pointerStyle?.glow),
           isStopped: isUserStopped,
           isTyping: Boolean(state?.isTyping)
         })
@@ -247,24 +295,12 @@ function RemotePointersLayer({
               transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`
             }}
           >
-            {/* Crisp 18px SVG pointer with 1.5px white outline and subtle shadow */}
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              fill="none"
-              className="remote-pointer-arrow"
-              style={{ filter: 'drop-shadow(0 1.5px 3px rgba(0, 0, 0, 0.35))' }}
-            >
-              <path
-                d="M1.5 1.5 L7.5 16.5 L10.5 10.5 L16.5 7.5 Z"
-                fill={data.color}
-                stroke="#FFFFFF"
-                strokeWidth="1.5"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            </svg>
+            {renderPointerSvg({
+              shape: data.shape,
+              size: data.size,
+              color: data.color,
+              glow: data.glow
+            })}
             <div
               className="remote-pointer-badge"
               style={{
@@ -1187,14 +1223,29 @@ export default function Editor({
     }
   }, [theme, editorPrefs, currentUserColor])
 
-  // Broadcast local caret style and color over awareness
+  // Broadcast local caret and pointer style/color over awareness
   useEffect(() => {
     if (!awareness) return
+    const resolvedColor = getCaretColorValue(editorPrefs, currentUserColor)
     awareness.setLocalStateField('caret', {
       style: editorPrefs.cursorStyle || 'line',
-      color: getCaretColorValue(editorPrefs, currentUserColor)
+      color: resolvedColor
     })
-  }, [awareness, editorPrefs.cursorStyle, editorPrefs.caretColor, currentUserColor])
+    awareness.setLocalStateField('pointerStyle', {
+      shape: editorPrefs.pointerShape || 'arrow',
+      size: editorPrefs.pointerSize || 'md',
+      color: resolvedColor,
+      glow: Boolean(editorPrefs.cursorGlow)
+    })
+  }, [
+    awareness,
+    editorPrefs.cursorStyle,
+    editorPrefs.caretColor,
+    editorPrefs.pointerShape,
+    editorPrefs.pointerSize,
+    editorPrefs.cursorGlow,
+    currentUserColor
+  ])
 
   // Bug 6: Detect remote carets near right edge and flip tag left + apply remote caret style
   useEffect(() => {
@@ -1410,27 +1461,12 @@ export default function Editor({
                     className="local-custom-pointer"
                     aria-hidden="true"
                   >
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 18 18"
-                      fill="none"
-                      className="remote-pointer-arrow"
-                      style={{
-                        filter: editorPrefs.cursorGlow
-                          ? `drop-shadow(0 0 6px ${getCaretColorValue(editorPrefs, currentUserColor)}) drop-shadow(0 1.5px 3px rgba(0, 0, 0, 0.35))`
-                          : 'drop-shadow(0 1.5px 3px rgba(0, 0, 0, 0.35))'
-                      }}
-                    >
-                      <path
-                        d="M1.5 1.5 L7.5 16.5 L10.5 10.5 L16.5 7.5 Z"
-                        fill={getCaretColorValue(editorPrefs, currentUserColor)}
-                        stroke="#FFFFFF"
-                        strokeWidth="1.5"
-                        strokeLinejoin="round"
-                        strokeLinecap="round"
-                      />
-                    </svg>
+                    {renderPointerSvg({
+                      shape: editorPrefs.pointerShape || 'arrow',
+                      size: editorPrefs.pointerSize || 'md',
+                      color: getCaretColorValue(editorPrefs, currentUserColor),
+                      glow: Boolean(editorPrefs.cursorGlow)
+                    })}
                   </div>
                 )}
               </>,
