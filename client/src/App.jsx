@@ -147,13 +147,17 @@ export default function App() {
       peopleCollapsed: typeof window !== 'undefined' && window.innerWidth < 900
     }
     try {
+      const explicitCollapsed = window.localStorage.getItem('offcode-sidebar-collapsed')
+      if (explicitCollapsed !== null) {
+        defaults.sidebarCollapsed = explicitCollapsed === 'true'
+      }
       const saved = window.localStorage.getItem('offcode-layout')
       if (saved) {
         const parsed = JSON.parse(saved)
         return {
           ...defaults,
           ...parsed,
-          sidebarCollapsed: typeof window !== 'undefined' && window.innerWidth < 900 ? true : (parsed.sidebarCollapsed ?? defaults.sidebarCollapsed),
+          sidebarCollapsed: explicitCollapsed !== null ? explicitCollapsed === 'true' : (parsed.sidebarCollapsed ?? defaults.sidebarCollapsed),
           peopleCollapsed: typeof window !== 'undefined' && window.innerWidth < 900 ? true : (parsed.peopleCollapsed ?? defaults.peopleCollapsed)
         }
       }
@@ -166,6 +170,7 @@ export default function App() {
       const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater }
       try {
         window.localStorage.setItem('offcode-layout', JSON.stringify(next))
+        window.localStorage.setItem('offcode-sidebar-collapsed', String(Boolean(next.sidebarCollapsed)))
       } catch (_) {}
       return next
     })

@@ -270,14 +270,11 @@ export default function Sidebar({
   // Collapsed rail mode (40px)
   if (isCollapsed) {
     return (
-      <aside className="sidebar-rail" onClick={onToggleCollapse} title="Expand Explorer (Ctrl+B)">
+      <aside className="sidebar-rail" title="Explorer">
         <button
           type="button"
           className="btn-rail-icon"
-          onClick={(e) => {
-            e.stopPropagation()
-            onToggleCollapse()
-          }}
+          onClick={onToggleCollapse}
           title="Expand Explorer (Ctrl+B)"
           aria-label="Expand Explorer"
         >
@@ -287,10 +284,9 @@ export default function Sidebar({
         <button
           type="button"
           className="btn-rail-icon"
-          onClick={(e) => {
-            e.stopPropagation()
+          onClick={() => {
             onToggleCollapse()
-            setTimeout(() => setIsCreating(true), 100)
+            setTimeout(() => setIsCreating(true), 120)
           }}
           disabled={isStopped}
           title="New file"
@@ -298,6 +294,54 @@ export default function Sidebar({
         >
           <Plus size={16} strokeWidth={1.75} />
         </button>
+
+        {/* Compact File Rail List */}
+        <div className="rail-files-scroll" role="list" aria-label="Open files">
+          {files.map((filePath) => {
+            const isActive = activeFile === filePath
+            const ext = getFileExtension(filePath)
+            // 2 or 3 letter badge
+            const badge = (ext.length <= 3 ? ext : ext.slice(0, 3)).toUpperCase() || 'TXT'
+            const displayName = filePath.split('/').pop()
+            const remoteViewers = users.filter((u) => !u.isYou && u.currentFile === filePath)
+
+            return (
+              <button
+                key={filePath}
+                type="button"
+                className={`rail-file-btn ${isActive ? 'active' : ''}`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSelectFile(filePath)
+                }}
+                title={`${displayName} (${filePath})`}
+                aria-label={`Open ${displayName}`}
+              >
+                {/* Active caret indicator */}
+                {isActive && <span className="rail-active-caret" aria-hidden="true" />}
+
+                {/* 2-3 letter badge with language color dot */}
+                <span className={`rail-badge file-icon-${ext || 'txt'}`}>
+                  {badge}
+                </span>
+
+                {/* Remote Presence dots */}
+                {remoteViewers.length > 0 && (
+                  <div className="rail-presence-dots">
+                    {remoteViewers.map((viewer) => (
+                      <span
+                        key={viewer.clientId}
+                        className="rail-presence-dot"
+                        style={{ backgroundColor: viewer.color }}
+                        title={`${viewer.name} is viewing this file`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
       </aside>
     )
   }
