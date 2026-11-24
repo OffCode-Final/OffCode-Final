@@ -68,10 +68,6 @@ export default function OutputPanel({
       setIsMaximized(false)
     }
   }
-    document.body.style.userSelect = 'none'
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }
 
   if (!isOpen) return null
 
