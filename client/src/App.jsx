@@ -1503,7 +1503,7 @@ export default function App() {
     addOutput('stderr', `Running ${ext.toUpperCase()} is not supported offline.`)
   }, [activeFile, activeYText, addOutput, logEvent, workspace])
 
-  // Global Keyboard Shortcuts (Ctrl+S for Save, Ctrl+Enter for Run)
+  // Global Keyboard Shortcuts (Ctrl+S for Save, Ctrl+Enter for Run, Ctrl+` for Output toggle)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
@@ -1513,6 +1513,10 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault()
         handleRunCode()
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === '`' || e.code === 'Backquote')) {
+        e.preventDefault()
+        setIsOutputOpen((prev) => !prev)
       }
     }
     window.addEventListener('keydown', handleKeyDown)

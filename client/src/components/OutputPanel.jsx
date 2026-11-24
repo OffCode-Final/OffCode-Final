@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Square, Trash2, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react'
+import { X, Square, Trash2, Maximize2, Minimize2, AlertCircle } from 'lucide-react'
 
 export default function OutputPanel({
   isOpen,
@@ -15,7 +15,9 @@ export default function OutputPanel({
   footerNote = ''
 }) {
   const [activeTab, setActiveTab] = useState('console') // 'console' | 'preview'
-  const [panelHeight, setPanelHeight] = useState(200)
+  const [panelHeight, setPanelHeight] = useState(240)
+  const [isMaximized, setIsMaximized] = useState(false)
+  const prevHeightRef = useRef(240)
   const isResizingRef = useRef(false)
 
   useEffect(() => {
@@ -35,8 +37,10 @@ export default function OutputPanel({
     const onMouseMove = (moveEvent) => {
       if (!isResizingRef.current) return
       const delta = startY - moveEvent.clientY
-      const newHeight = Math.max(120, Math.min(600, startH + delta))
+      const maxH = Math.min(Math.floor(window.innerHeight * 0.7), window.innerHeight - 160)
+      const newHeight = Math.max(120, Math.min(maxH, startH + delta))
       setPanelHeight(newHeight)
+      setIsMaximized(false)
     }
 
     const onMouseUp = () => {
@@ -48,6 +52,22 @@ export default function OutputPanel({
     }
 
     document.body.style.cursor = 'row-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+
+  const toggleMaximize = () => {
+    if (!isMaximized) {
+      prevHeightRef.current = panelHeight
+      const maxH = Math.min(Math.floor(window.innerHeight * 0.7), window.innerHeight - 160)
+      setPanelHeight(maxH)
+      setIsMaximized(true)
+    } else {
+      setPanelHeight(prevHeightRef.current || 240)
+      setIsMaximized(false)
+    }
+  }
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
@@ -131,6 +151,16 @@ export default function OutputPanel({
           >
             <Trash2 size={12} strokeWidth={1.75} />
             <span>Clear</span>
+          </button>
+
+          <button
+            type="button"
+            className="btn-icon-subtle"
+            onClick={toggleMaximize}
+            title={isMaximized ? 'Restore height' : 'Maximize output'}
+            aria-label={isMaximized ? 'Restore height' : 'Maximize output'}
+          >
+            {isMaximized ? <Minimize2 size={13} strokeWidth={1.75} /> : <Maximize2 size={13} strokeWidth={1.75} />}
           </button>
 
           <button
