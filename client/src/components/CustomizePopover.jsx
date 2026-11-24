@@ -37,6 +37,9 @@ export const DEFAULT_PREFS = {
   smoothCaret: true,
   caretColor: 'user', // 'user' | '#hex'
   cursorGlow: false,
+  customPointer: false,
+  pointerShape: 'arrow', // 'arrow' | 'crosshair' | 'dot' | 'ring'
+  pointerSize: 'md', // 'sm' | 'md' | 'lg'
   remoteCursorLabels: 'always', // 'always' | 'idle' | 'hide'
 
   // Theme
@@ -172,6 +175,30 @@ const SYSTEM_MONO_FONTS = new Set([
 
 const loadedGoogleFonts = new Set()
 
+export function ensureAllGoogleFontsLoaded() {
+  if (typeof document === 'undefined') return
+  const allGoogleFonts = FONT_GROUPS.flatMap((g) => g.fonts).filter(
+    (f) => !BUNDLED_FONTS.has(f) && !SYSTEM_MONO_FONTS.has(f) && !loadedGoogleFonts.has(f)
+  )
+  if (allGoogleFonts.length === 0) return
+  allGoogleFonts.forEach((f) => loadedGoogleFonts.add(f))
+  const chunkSize = 15
+  for (let i = 0; i < allGoogleFonts.length; i += chunkSize) {
+    const chunk = allGoogleFonts.slice(i, i + chunkSize)
+    const id = `gf-batch-${i}`
+    if (!document.getElementById(id)) {
+      const families = chunk
+        .map((f) => `family=${encodeURIComponent(f).replace(/%20/g, '+')}:wght@400;700`)
+        .join('&')
+      const link = document.createElement('link')
+      link.id = id
+      link.rel = 'stylesheet'
+      link.href = `https://fonts.googleapis.com/css2?${families}&display=swap`
+      document.head.appendChild(link)
+    }
+  }
+}
+
 export function ensureGoogleFontLoaded(fontName) {
   if (!fontName || BUNDLED_FONTS.has(fontName) || SYSTEM_MONO_FONTS.has(fontName)) {
     return Promise.resolve()
@@ -275,6 +302,12 @@ export default function CustomizePopover({
     }
   }, [isOpen, onClose, triggerRef])
 
+  useEffect(() => {
+    if (isOpen && activeTab === 'font') {
+      ensureAllGoogleFontsLoaded()
+    }
+  }, [isOpen, activeTab])
+
   const fontAvailability = useMemo(() => {
     const map = {}
     for (const g of FONT_GROUPS) {
@@ -287,12 +320,11 @@ export default function CustomizePopover({
 
   const filteredFontGroups = useMemo(() => {
     const q = fontSearch.trim().toLowerCase()
-    if (!q) return FONT_GROUPS
     return FONT_GROUPS.map((g) => ({
       ...g,
-      fonts: g.fonts.filter((f) => f.toLowerCase().includes(q))
+      fonts: g.fonts.filter((f) => fontAvailability[f] !== false && (!q || f.toLowerCase().includes(q)))
     })).filter((g) => g.fonts.length > 0)
-  }, [fontSearch])
+  }, [fontSearch, fontAvailability])
 
   if (!isOpen) return null
 
@@ -724,6 +756,62 @@ export default function CustomizePopover({
                   onChange={(e) => update({ cursorGlow: e.target.checked })}
                 />
               </label>
+
+              <label className="customize-toggle-row">
+                <div className="customize-label-col">
+                  <span className="toggle-label">Custom editor pointer</span>
+                  <span className="customize-subhint">Show your colored pointer instead of OS cursor</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.customPointer)}
+                  onChange={(e) => update({ customPointer: e.target.checked })}
+                />
+              </label>
+            </div>
+
+            {/* Pointer Shape (shared with collaborators) */}
+            <div className="customize-row">
+              <span className="customize-label">Pointer shape</span>
+              <div className="customize-segmented">
+                {[
+                  { id: 'arrow', label: 'Arrow' },
+                  { id: 'crosshair', label: 'Cross' },
+                  { id: 'dot', label: 'Dot' },
+                  { id: 'ring', label: 'Ring' }
+                ].map((ps) => (
+                  <button
+                    key={ps.id}
+                    type="button"
+                    className={`customize-seg-btn ${(prefs.pointerShape || 'arrow') === ps.id ? 'active' : ''}`}
+                    onClick={() => update({ pointerShape: ps.id })}
+                  >
+                    {ps.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Pointer Size (shared with collaborators) */}
+            <div className="customize-row">
+              <span className="customize-label">Pointer size</span>
+              <div className="customize-segmented">
+                {[
+                  { id: 'sm', label: 'Small' },
+                  { id: 'md', label: 'Medium' },
+                  { id: 'lg', label: 'Large' }
+                ].map((sz) => (
+                  <button
+                    key={sz.id}
+                    type="button"
+                    className={`customize-seg-btn ${(prefs.pointerSize || 'md') === sz.id ? 'active' : ''}`}
+                    onClick={() => update({ pointerSize: sz.id })}
+                  >
+                    {sz.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}

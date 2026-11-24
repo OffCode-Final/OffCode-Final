@@ -1688,6 +1688,25 @@ button:disabled {
   display: block;
 }
 
+.editor-canvas.custom-pointer-active .cm-scroller,
+.editor-canvas.custom-pointer-active .cm-content,
+.editor-canvas.custom-pointer-active .cm-line,
+.editor-canvas.custom-pointer-active .cm-gutters {
+  cursor: none !important;
+}
+
+.local-custom-pointer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  user-select: none;
+  z-index: 120;
+  opacity: 0;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, opacity;
+}
+
 .remote-pointer-badge {
   position: absolute;
   left: 12px;
