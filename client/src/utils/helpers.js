@@ -59,24 +59,104 @@ export function pickUniqueColor(takenColors = [], preferredColor = null) {
   return COLLABORATOR_PALETTE[0]
 }
 
-export const SUPPORTED_EXTENSIONS = [
+export const ALLOWED_EXTENSIONS = [
   'py',
   'js',
+  'jsx',
   'ts',
   'tsx',
   'html',
   'css',
   'json',
   'md',
+  'txt',
   'c',
+  'h',
   'cpp',
+  'hpp',
   'java',
   'php',
   'rs',
   'go',
-  'rb',
-  'txt'
+  'rb'
 ]
+
+export const SUPPORTED_EXTENSIONS = ALLOWED_EXTENSIONS
+
+/**
+ * Validates a file name against system rules and the extension allow-list.
+ * @param {string} rawName - The file name to validate
+ * @param {string[]} existingFiles - Array of already existing file names
+ * @param {boolean} allowSlashes - Whether forward slashes are allowed (for folder paths)
+ * @returns {{ valid: boolean, error: string }}
+ */
+export function validateFileName(rawName, existingFiles = [], allowSlashes = false) {
+  if (rawName === undefined || rawName === null || rawName === '') {
+    return { valid: false, error: 'File name cannot be empty' }
+  }
+
+  // Reject spaces at ends
+  if (rawName.startsWith(' ') || rawName.endsWith(' ')) {
+    return { valid: false, error: 'File name cannot start or end with spaces' }
+  }
+
+  const name = rawName.trim()
+  if (!name) {
+    return { valid: false, error: 'File name cannot be empty' }
+  }
+
+  // Reject names longer than 64 characters
+  if (name.length > 64) {
+    return { valid: false, error: 'File name must be 64 characters or fewer' }
+  }
+
+  // Reject traversal ".."
+  if (name.includes('..')) {
+    return { valid: false, error: 'File name cannot contain ".."' }
+  }
+
+  // Reject invalid characters in file names: < > : " | ? *
+  if (/[<>:"|?*]/.test(name)) {
+    return { valid: false, error: 'File name cannot contain < > : " | ? *' }
+  }
+
+  // Reject slashes outside folder imports
+  if (!allowSlashes && (name.includes('/') || name.includes('\\'))) {
+    return { valid: false, error: 'File name cannot contain slashes' }
+  }
+
+  // Reject trailing dot
+  if (name.endsWith('.')) {
+    return { valid: false, error: 'File name cannot end with a dot' }
+  }
+
+  // Check extension
+  const lastDot = name.lastIndexOf('.')
+  if (lastDot === -1 || lastDot === 0) {
+    return {
+      valid: false,
+      error: 'Use a supported extension: .py .js .ts .html .css ...'
+    }
+  }
+
+  const ext = name.slice(lastDot + 1).toLowerCase()
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+    return {
+      valid: false,
+      error: 'Use a supported extension: .py .js .ts .html .css ...'
+    }
+  }
+
+  // Reject duplicates (case-insensitive)
+  if (existingFiles && Array.isArray(existingFiles)) {
+    const isDup = existingFiles.some((f) => f.toLowerCase() === name.toLowerCase())
+    if (isDup) {
+      return { valid: false, error: 'A file with this name already exists' }
+    }
+  }
+
+  return { valid: true, error: '' }
+}
 
 export function getRandomColor() {
   const index = Math.floor(Math.random() * USER_COLORS.length)

@@ -17,6 +17,7 @@ import {
   getDefaultServerUrl,
   resolveHtmlAssets,
   SUPPORTED_EXTENSIONS,
+  validateFileName,
   pickUniqueColor,
   COLLABORATOR_PALETTE
 } from './utils/helpers'
@@ -268,6 +269,8 @@ export default function App() {
 
   const [showOnlineNotice, setShowOnlineNotice] = useState(false)
   const [outputFooterNote, setOutputFooterNote] = useState('')
+  const [isNewFileModalOpen, setIsNewFileModalOpen] = useState(false)
+  const [modalFileName, setModalFileName] = useState('')
 
   const handleDismissOnlineNotice = useCallback(() => {
     setShowOnlineNotice(false)
@@ -1114,13 +1117,19 @@ export default function App() {
 
   const handleCreateFile = (fileName) => {
     if (!workspace || isCurrentUserStopped) return
-    const initialContent = getInitialTemplate(fileName)
-    const text = workspace.createFile(fileName, initialContent)
+    const val = validateFileName(fileName, files, false)
+    if (!val.valid) {
+      showToast(val.error, 'error')
+      return
+    }
+    const cleanName = fileName.trim()
+    const initialContent = getInitialTemplate(cleanName)
+    const text = workspace.createFile(cleanName, initialContent)
     if (text) {
       setFiles(workspace.listFiles())
-      setActiveFile(fileName)
-      setOpenFiles((prev) => (prev.includes(fileName) ? prev : [...prev, fileName]))
-      logEvent('file', `Created new file "${fileName}"`)
+      setActiveFile(cleanName)
+      setOpenFiles((prev) => (prev.includes(cleanName) ? prev : [...prev, cleanName]))
+      logEvent('file', `Created new file "${cleanName}"`)
     }
   }
 
@@ -1196,9 +1205,10 @@ export default function App() {
           continue
         }
 
-        // Check extension
-        const ext = getFileExtension(relPath)
-        if (!ext || !allowedExts.includes(ext)) {
+        // Check extension and filename validation against allowlist
+        const fileNameSegment = parts[parts.length - 1]
+        const val = validateFileName(fileNameSegment, candidates.map((c) => c.relPath), false)
+        if (!val.valid) {
           skippedCount++
           continue
         }
@@ -1704,10 +1714,7 @@ export default function App() {
             openFiles={openFiles.length > 0 ? openFiles : (activeFile ? [activeFile] : [])}
             onSelectTab={handleSelectTab}
             onCloseTab={handleCloseTab}
-            onCreateFile={() => {
-              const name = window.prompt('Enter file name (e.g. main.py, index.html):', 'untitled.py')
-              if (name && name.trim()) handleCreateFile(name.trim())
-            }}
+            onCreateFile={() => setIsNewFileModalOpen(true)}
             ytext={activeYText}
             awareness={workspace.awareness}
             remoteUsersViewingThisFile={remoteUsersInSameFile}
@@ -1877,6 +1884,82 @@ export default function App() {
         pendingProposalsCount={pendingCount}
         pointersReceivedCount={pointersReceivedCount}
       />
+
+      {/* Create New File Modal */}
+      {isNewFileModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            setIsNewFileModalOpen(false)
+            setModalFileName('')
+          }}
+        >
+          <div
+            className="modal-card"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: '400px' }}
+          >
+            <h4 className="modal-title">Create New File</h4>
+            <p className="modal-desc" style={{ marginBottom: '12px' }}>
+              Enter a file name with a supported extension (.py, .js, .ts, .html, .css, etc.)
+            </p>
+            <input
+              type="text"
+              className="new-file-input"
+              value={modalFileName}
+              onChange={(e) => setModalFileName(e.target.value)}
+              placeholder="e.g. main.py, index.html"
+              autoFocus
+              spellCheck={false}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const val = validateFileName(modalFileName, files, false)
+                  if (val.valid) {
+                    handleCreateFile(modalFileName)
+                    setIsNewFileModalOpen(false)
+                    setModalFileName('')
+                  }
+                } else if (e.key === 'Escape') {
+                  setIsNewFileModalOpen(false)
+                  setModalFileName('')
+                }
+              }}
+            />
+            {modalFileName && !validateFileName(modalFileName, files, false).valid && (
+              <span className="new-file-error" style={{ display: 'block', marginBottom: '10px' }}>
+                {validateFileName(modalFileName, files, false).error}
+              </span>
+            )}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-flat btn-secondary"
+                onClick={() => {
+                  setIsNewFileModalOpen(false)
+                  setModalFileName('')
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-primary"
+                disabled={!modalFileName || !validateFileName(modalFileName, files, false).valid}
+                onClick={() => {
+                  const val = validateFileName(modalFileName, files, false)
+                  if (val.valid) {
+                    handleCreateFile(modalFileName)
+                    setIsNewFileModalOpen(false)
+                    setModalFileName('')
+                  }
+                }}
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Leave Room & Shutdown Warning Modal */}
       {isLeaveModalOpen && (

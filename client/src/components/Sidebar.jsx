@@ -12,7 +12,7 @@ import {
   ChevronLeft,
   Files
 } from 'lucide-react'
-import { getFileExtension } from '../utils/helpers'
+import { getFileExtension, validateFileName } from '../utils/helpers'
 
 function buildTree(fileList) {
   const root = { name: '', path: '', folders: {}, files: [] }
@@ -144,18 +144,16 @@ export default function Sidebar({
     }
   }
 
+  const fileValidation = newFileName ? validateFileName(newFileName, files, false) : { valid: false, error: '' }
+
   const handleCreateSubmit = (e) => {
     e.preventDefault()
-    const trimmed = newFileName.trim()
-    if (!trimmed) {
-      setError('File name cannot be empty')
+    const val = validateFileName(newFileName, files, false)
+    if (!val.valid) {
+      setError(val.error)
       return
     }
-    if (files.includes(trimmed)) {
-      setError('A file with this name already exists')
-      return
-    }
-    onCreateFile(trimmed)
+    onCreateFile(newFileName.trim())
     setNewFileName('')
     setIsCreating(false)
     setError('')
@@ -396,9 +394,15 @@ export default function Sidebar({
             autoComplete="off"
             autoFocus
           />
-          {error && <span className="new-file-error">{error}</span>}
+          {(error || (newFileName && !fileValidation.valid)) && (
+            <span className="new-file-error">{error || fileValidation.error}</span>
+          )}
           <div className="new-file-actions">
-            <button type="submit" className="btn-flat btn-primary btn-xs">
+            <button
+              type="submit"
+              className="btn-flat btn-primary btn-xs"
+              disabled={!newFileName || !fileValidation.valid || isStopped}
+            >
               Create
             </button>
             <button
