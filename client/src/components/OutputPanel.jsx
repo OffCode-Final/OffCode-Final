@@ -4,6 +4,7 @@ import { copyToClipboard } from '../utils/helpers'
 
 const STATUS_LABELS = {
   running: 'Running',
+  waiting_input: 'Waiting for input',
   success: 'Success',
   error: 'Error',
   stopped: 'Stopped',
@@ -115,17 +116,22 @@ export default function OutputPanel({
   onJumpToLocation,
   onHtmlError,
   stdinText = '',
-  onChangeStdinText
+  onChangeStdinText,
+  pendingInputPrompt = null,
+  onSubmitInteractiveInput,
+  onSendInteractiveEof
 }) {
   const [activeTab, setActiveTab] = useState('console') // 'console' | 'preview'
   const [panelHeight, setPanelHeight] = useState(280)
   const [isMaximized, setIsMaximized] = useState(false)
   const [isInputOpen, setIsInputOpen] = useState(false)
+  const [inlineInputValue, setInlineInputValue] = useState('')
   const prevHeightRef = useRef(280)
   const isResizingRef = useRef(false)
   const iframeRef = useRef(null)
   const lastRunRef = useRef(null)
   const streamEndRef = useRef(null)
+  const inlineInputRef = useRef(null)
 
   useEffect(() => {
     if (isHtmlMode && htmlContent) {
@@ -152,12 +158,30 @@ export default function OutputPanel({
   useEffect(() => {
     if (activeTab !== 'console') return
     const latest = runs.length > 0 ? runs[runs.length - 1] : null
-    if (latest && latest.status === 'error' && lastRunRef.current) {
+    if (!pendingInputPrompt && latest && latest.status === 'error' && lastRunRef.current) {
       lastRunRef.current.scrollIntoView({ block: 'start' })
     } else if (streamEndRef.current) {
       streamEndRef.current.scrollIntoView({ block: 'end' })
     }
-  }, [runs, activeTab])
+  }, [runs, activeTab, pendingInputPrompt])
+
+  useEffect(() => {
+    if (pendingInputPrompt) {
+      setActiveTab('console')
+      setInlineInputValue('')
+      setTimeout(() => {
+        inlineInputRef.current?.focus()
+      }, 20)
+    }
+  }, [pendingInputPrompt])
+
+  const handleSubmitInlineInput = (e) => {
+    e.preventDefault()
+    if (!onSubmitInteractiveInput) return
+    const val = inlineInputValue
+    setInlineInputValue('')
+    onSubmitInteractiveInput(val)
+  }
 
   const handleResizeStart = (e) => {
     e.preventDefault()
@@ -261,11 +285,15 @@ export default function OutputPanel({
             )}
           </div>
 
-          {isRunning && <span className="running-text">Executing…</span>}
+          {(isRunning || pendingInputPrompt) && (
+            <span className="running-text">
+              {pendingInputPrompt ? 'Waiting for input…' : 'Executing…'}
+            </span>
+          )}
         </div>
 
         <div className="output-header-right">
-          {isRunning && (
+          {(isRunning || pendingInputPrompt) && (
             <button
               type="button"
               className="btn-flat btn-danger btn-xs"
@@ -396,6 +424,37 @@ export default function OutputPanel({
                         </div>
                       )
                     })}
+
+                    {pendingInputPrompt && pendingInputPrompt.runId === run.id && (
+                      <form className="console-inline-input-row" onSubmit={handleSubmitInlineInput}>
+                        {pendingInputPrompt.prompt && (
+                          <span className="console-inline-prompt">{pendingInputPrompt.prompt}</span>
+                        )}
+                        <input
+                          ref={inlineInputRef}
+                          type="text"
+                          className="console-inline-input"
+                          value={inlineInputValue}
+                          onChange={(e) => setInlineInputValue(e.target.value)}
+                          placeholder="Type input and press Enter..."
+                          autoFocus
+                          spellCheck={false}
+                        />
+                        <button type="submit" className="btn-flat btn-primary btn-xs">
+                          Enter
+                        </button>
+                        {onSendInteractiveEof && (
+                          <button
+                            type="button"
+                            className="btn-flat btn-secondary btn-xs"
+                            onClick={onSendInteractiveEof}
+                            title="Send EOF (stop providing input)"
+                          >
+                            EOF
+                          </button>
+                        )}
+                      </form>
+                    )}
                   </div>
                 </div>
               ))

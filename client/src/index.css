@@ -5007,6 +5007,41 @@ button:disabled {
   font-weight: 600;
 }
 
+.console-inline-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-xs);
+}
+
+.console-inline-prompt {
+  font-family: var(--font-code);
+  font-size: 12px;
+  color: var(--text-main);
+  white-space: pre;
+  flex-shrink: 0;
+}
+
+.console-inline-input {
+  flex: 1;
+  min-width: 120px;
+  background: transparent;
+  border: none;
+  color: var(--text-bright);
+  font-family: var(--font-code);
+  font-size: 12px;
+  outline: none;
+}
+
+.run-status-chip.status-waiting_input {
+  background-color: var(--color-info-bg);
+  color: var(--color-info);
+}
+
 .error-card {
   margin: 4px 0;
   padding: 8px 11px;

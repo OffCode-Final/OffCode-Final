@@ -61,9 +61,11 @@ export default function App() {
   const [isRunning, setIsRunning] = useState(false)
   const [htmlContent, setHtmlContent] = useState('')
   const [stdinText, setStdinText] = useState('')
+  const [pendingInputPrompt, setPendingInputPrompt] = useState(null)
   const [errorHighlight, setErrorHighlight] = useState(null)
   const [clearErrorHighlightSeq, setClearErrorHighlightSeq] = useState(0)
   const activeRunIdRef = useRef(null)
+  const interactivePyRef = useRef(null)
   const htmlRunContextRef = useRef({ rawHtml: '', resolvedHtml: '', fileName: '' })
 
   // Live Cursors & Follow State
@@ -342,6 +344,12 @@ export default function App() {
   const finishRun = useCallback((runId, status, duration = null) => {
     setRuns((prev) =>
       prev.map((r) => (r.id === runId ? { ...r, status, duration } : r))
+    )
+  }, [])
+
+  const resetRunItems = useCallback((runId) => {
+    setRuns((prev) =>
+      prev.map((r) => (r.id === runId ? { ...r, status: 'running', items: [] } : r))
     )
   }, [])
 
@@ -1370,9 +1378,11 @@ export default function App() {
       logEvent('run', 'Online execution was stopped by user')
     }
 
-    if (pythonWorkerRef.current) {
+    if (pythonWorkerRef.current && (isRunning || pendingInputPrompt)) {
       pythonWorkerRef.current.terminate()
       pythonWorkerRef.current = null
+      interactivePyRef.current = null
+      setPendingInputPrompt(null)
       setIsRunning(false)
       if (runId) {
         appendRunItem(runId, { kind: 'stderr', text: 'Stopped.' })
@@ -1391,7 +1401,42 @@ export default function App() {
       }
       logEvent('run', 'Code execution terminated by user')
     }
-  }, [appendRunItem, finishRun, logEvent])
+  }, [appendRunItem, finishRun, logEvent, isRunning, pendingInputPrompt])
+
+  const submitInteractiveInput = useCallback((value) => {
+    const sessionPy = interactivePyRef.current
+    const worker = pythonWorkerRef.current
+    if (!sessionPy || !worker) return
+
+    sessionPy.collectedInputs.push(value)
+    setPendingInputPrompt(null)
+    resetRunItems(sessionPy.runId)
+    setIsRunning(true)
+    worker.postMessage({
+      type: 'run',
+      runId: sessionPy.runId,
+      code: sessionPy.code,
+      stdinLines: [...sessionPy.preFilledLines, ...sessionPy.collectedInputs],
+      allowInteractive: true
+    })
+  }, [resetRunItems])
+
+  const sendInteractiveEof = useCallback(() => {
+    const sessionPy = interactivePyRef.current
+    const worker = pythonWorkerRef.current
+    if (!sessionPy || !worker) return
+
+    setPendingInputPrompt(null)
+    resetRunItems(sessionPy.runId)
+    setIsRunning(true)
+    worker.postMessage({
+      type: 'run',
+      runId: sessionPy.runId,
+      code: sessionPy.code,
+      stdinLines: [...sessionPy.preFilledLines, ...sessionPy.collectedInputs],
+      allowInteractive: false
+    })
+  }, [resetRunItems])
 
   // Run Code
   const handleRunCode = useCallback(() => {
@@ -1401,6 +1446,8 @@ export default function App() {
     const ext = getFileExtension(runFile)
     const code = activeYText.toString()
 
+    setPendingInputPrompt(null)
+    interactivePyRef.current = null
     setIsOutputOpen(true)
     setIsRunning(true)
     const runId = startRun(runFile)
@@ -1409,11 +1456,10 @@ export default function App() {
     // 1. Python Execution via Pyodide Web Worker (Offline)
     if (ext === 'py') {
       setOutputFooterNote('')
-      if (pythonWorkerRef.current) {
-        pythonWorkerRef.current.terminate()
+      if (!pythonWorkerRef.current) {
+        pythonWorkerRef.current = new Worker('/python-worker.js', { type: 'module' })
       }
-      const worker = new Worker('/python-worker.js', { type: 'module' })
-      pythonWorkerRef.current = worker
+      const worker = pythonWorkerRef.current
 
       const stdinLines = stdinText === ''
         ? []
@@ -1421,21 +1467,35 @@ export default function App() {
             .replace(/\r\n/g, '\n')
             .split('\n')
 
+      interactivePyRef.current = {
+        runId,
+        code,
+        preFilledLines: stdinLines,
+        collectedInputs: []
+      }
+
       worker.onmessage = (e) => {
-        if (activeRunIdRef.current !== runId) return
-        const { type, data, message, duration, echo, lineOffset } = e.data
+        const msgRunId = e.data.runId || runId
+        if (activeRunIdRef.current !== msgRunId) return
+        const { type, data, message, duration, echo, lineOffset, prompt } = e.data
         if (type === 'stdout') {
           appendRunItem(runId, { kind: 'stdout', text: data, echo })
         } else if (type === 'stderr') {
           appendRunItem(runId, { kind: 'stderr', text: data })
         } else if (type === 'status') {
           appendRunItem(runId, { kind: 'status', text: data || message })
+        } else if (type === 'need_input') {
+          setIsRunning(false)
+          setPendingInputPrompt({ runId, prompt: prompt || '' })
+          finishRun(runId, 'waiting_input', null)
         } else if (type === 'done') {
-          pythonWorkerRef.current = null
+          interactivePyRef.current = null
+          setPendingInputPrompt(null)
           setIsRunning(false)
           finishRun(runId, 'success', duration)
         } else if (type === 'error') {
-          pythonWorkerRef.current = null
+          interactivePyRef.current = null
+          setPendingInputPrompt(null)
           setIsRunning(false)
           const parsedError = parsePythonTraceback(data || message, code, runFile, lineOffset || 0)
           appendRunItem(runId, { kind: 'error', parsedError })
@@ -1446,12 +1506,14 @@ export default function App() {
       worker.onerror = (err) => {
         if (activeRunIdRef.current !== runId) return
         pythonWorkerRef.current = null
+        interactivePyRef.current = null
+        setPendingInputPrompt(null)
         setIsRunning(false)
         appendRunItem(runId, { kind: 'stderr', text: `Worker Error: ${err.message}` })
         finishRun(runId, 'error', null)
       }
 
-      worker.postMessage({ type: 'run', code, stdinLines })
+      worker.postMessage({ type: 'run', runId, code, stdinLines, allowInteractive: true })
       return
     }
 
@@ -1895,6 +1957,9 @@ export default function App() {
             onHtmlError={handleHtmlError}
             stdinText={stdinText}
             onChangeStdinText={setStdinText}
+            pendingInputPrompt={pendingInputPrompt}
+            onSubmitInteractiveInput={submitInteractiveInput}
+            onSendInteractiveEof={sendInteractiveEof}
           />
         </div>
 

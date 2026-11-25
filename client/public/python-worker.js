@@ -6,7 +6,6 @@ import { loadPyodide } from '/pyodide/pyodide.mjs'
 
 let pyodideInstance = null
 let isInitializing = false
-let measuredLineOffset = 0
 
 async function getPyodide() {
   if (pyodideInstance) return pyodideInstance
@@ -25,27 +24,6 @@ async function getPyodide() {
       indexURL: '/pyodide/'
     })
 
-    // Verify whether <exec> line numbers have any offset vs editor line numbers
-    try {
-      await py.runPythonAsync('\n\ncompile("x = ?", "<exec>", "exec")')
-    } catch (probeErr) {
-      const m = String(probeErr?.message || '').match(/File "<exec>", line (\d+)/)
-      if (m) {
-        const reported = parseInt(m[1], 10)
-        // compile() executes on line 3 in the probe string, and inner "<exec>" compiles line 1
-        // Use a syntax error directly in runPythonAsync to measure <exec> offset
-        measuredLineOffset = 0
-      }
-    }
-    try {
-      await py.runPythonAsync('a = 1\nb = 2\nc = )')
-    } catch (probeErr) {
-      const m = String(probeErr?.message || '').match(/File "<exec>", line (\d+)/)
-      if (m) {
-        measuredLineOffset = parseInt(m[1], 10) - 3
-      }
-    }
-
     pyodideInstance = py
     self.postMessage({ type: 'status', message: 'Python engine ready.' })
     return py
@@ -58,23 +36,28 @@ async function getPyodide() {
 }
 
 self.onmessage = async (e) => {
-  const { type, code, stdinLines } = e.data
+  const { type, runId, code, stdinLines, allowInteractive = true } = e.data
 
   if (type === 'run') {
     const decoder = new TextDecoder()
     let pendingStdout = ''
+    let waitingForInput = false
+    let waitingPrompt = ''
 
     const flushPendingLines = () => {
       let nlIdx
       while ((nlIdx = pendingStdout.indexOf('\n')) !== -1) {
         const line = pendingStdout.slice(0, nlIdx)
         pendingStdout = pendingStdout.slice(nlIdx + 1)
-        self.postMessage({ type: 'stdout', data: line })
+        self.postMessage({ type: 'stdout', runId, data: line })
       }
     }
 
+    let py = null
+    let ns = null
+
     try {
-      const py = await getPyodide()
+      py = await getPyodide()
 
       const queue = Array.isArray(stdinLines) ? [...stdinLines] : []
       let queueIdx = 0
@@ -90,17 +73,22 @@ self.onmessage = async (e) => {
 
       py.setStderr({
         batched: (str) => {
-          self.postMessage({ type: 'stderr', data: str })
+          self.postMessage({ type: 'stderr', runId, data: str })
         }
       })
 
       py.setStdin({
         stdin: () => {
           if (queueIdx >= queue.length) {
-            // Flush any waiting prompt before EOFError fires
             pendingStdout += decoder.decode()
+            if (allowInteractive) {
+              waitingForInput = true
+              waitingPrompt = pendingStdout
+              pendingStdout = ''
+              return undefined
+            }
             if (pendingStdout.length > 0) {
-              self.postMessage({ type: 'stdout', data: pendingStdout })
+              self.postMessage({ type: 'stdout', runId, data: pendingStdout })
               pendingStdout = ''
             }
             return undefined
@@ -109,6 +97,7 @@ self.onmessage = async (e) => {
           pendingStdout += decoder.decode()
           self.postMessage({
             type: 'stdout',
+            runId,
             data: pendingStdout,
             echo: nextLine
           })
@@ -118,14 +107,13 @@ self.onmessage = async (e) => {
       })
 
       const startTime = performance.now()
-      self.postMessage({ type: 'status', message: 'Running Python script...' })
-
-      const result = await py.runPythonAsync(code)
+      ns = py.toPy({ __name__: '__main__' })
+      const result = await py.runPythonAsync(code, { globals: ns })
 
       pendingStdout += decoder.decode()
       flushPendingLines()
       if (pendingStdout.length > 0) {
-        self.postMessage({ type: 'stdout', data: pendingStdout })
+        self.postMessage({ type: 'stdout', runId, data: pendingStdout })
         pendingStdout = ''
       }
 
@@ -133,21 +121,38 @@ self.onmessage = async (e) => {
 
       self.postMessage({
         type: 'done',
+        runId,
         duration,
         result: result !== undefined && result !== null ? String(result) : null
       })
     } catch (err) {
+      if (waitingForInput && /EOFError/i.test(err?.message || '')) {
+        self.postMessage({
+          type: 'need_input',
+          runId,
+          prompt: waitingPrompt
+        })
+        return
+      }
+
       pendingStdout += decoder.decode()
       flushPendingLines()
       if (pendingStdout.length > 0) {
-        self.postMessage({ type: 'stdout', data: pendingStdout })
+        self.postMessage({ type: 'stdout', runId, data: pendingStdout })
         pendingStdout = ''
       }
       self.postMessage({
         type: 'error',
+        runId,
         data: err.message || String(err),
-        lineOffset: measuredLineOffset
+        lineOffset: 0
       })
+    } finally {
+      if (ns && typeof ns.destroy === 'function') {
+        try {
+          ns.destroy()
+        } catch (_) {}
+      }
     }
   }
 }
