@@ -698,11 +698,15 @@ function createInlinePreviewExtension() {
         this.decorations = Decoration.none
       }
       update(update) {
-        if (update.transactions.some((tr) => tr.annotation(ySyncAnnotation))) {
+        try {
+          if (Array.isArray(update?.transactions) && update.transactions.some((tr) => tr.annotation(ySyncAnnotation))) {
+            this.decorations = Decoration.none
+            return
+          }
+          this.decorations = computeInlineGhostDecorations(update.view)
+        } catch (_) {
           this.decorations = Decoration.none
-          return
         }
-        this.decorations = computeInlineGhostDecorations(update.view)
       }
     },
     {

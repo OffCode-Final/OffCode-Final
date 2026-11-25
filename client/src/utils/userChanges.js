@@ -139,7 +139,12 @@ export function createUserChangePlugin(ytext, currentUserId, showUserChanges, us
         if (update.docChanged) {
           this.decorations = this.decorations.map(update.changes)
         }
-        if (update.effects.some((e) => e.is(updateUserChangesEffect))) {
+        const hasUpdateEffect =
+          Array.isArray(update?.transactions) &&
+          update.transactions.some((tr) =>
+            Array.isArray(tr.effects) && tr.effects.some((e) => e.is(updateUserChangesEffect))
+          )
+        if (hasUpdateEffect) {
           this.decorations = buildUserChangeDecorations(
             update.state.doc.length,
             ytext,

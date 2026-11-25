@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Square, Trash2, Maximize2, Minimize2, AlertCircle, Copy, Check, ChevronRight, ChevronDown } from 'lucide-react'
+import { X, Square, Trash2, Maximize2, Minimize2, AlertCircle, Copy, Check } from 'lucide-react'
 import { copyToClipboard } from '../utils/helpers'
 
 const STATUS_LABELS = {
@@ -115,8 +115,6 @@ export default function OutputPanel({
   footerNote = '',
   onJumpToLocation,
   onHtmlError,
-  stdinText = '',
-  onChangeStdinText,
   pendingInputPrompt = null,
   onSubmitInteractiveInput,
   onSendInteractiveEof
@@ -124,7 +122,6 @@ export default function OutputPanel({
   const [activeTab, setActiveTab] = useState('console') // 'console' | 'preview'
   const [panelHeight, setPanelHeight] = useState(280)
   const [isMaximized, setIsMaximized] = useState(false)
-  const [isInputOpen, setIsInputOpen] = useState(false)
   const [inlineInputValue, setInlineInputValue] = useState('')
   const prevHeightRef = useRef(280)
   const isResizingRef = useRef(false)
@@ -228,7 +225,6 @@ export default function OutputPanel({
 
   const lastRun = runs.length > 0 ? runs[runs.length - 1] : null
   const latestHtmlErrorCount = lastRun?.items?.filter((it) => it.kind === 'error').length || 0
-  const inputLineCount = stdinText === '' ? 0 : (stdinText.endsWith('\n') ? stdinText.slice(0, -1) : stdinText).split(/\r?\n/).length
 
   return (
     <div className="output-panel" style={{ height: `${panelHeight}px` }}>
@@ -460,38 +456,6 @@ export default function OutputPanel({
               ))
             )}
             <div ref={streamEndRef} />
-          </div>
-        )}
-      </div>
-
-      {/* Collapsible Input section for Python input() */}
-      <div className="output-input-section">
-        <button
-          type="button"
-          className="output-input-toggle"
-          onClick={() => setIsInputOpen((prev) => !prev)}
-          aria-expanded={isInputOpen}
-        >
-          {isInputOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span>Input</span>
-          {inputLineCount > 0 && (
-            <span className="output-input-count">{inputLineCount} {inputLineCount === 1 ? 'line' : 'lines'}</span>
-          )}
-        </button>
-        {isInputOpen && (
-          <div className="output-input-body">
-            <label className="output-input-label" htmlFor="offcode-stdin-input">
-              Input, one value per line
-            </label>
-            <textarea
-              id="offcode-stdin-input"
-              className="output-input-textarea"
-              rows={3}
-              value={stdinText}
-              onChange={(e) => onChangeStdinText && onChangeStdinText(e.target.value)}
-              placeholder="Enter values for Python input(), one per line..."
-              spellCheck={false}
-            />
           </div>
         )}
       </div>

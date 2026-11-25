@@ -60,7 +60,6 @@ export default function App() {
   const [isOutputOpen, setIsOutputOpen] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const [htmlContent, setHtmlContent] = useState('')
-  const [stdinText, setStdinText] = useState('')
   const [pendingInputPrompt, setPendingInputPrompt] = useState(null)
   const [errorHighlight, setErrorHighlight] = useState(null)
   const [clearErrorHighlightSeq, setClearErrorHighlightSeq] = useState(0)
@@ -1461,11 +1460,7 @@ export default function App() {
       }
       const worker = pythonWorkerRef.current
 
-      const stdinLines = stdinText === ''
-        ? []
-        : (stdinText.endsWith('\n') ? stdinText.slice(0, -1) : stdinText)
-            .replace(/\r\n/g, '\n')
-            .split('\n')
+      const stdinLines = []
 
       interactivePyRef.current = {
         runId,
@@ -1661,7 +1656,7 @@ export default function App() {
     setIsRunning(false)
     appendRunItem(runId, { kind: 'stderr', text: `Running ${ext.toUpperCase()} is not supported offline.` })
     finishRun(runId, 'error', null)
-  }, [activeFile, activeYText, stdinText, startRun, appendRunItem, finishRun, logEvent, workspace])
+  }, [activeFile, activeYText, startRun, appendRunItem, finishRun, logEvent, workspace])
 
   // Global Keyboard Shortcuts (Ctrl+S for Save, Ctrl+Enter for Run, Ctrl+` for Output toggle)
   useEffect(() => {
@@ -1955,8 +1950,6 @@ export default function App() {
             footerNote={outputFooterNote}
             onJumpToLocation={handleJumpToError}
             onHtmlError={handleHtmlError}
-            stdinText={stdinText}
-            onChangeStdinText={setStdinText}
             pendingInputPrompt={pendingInputPrompt}
             onSubmitInteractiveInput={submitInteractiveInput}
             onSendInteractiveEof={sendInteractiveEof}
