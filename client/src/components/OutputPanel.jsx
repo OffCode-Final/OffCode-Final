@@ -1,10 +1,109 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Square, Trash2, Maximize2, Minimize2, AlertCircle } from 'lucide-react'
+import { X, Square, Trash2, Maximize2, Minimize2, AlertCircle, Copy, Check, ChevronRight, ChevronDown } from 'lucide-react'
+import { copyToClipboard } from '../utils/helpers'
+
+const STATUS_LABELS = {
+  running: 'Running',
+  success: 'Success',
+  error: 'Error',
+  stopped: 'Stopped',
+  timed_out: 'Timed out'
+}
+
+function ErrorBlock({ error, onJumpToLocation }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async () => {
+    const textToCopy = error.rawText || `${error.title}\n${error.errorType}: ${error.message}`
+    const ok = await copyToClipboard(textToCopy)
+    if (ok) {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1800)
+    }
+  }
+
+  return (
+    <div className="error-card" role="alert">
+      <div className="error-card-top">
+        <div className="error-card-heading">
+          <span className="error-card-title">{error.title}</span>
+          {error.locationLabel && (
+            error.clickable && onJumpToLocation ? (
+              <button
+                type="button"
+                className="error-location-chip clickable"
+                onClick={() => onJumpToLocation({ fileName: error.fileName, line: error.line, col: error.col })}
+                title={`Go to ${error.locationLabel}`}
+              >
+                {error.locationLabel}
+              </button>
+            ) : (
+              <span className="error-location-chip">{error.locationLabel}</span>
+            )
+          )}
+        </div>
+        <button
+          type="button"
+          className="error-copy-btn"
+          onClick={handleCopy}
+          title="Copy error"
+        >
+          {copied ? <Check size={11} strokeWidth={2} /> : <Copy size={11} strokeWidth={1.75} />}
+          <span>{copied ? 'Copied' : 'Copy error'}</span>
+        </button>
+      </div>
+
+      {Array.isArray(error.stack) && error.stack.length > 1 && (
+        <div className="error-stack">
+          {error.stack.map((frame, idx) => {
+            const isLast = idx === error.stack.length - 1
+            return (
+              <button
+                key={`${frame.file}:${frame.line}:${idx}`}
+                type="button"
+                className={`error-stack-item ${isLast ? 'is-last' : ''}`}
+                onClick={() => onJumpToLocation && onJumpToLocation({ fileName: frame.file, line: frame.line, col: null })}
+                title={`Go to ${frame.file}:${frame.line}`}
+              >
+                <span className="error-stack-loc">{frame.file}:{frame.line}</span>
+                <span className="error-stack-fn">{frame.fn}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {error.sourceLine !== null && error.sourceLine !== undefined && (
+        <pre className="error-code-block">
+          <code>
+            {error.sourceLine}
+            {error.caretLine ? `\n${error.caretLine}` : ''}
+          </code>
+        </pre>
+      )}
+
+      <div className="error-final-line">
+        <strong>{error.errorType}:</strong> {error.message}
+      </div>
+
+      {error.hint && (
+        <div className="error-hint">{error.hint}</div>
+      )}
+
+      {error.rawText && (
+        <details className="error-tech-details">
+          <summary>Technical details</summary>
+          <pre className="error-tech-raw">{error.rawText}</pre>
+        </details>
+      )}
+    </div>
+  )
+}
 
 export default function OutputPanel({
   isOpen,
   onClose,
-  outputs = [],
+  runs = [],
   onClear,
   isRunning = false,
   onStop,
@@ -12,13 +111,21 @@ export default function OutputPanel({
   isHtmlMode = false,
   showOnlineNotice = false,
   onDismissOnlineNotice,
-  footerNote = ''
+  footerNote = '',
+  onJumpToLocation,
+  onHtmlError,
+  stdinText = '',
+  onChangeStdinText
 }) {
   const [activeTab, setActiveTab] = useState('console') // 'console' | 'preview'
-  const [panelHeight, setPanelHeight] = useState(240)
+  const [panelHeight, setPanelHeight] = useState(280)
   const [isMaximized, setIsMaximized] = useState(false)
-  const prevHeightRef = useRef(240)
+  const [isInputOpen, setIsInputOpen] = useState(false)
+  const prevHeightRef = useRef(280)
   const isResizingRef = useRef(false)
+  const iframeRef = useRef(null)
+  const lastRunRef = useRef(null)
+  const streamEndRef = useRef(null)
 
   useEffect(() => {
     if (isHtmlMode && htmlContent) {
@@ -27,6 +134,30 @@ export default function OutputPanel({
       setActiveTab('console')
     }
   }, [isHtmlMode, htmlContent])
+
+  // Listen for window.onerror messages posted from sandboxed HTML preview iframe
+  useEffect(() => {
+    const handleMessage = (e) => {
+      if (!e.data || e.data.type !== 'offcode-html-error') return
+      if (iframeRef.current && e.source !== iframeRef.current.contentWindow) return
+      if (onHtmlError) {
+        onHtmlError(e.data)
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [onHtmlError])
+
+  // Scroll console to show error card top or latest output cleanly
+  useEffect(() => {
+    if (activeTab !== 'console') return
+    const latest = runs.length > 0 ? runs[runs.length - 1] : null
+    if (latest && latest.status === 'error' && lastRunRef.current) {
+      lastRunRef.current.scrollIntoView({ block: 'start' })
+    } else if (streamEndRef.current) {
+      streamEndRef.current.scrollIntoView({ block: 'end' })
+    }
+  }, [runs, activeTab])
 
   const handleResizeStart = (e) => {
     e.preventDefault()
@@ -64,12 +195,16 @@ export default function OutputPanel({
       setPanelHeight(maxH)
       setIsMaximized(true)
     } else {
-      setPanelHeight(prevHeightRef.current || 240)
+      setPanelHeight(prevHeightRef.current || 260)
       setIsMaximized(false)
     }
   }
 
   if (!isOpen) return null
+
+  const lastRun = runs.length > 0 ? runs[runs.length - 1] : null
+  const latestHtmlErrorCount = lastRun?.items?.filter((it) => it.kind === 'error').length || 0
+  const inputLineCount = stdinText === '' ? 0 : (stdinText.endsWith('\n') ? stdinText.slice(0, -1) : stdinText).split(/\r?\n/).length
 
   return (
     <div className="output-panel" style={{ height: `${panelHeight}px` }}>
@@ -110,7 +245,10 @@ export default function OutputPanel({
               className={`output-tab-btn ${activeTab === 'console' ? 'active' : ''}`}
               onClick={() => setActiveTab('console')}
             >
-              Console ({outputs.length})
+              Console ({runs.length})
+              {latestHtmlErrorCount > 0 && lastRun?.status === 'error' && (
+                <span className="output-tab-error-dot" aria-label="Has errors" />
+              )}
             </button>
             {isHtmlMode && (
               <button
@@ -175,7 +313,20 @@ export default function OutputPanel({
       <div className="output-body">
         {activeTab === 'preview' && isHtmlMode ? (
           <div className="preview-container">
+            {latestHtmlErrorCount > 0 && (
+              <div className="preview-error-banner">
+                <span>Script error detected in preview.</span>
+                <button
+                  type="button"
+                  className="preview-error-link"
+                  onClick={() => setActiveTab('console')}
+                >
+                  View in Console
+                </button>
+              </div>
+            )}
             <iframe
+              ref={iframeRef}
               title="HTML Preview"
               srcDoc={htmlContent}
               sandbox="allow-scripts"
@@ -184,24 +335,104 @@ export default function OutputPanel({
           </div>
         ) : (
           <div className="console-stream">
-            {outputs.length === 0 ? (
+            {runs.length === 0 ? (
               <div className="console-empty">
                 No output to display.<span className="signature-caret" aria-hidden="true" />
               </div>
             ) : (
-              outputs.map((line) => {
-                let lineClass = 'console-line stdout'
-                if (line.type === 'stderr') lineClass = 'console-line stderr'
-                if (line.type === 'status') lineClass = 'console-line status'
-
-                return (
-                  <div key={line.id} className={lineClass}>
-                    <span className="console-time">{line.timestamp}</span>
-                    <pre className="console-text">{line.text}</pre>
+              runs.map((run, runIdx) => (
+                <div
+                  key={run.id}
+                  ref={runIdx === runs.length - 1 ? lastRunRef : null}
+                  className="run-block"
+                >
+                  <div className="run-header">
+                    <span className="run-file">{run.fileName}</span>
+                    <span className="run-time">{run.startTime}</span>
+                    <span className={`run-status-chip status-${run.status}`}>
+                      {STATUS_LABELS[run.status] || run.status}
+                    </span>
+                    {run.duration !== null && run.duration !== undefined && (
+                      <span className="run-duration">{run.duration}s</span>
+                    )}
                   </div>
-                )
-              })
+
+                  <div className="run-items">
+                    {run.items.map((item) => {
+                      if (item.kind === 'error' && item.parsedError) {
+                        return (
+                          <ErrorBlock
+                            key={item.id}
+                            error={item.parsedError}
+                            onJumpToLocation={onJumpToLocation}
+                          />
+                        )
+                      }
+
+                      if (item.kind === 'stdout') {
+                        return (
+                          <div key={item.id} className="console-line stdout">
+                            <pre className="console-text">
+                              {item.text}
+                              {item.echo !== undefined && item.echo !== null && (
+                                <span className="console-stdin-echo">{item.echo}</span>
+                              )}
+                            </pre>
+                          </div>
+                        )
+                      }
+
+                      if (item.kind === 'stderr') {
+                        return (
+                          <div key={item.id} className="console-line stderr">
+                            <pre className="console-text">{item.text}</pre>
+                          </div>
+                        )
+                      }
+
+                      return (
+                        <div key={item.id} className="console-line status">
+                          <pre className="console-text">{item.text}</pre>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))
             )}
+            <div ref={streamEndRef} />
+          </div>
+        )}
+      </div>
+
+      {/* Collapsible Input section for Python input() */}
+      <div className="output-input-section">
+        <button
+          type="button"
+          className="output-input-toggle"
+          onClick={() => setIsInputOpen((prev) => !prev)}
+          aria-expanded={isInputOpen}
+        >
+          {isInputOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          <span>Input</span>
+          {inputLineCount > 0 && (
+            <span className="output-input-count">{inputLineCount} {inputLineCount === 1 ? 'line' : 'lines'}</span>
+          )}
+        </button>
+        {isInputOpen && (
+          <div className="output-input-body">
+            <label className="output-input-label" htmlFor="offcode-stdin-input">
+              Input, one value per line
+            </label>
+            <textarea
+              id="offcode-stdin-input"
+              className="output-input-textarea"
+              rows={3}
+              value={stdinText}
+              onChange={(e) => onChangeStdinText && onChangeStdinText(e.target.value)}
+              placeholder="Enter values for Python input(), one per line..."
+              spellCheck={false}
+            />
           </div>
         )}
       </div>
@@ -211,8 +442,8 @@ export default function OutputPanel({
         <span className="output-footer-status">
           {isRunning
             ? 'Executing…'
-            : outputs.length > 0
-            ? `Process finished at ${outputs[outputs.length - 1]?.timestamp || ''}`
+            : lastRun
+            ? `${lastRun.fileName} — ${STATUS_LABELS[lastRun.status] || lastRun.status}${lastRun.duration ? ` (${lastRun.duration}s)` : ''}`
             : 'Console ready'}
           {footerNote ? ` • ${footerNote}` : ''}
         </span>

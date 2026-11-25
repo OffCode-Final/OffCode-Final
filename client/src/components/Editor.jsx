@@ -1,8 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { EditorState, Compartment } from '@codemirror/state'
+import { EditorState, Compartment, StateField, StateEffect, RangeSet } from '@codemirror/state'
 import {
   EditorView,
+  Decoration,
+  WidgetType,
+  ViewPlugin,
+  GutterMarker,
+  gutter,
   drawSelection,
   lineNumbers,
   highlightActiveLineGutter,
@@ -23,12 +28,19 @@ import {
   StreamLanguage
 } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
-import { autocompletion, acceptCompletion, closeBrackets } from '@codemirror/autocomplete'
-import { yCollab, yUndoManagerKeymap } from 'y-codemirror.next'
+import {
+  autocompletion,
+  acceptCompletion,
+  closeBrackets,
+  closeBracketsKeymap,
+  completionStatus,
+  selectedCompletion
+} from '@codemirror/autocomplete'
+import { yCollab, yUndoManagerKeymap, ySyncAnnotation } from 'y-codemirror.next'
 import { X, Send, FileCode, Plus, Sliders } from 'lucide-react'
 
 import { python } from '@codemirror/lang-python'
-import { javascript } from '@codemirror/lang-javascript'
+import { javascript, autoCloseTags as jsAutoCloseTags } from '@codemirror/lang-javascript'
 import { html } from '@codemirror/lang-html'
 import { css } from '@codemirror/lang-css'
 import { json } from '@codemirror/lang-json'
@@ -42,6 +54,7 @@ import { ruby } from '@codemirror/legacy-modes/mode/ruby'
 
 import { getUndoManager } from '../utils/undoCache'
 import { getFileExtension } from '../utils/helpers'
+import { collectRoomIdentifiers, createLanguageCompletionSources } from '../utils/completions'
 import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
 import CustomizePopover, { DEFAULT_PREFS, saveEditorPrefs, ensureGoogleFontLoaded } from './CustomizePopover'
 
@@ -549,9 +562,154 @@ const tabSizeCompartment = new Compartment()
 const indentUnitCompartment = new Compartment()
 const bracketMatchingCompartment = new Compartment()
 const closeBracketsCompartment = new Compartment()
+const autoCloseTagsCompartment = new Compartment()
+const suggestionsCompartment = new Compartment()
+const inlinePreviewCompartment = new Compartment()
 const activeLineCompartment = new Compartment()
 const whitespaceCompartment = new Compartment()
 const aiTooltipCompartment = new Compartment()
+
+const setErrorHighlightEffect = StateEffect.define()
+
+class ErrorLineGutterMarker extends GutterMarker {
+  toDOM() {
+    const el = document.createElement('span')
+    el.className = 'cm-error-gutter-dot'
+    el.setAttribute('aria-hidden', 'true')
+    return el
+  }
+}
+const errorGutterMarker = new ErrorLineGutterMarker()
+
+const errorHighlightField = StateField.define({
+  create() {
+    return { line: null, decos: Decoration.none, gutterMarkers: RangeSet.empty }
+  },
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setErrorHighlightEffect)) {
+        const target = effect.value
+        if (!target || !target.line || target.line < 1 || target.line > tr.state.doc.lines) {
+          return { line: null, decos: Decoration.none, gutterMarkers: RangeSet.empty }
+        }
+        const lineInfo = tr.state.doc.line(target.line)
+        return {
+          line: target.line,
+          decos: Decoration.set([Decoration.line({ class: 'cm-error-highlight-line' }).range(lineInfo.from)]),
+          gutterMarkers: RangeSet.of([errorGutterMarker.range(lineInfo.from)])
+        }
+      }
+    }
+
+    if (value.line !== null && tr.docChanged) {
+      const prevLines = tr.startState.doc.lines
+      if (value.line > prevLines) {
+        return { line: null, decos: Decoration.none, gutterMarkers: RangeSet.empty }
+      }
+      const prevLineInfo = tr.startState.doc.line(value.line)
+      let editedHighlightedLine = false
+      tr.changes.iterChangedRanges((fromA, toA) => {
+        if (fromA <= prevLineInfo.to && toA >= prevLineInfo.from) {
+          editedHighlightedLine = true
+        }
+      })
+      if (editedHighlightedLine) {
+        return { line: null, decos: Decoration.none, gutterMarkers: RangeSet.empty }
+      }
+      const mappedPos = tr.changes.mapPos(prevLineInfo.from, 1)
+      const newLineInfo = tr.newDoc.lineAt(mappedPos)
+      return {
+        line: newLineInfo.number,
+        decos: Decoration.set([Decoration.line({ class: 'cm-error-highlight-line' }).range(newLineInfo.from)]),
+        gutterMarkers: RangeSet.of([errorGutterMarker.range(newLineInfo.from)])
+      }
+    }
+
+    return value
+  },
+  provide: (f) => [
+    EditorView.decorations.from(f, (v) => v.decos),
+    gutter({
+      class: 'cm-error-gutter',
+      markers: (view) => view.state.field(f).gutterMarkers
+    })
+  ]
+})
+
+class InlineGhostWidget extends WidgetType {
+  constructor(text) {
+    super()
+    this.text = text
+  }
+  eq(other) {
+    return other.text === this.text
+  }
+  toDOM() {
+    const span = document.createElement('span')
+    span.className = 'cm-inline-ghost'
+    span.setAttribute('aria-hidden', 'true')
+    span.textContent = this.text
+    return span
+  }
+  ignoreEvent() {
+    return true
+  }
+}
+
+function computeInlineGhostDecorations(view) {
+  const { state } = view
+  if (view.composing) return Decoration.none
+  if (!state.selection.main.empty) return Decoration.none
+  if (completionStatus(state) !== 'active') return Decoration.none
+
+  const sel = selectedCompletion(state)
+  if (!sel || !sel.label) return Decoration.none
+
+  const head = state.selection.main.head
+  const line = state.doc.lineAt(head)
+  const before = line.text.slice(0, head - line.from)
+
+  const m = before.match(/([<#]\??[A-Za-z_$][\w$!.:-]*|[A-Za-z_$][\w$!.:-]*)$/)
+  if (!m) return Decoration.none
+
+  let typed = m[1]
+  if (typed.startsWith('<') && !typed.startsWith('<?') && !sel.label.startsWith('<')) {
+    typed = typed.slice(1)
+  }
+  if (!typed) return Decoration.none
+
+  const label = sel.label
+  if (!label.toLowerCase().startsWith(typed.toLowerCase())) return Decoration.none
+  const remainder = label.slice(typed.length)
+  if (!remainder) return Decoration.none
+
+  return Decoration.set([
+    Decoration.widget({
+      widget: new InlineGhostWidget(remainder),
+      side: 1
+    }).range(head)
+  ])
+}
+
+function createInlinePreviewExtension() {
+  return ViewPlugin.fromClass(
+    class {
+      constructor() {
+        this.decorations = Decoration.none
+      }
+      update(update) {
+        if (update.transactions.some((tr) => tr.annotation(ySyncAnnotation))) {
+          this.decorations = Decoration.none
+          return
+        }
+        this.decorations = computeInlineGhostDecorations(update.view)
+      }
+    },
+    {
+      decorations: (v) => v.decorations
+    }
+  )
+}
 
 function createAiTooltipExtension({
   onImproveWithAi,
@@ -773,9 +931,12 @@ export default function Editor({
   onSelectTab,
   onCloseTab,
   ytext,
+  workspace = null,
   awareness,
   remoteUsersViewingThisFile,
   targetScrollLine,
+  errorHighlight = null,
+  clearErrorHighlightSeq = 0,
   onUserInteraction,
   onCursorChange,
   readOnly = false,
@@ -806,9 +967,30 @@ export default function Editor({
   const localPointerRef = useRef(null)
   const [scrollerNode, setScrollerNode] = useState(null)
   const typingTimerRef = useRef(null)
+  const errorHighlightTimerRef = useRef(null)
+  const roomWordsCacheRef = useRef({ key: '', time: 0, words: [] })
+
+  const getRoomCompletions = useCallback(() => {
+    if (!workspace) return []
+    const now = Date.now()
+    const key = `${activeFile || ''}:${openFiles.join(',')}`
+    if (roomWordsCacheRef.current.key === key && now - roomWordsCacheRef.current.time < 2500) {
+      return roomWordsCacheRef.current.words
+    }
+    const words = collectRoomIdentifiers(openFiles, activeFile, (name) => {
+      try {
+        const t = workspace.getText(name)
+        return t ? t.toString() : ''
+      } catch (_) {
+        return ''
+      }
+    })
+    roomWordsCacheRef.current = { key, time: now, words }
+    return words
+  }, [workspace, openFiles, activeFile])
 
   // Language extension selector supporting all requested languages
-  const getLanguageSupport = (fileName) => {
+  const getLanguageSupport = (fileName, autoClose = true) => {
     const ext = getFileExtension(fileName)
     switch (ext) {
       case 'py':
@@ -822,7 +1004,7 @@ export default function Editor({
         return javascript({ jsx: true, typescript: true })
       case 'html':
       case 'htm':
-        return html()
+        return html({ autoCloseTags: Boolean(autoClose) })
       case 'css':
         return css()
       case 'json':
@@ -850,6 +1032,15 @@ export default function Editor({
       default:
         return []
     }
+  }
+
+  const getAutoCloseTagsExtension = (fileName, enabled) => {
+    if (!enabled) return []
+    const ext = getFileExtension(fileName)
+    if (['js', 'jsx', 'mjs', 'ts', 'tsx'].includes(ext)) {
+      return jsAutoCloseTags
+    }
+    return []
   }
 
   const [zoomToast, setZoomToast] = useState(null)
@@ -905,6 +1096,10 @@ export default function Editor({
       awareness.setLocalStateField('currentFile', activeFile)
     }
 
+    const activeExt = getFileExtension(activeFile)
+    const isEditable = !readOnly && !isStopped
+    const completionSources = createLanguageCompletionSources(activeExt, getRoomCompletions)
+
     // Extensions list
     const extensions = [
       lineNumbersCompartment.of(
@@ -920,6 +1115,7 @@ export default function Editor({
             })
           : []
       ),
+      errorHighlightField,
       highlightActiveLineGutter(),
       foldGutterCompartment.of(editorPrefs.foldGutter ? foldGutter() : []),
       bracketMatchingCompartment.of(editorPrefs.bracketMatching ? bracketMatching() : []),
@@ -928,19 +1124,36 @@ export default function Editor({
       tabSizeCompartment.of(EditorState.tabSize.of(editorPrefs.tabSize || 4)),
       indentUnitCompartment.of(indentUnit.of(' '.repeat(editorPrefs.tabSize || 4))),
       closeBracketsCompartment.of(editorPrefs.autoCloseBrackets ? closeBrackets() : []),
+      autoCloseTagsCompartment.of(getAutoCloseTagsExtension(activeFile, editorPrefs.autoCloseBrackets)),
       whitespaceCompartment.of(editorPrefs.showWhitespace ? highlightWhitespace() : []),
       wordWrapCompartment.of(editorPrefs.wordWrap ? EditorView.lineWrapping : []),
       themeCompartment.of(getEditorTheme(theme, editorPrefs, currentUserColor)),
       syntaxCompartment.of(getSyntaxTheme(theme, editorPrefs.syntaxTheme)),
       drawSelectionCompartment.of(drawSelection({ cursorBlinkRate: 0 })),
-      getLanguageSupport(activeFile),
+      getLanguageSupport(activeFile, editorPrefs.autoCloseBrackets),
+      EditorState.languageData.of(() =>
+        completionSources.map((source) => ({ autocomplete: source }))
+      ),
       placeholder('Start typing, or press Ctrl+Enter to run'),
-      EditorState.readOnly.of(Boolean(readOnly || isStopped)),
-      EditorView.editable.of(!readOnly && !isStopped),
+      EditorState.readOnly.of(!isEditable),
+      EditorView.editable.of(isEditable),
       EditorView.contentAttributes.of({ tabindex: '0' }),
-      autocompletion({ activateOnTyping: true }),
-      keymap.of((readOnly || isStopped) ? defaultKeymap : [{ key: 'Tab', run: acceptCompletion }, indentWithTab, ...yUndoManagerKeymap, ...defaultKeymap]),
-      yCollab(ytext, awareness, { undoManager: (readOnly || isStopped) ? false : fileUndoManager }),
+      suggestionsCompartment.of(
+        isEditable && editorPrefs.suggestions !== false
+          ? autocompletion({ activateOnTyping: true })
+          : []
+      ),
+      inlinePreviewCompartment.of(
+        isEditable && editorPrefs.suggestions !== false && editorPrefs.inlinePreview !== false
+          ? createInlinePreviewExtension()
+          : []
+      ),
+      keymap.of(
+        !isEditable
+          ? defaultKeymap
+          : [{ key: 'Tab', run: acceptCompletion }, indentWithTab, ...closeBracketsKeymap, ...yUndoManagerKeymap, ...defaultKeymap]
+      ),
+      yCollab(ytext, awareness, { undoManager: !isEditable ? false : fileUndoManager }),
       userChangesCompartment.of(
         createUserChangesExtension({
           ytext,
@@ -1198,6 +1411,17 @@ export default function Editor({
           indentUnitCompartment.reconfigure(indentUnit.of(' '.repeat(editorPrefs.tabSize || 4))),
           bracketMatchingCompartment.reconfigure(editorPrefs.bracketMatching ? bracketMatching() : []),
           closeBracketsCompartment.reconfigure(editorPrefs.autoCloseBrackets ? closeBrackets() : []),
+          autoCloseTagsCompartment.reconfigure(getAutoCloseTagsExtension(activeFile, editorPrefs.autoCloseBrackets)),
+          suggestionsCompartment.reconfigure(
+            !readOnly && !isStopped && editorPrefs.suggestions !== false
+              ? autocompletion({ activateOnTyping: true })
+              : []
+          ),
+          inlinePreviewCompartment.reconfigure(
+            !readOnly && !isStopped && editorPrefs.suggestions !== false && editorPrefs.inlinePreview !== false
+              ? createInlinePreviewExtension()
+              : []
+          ),
           activeLineCompartment.reconfigure(editorPrefs.highlightActiveLine ? highlightActiveLine() : []),
           whitespaceCompartment.reconfigure(editorPrefs.showWhitespace ? highlightWhitespace() : [])
         ]
@@ -1221,7 +1445,7 @@ export default function Editor({
     return () => {
       cancelled = true
     }
-  }, [theme, editorPrefs, currentUserColor])
+  }, [theme, editorPrefs, currentUserColor, activeFile, readOnly, isStopped])
 
   // Broadcast local caret and pointer style/color over awareness
   useEffect(() => {
@@ -1300,6 +1524,47 @@ export default function Editor({
       } catch (_) {}
     }
   }, [targetScrollLine])
+
+  // Jump to error line and apply temporary local highlight (clears on edit, next run, or timeout)
+  useEffect(() => {
+    if (!errorHighlight || !errorHighlight.line || errorHighlight.file !== activeFile) return
+    const view = viewRef.current
+    if (!view) return
+
+    try {
+      const lineCount = view.state.doc.lines
+      const lineNum = Math.min(Math.max(1, errorHighlight.line), lineCount)
+      const line = view.state.doc.line(lineNum)
+      const colOffset = Math.max(0, (errorHighlight.col || 1) - 1)
+      const anchor = Math.min(line.to, line.from + colOffset)
+      view.dispatch({
+        selection: { anchor },
+        scrollIntoView: true,
+        effects: setErrorHighlightEffect.of({ line: lineNum })
+      })
+      view.focus()
+
+      if (errorHighlightTimerRef.current) clearTimeout(errorHighlightTimerRef.current)
+      errorHighlightTimerRef.current = setTimeout(() => {
+        if (viewRef.current && !viewRef.current.isDestroyed) {
+          viewRef.current.dispatch({ effects: setErrorHighlightEffect.of(null) })
+        }
+      }, 4500)
+    } catch (_) {}
+  }, [errorHighlight, activeFile, ytext])
+
+  // Clear error highlight on next run
+  useEffect(() => {
+    if (errorHighlightTimerRef.current) {
+      clearTimeout(errorHighlightTimerRef.current)
+      errorHighlightTimerRef.current = null
+    }
+    if (viewRef.current && !viewRef.current.isDestroyed) {
+      try {
+        viewRef.current.dispatch({ effects: setErrorHighlightEffect.of(null) })
+      } catch (_) {}
+    }
+  }, [clearErrorHighlightSeq])
 
   const getTabLanguageDot = (filename) => {
     const ext = getFileExtension(filename)
