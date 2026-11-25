@@ -384,6 +384,20 @@ export function getDirname(filePath) {
   return normalized.slice(0, lastSlash)
 }
 
+const HTML_ERROR_HANDLER_TAG =
+  '<script>window.onerror=function(m,s,l,c,e){try{window.parent.postMessage({type:"offcode-html-error",message:String(m),line:l||null,col:c||null,stack:e&&e.stack?String(e.stack):""},"*")}catch(_){}}</script>'
+
+function injectHtmlErrorHandler(htmlStr) {
+  if (!htmlStr) return HTML_ERROR_HANDLER_TAG
+  if (/<head[^>]*>/i.test(htmlStr)) {
+    return htmlStr.replace(/<head[^>]*>/i, (m) => m + HTML_ERROR_HANDLER_TAG)
+  }
+  if (/<html[^>]*>/i.test(htmlStr)) {
+    return htmlStr.replace(/<html[^>]*>/i, (m) => m + '<head>' + HTML_ERROR_HANDLER_TAG + '</head>')
+  }
+  return HTML_ERROR_HANDLER_TAG + htmlStr
+}
+
 /**
  * Resolves relative <link rel="stylesheet" href="..."> and <script src="..."></script>
  * tags in HTML content by replacing them with inline <style> and <script> tags
@@ -392,7 +406,7 @@ export function getDirname(filePath) {
  */
 export function resolveHtmlAssets(rawHtml, htmlFileName, getFileContent) {
   if (!rawHtml || typeof rawHtml !== 'string') {
-    return { html: rawHtml || '', missingFiles: [] }
+    return { html: injectHtmlErrorHandler(rawHtml || ''), missingFiles: [] }
   }
 
   const baseDir = getDirname(htmlFileName)
@@ -445,6 +459,7 @@ export function resolveHtmlAssets(rawHtml, htmlFileName, getFileContent) {
               inlineScript.setAttribute(attr.name, attr.value)
             }
           }
+          inlineScript.setAttribute('data-offcode-inlined', resolved)
           inlineScript.textContent = content
           script.replaceWith(inlineScript)
         } else {
@@ -454,7 +469,7 @@ export function resolveHtmlAssets(rawHtml, htmlFileName, getFileContent) {
 
       const hasDocType = /<!DOCTYPE\s+html/i.test(rawHtml)
       const htmlResult = (hasDocType ? '<!DOCTYPE html>\n' : '') + doc.documentElement.outerHTML
-      return { html: htmlResult, missingFiles }
+      return { html: injectHtmlErrorHandler(htmlResult), missingFiles }
     } catch (err) {
       console.warn('DOMParser failed in resolveHtmlAssets, falling back to regex:', err)
     }
@@ -499,14 +514,14 @@ export function resolveHtmlAssets(rawHtml, htmlFileName, getFileContent) {
       if (content !== null && content !== undefined) {
         const remainingAttrs = `${beforeSrc} ${afterSrc}`.trim()
         const attrStr = remainingAttrs ? ` ${remainingAttrs}` : ''
-        return `<script${attrStr}>\n${content}\n</script>`
+        return `<script${attrStr} data-offcode-inlined="${resolved}">\n${content}\n</script>`
       }
       missingFiles.push({ path: resolved, raw: src })
       return match
     }
   )
 
-  return { html: processedHtml, missingFiles }
+  return { html: injectHtmlErrorHandler(processedHtml), missingFiles }
 }
 
 

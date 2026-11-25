@@ -38,6 +38,7 @@ import AiKeyModal from './components/AiKeyModal'
 import AiReviewModal from './components/AiReviewModal'
 import { DEFAULT_PREFS } from './components/CustomizePopover'
 import { runRemoteCode, isOnlineLanguage } from './run/remote.js'
+import { parsePythonTraceback, parseJsError, parseHtmlError } from './utils/errorParser'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -55,10 +56,15 @@ export default function App() {
   const [pointersReceivedCount, setPointersReceivedCount] = useState(0)
 
   // Code Execution & Output State
-  const [outputs, setOutputs] = useState([])
+  const [runs, setRuns] = useState([])
   const [isOutputOpen, setIsOutputOpen] = useState(false)
   const [isRunning, setIsRunning] = useState(false)
   const [htmlContent, setHtmlContent] = useState('')
+  const [stdinText, setStdinText] = useState('')
+  const [errorHighlight, setErrorHighlight] = useState(null)
+  const [clearErrorHighlightSeq, setClearErrorHighlightSeq] = useState(0)
+  const activeRunIdRef = useRef(null)
+  const htmlRunContextRef = useRef({ rawHtml: '', resolvedHtml: '', fileName: '' })
 
   // Live Cursors & Follow State
   const [followingUserId, setFollowingUserId] = useState(null)
@@ -306,18 +312,58 @@ export default function App() {
     setEventsLog((prev) => [entry, ...prev].slice(0, 50))
   }, [])
 
-  // Append line to Output Panel
-  const addOutput = useCallback((type, text) => {
-    setOutputs((prev) => [
+  // Run helpers for structured OutputPanel
+  const startRun = useCallback((fileName) => {
+    const id = `${Date.now()}-${Math.random()}`
+    activeRunIdRef.current = id
+    setClearErrorHighlightSeq((s) => s + 1)
+    setErrorHighlight(null)
+    setRuns((prev) => [
       ...prev,
       {
-        id: `${Date.now()}-${Math.random()}`,
-        type,
-        text,
-        timestamp: new Date().toLocaleTimeString()
+        id,
+        fileName,
+        startTime: new Date().toLocaleTimeString(),
+        status: 'running',
+        duration: null,
+        items: []
       }
     ])
+    return id
   }, [])
+
+  const appendRunItem = useCallback((runId, item) => {
+    const itemWithId = { id: `${Date.now()}-${Math.random()}`, ...item }
+    setRuns((prev) =>
+      prev.map((r) => (r.id === runId ? { ...r, items: [...r.items, itemWithId] } : r))
+    )
+  }, [])
+
+  const finishRun = useCallback((runId, status, duration = null) => {
+    setRuns((prev) =>
+      prev.map((r) => (r.id === runId ? { ...r, status, duration } : r))
+    )
+  }, [])
+
+  const handleJumpToError = useCallback(({ fileName, line, col }) => {
+    if (!fileName || !line) return
+    if (files.includes(fileName)) {
+      if (activeFile !== fileName) {
+        setActiveFile(fileName)
+      }
+      setOpenFiles((prev) => (prev.includes(fileName) ? prev : [...prev, fileName]))
+    }
+    setErrorHighlight({ file: fileName, line, col: col || 1, seq: Date.now() })
+  }, [files, activeFile])
+
+  const handleHtmlError = useCallback((errPayload) => {
+    const runId = activeRunIdRef.current
+    if (!runId) return
+    const { rawHtml, resolvedHtml, fileName } = htmlRunContextRef.current
+    const parsedError = parseHtmlError(errPayload, rawHtml, resolvedHtml, fileName)
+    appendRunItem(runId, { kind: 'error', parsedError })
+    finishRun(runId, 'error', null)
+  }, [appendRunItem, finishRun])
 
   // Display user-facing toast notification
   const showToast = useCallback((text, type = 'info') => {
@@ -1307,6 +1353,7 @@ export default function App() {
 
   // Stop Code Execution
   const handleStopCode = useCallback(() => {
+    const runId = activeRunIdRef.current
     if (jsTimeoutRef.current) {
       clearTimeout(jsTimeoutRef.current)
       jsTimeoutRef.current = null
@@ -1316,7 +1363,10 @@ export default function App() {
       remoteAbortControllerRef.current.abort()
       remoteAbortControllerRef.current = null
       setIsRunning(false)
-      addOutput('stderr', 'Execution was stopped.')
+      if (runId) {
+        appendRunItem(runId, { kind: 'stderr', text: 'Stopped.' })
+        finishRun(runId, 'stopped', null)
+      }
       logEvent('run', 'Online execution was stopped by user')
     }
 
@@ -1324,7 +1374,10 @@ export default function App() {
       pythonWorkerRef.current.terminate()
       pythonWorkerRef.current = null
       setIsRunning(false)
-      addOutput('stderr', 'Execution terminated by user.')
+      if (runId) {
+        appendRunItem(runId, { kind: 'stderr', text: 'Stopped.' })
+        finishRun(runId, 'stopped', null)
+      }
       logEvent('run', 'Python execution terminated by user')
     }
 
@@ -1332,22 +1385,26 @@ export default function App() {
       jsWorkerRef.current.terminate()
       jsWorkerRef.current = null
       setIsRunning(false)
-      addOutput('stderr', 'Execution terminated by user.')
+      if (runId) {
+        appendRunItem(runId, { kind: 'stderr', text: 'Stopped.' })
+        finishRun(runId, 'stopped', null)
+      }
       logEvent('run', 'Code execution terminated by user')
     }
-  }, [addOutput, logEvent])
+  }, [appendRunItem, finishRun, logEvent])
 
   // Run Code
   const handleRunCode = useCallback(() => {
     if (!activeFile || !activeYText) return
 
-    const ext = getFileExtension(activeFile)
+    const runFile = activeFile
+    const ext = getFileExtension(runFile)
     const code = activeYText.toString()
 
     setIsOutputOpen(true)
     setIsRunning(true)
-    addOutput('status', `--- Running ${activeFile} ---`)
-    logEvent('run', `Executed "${activeFile}"`)
+    const runId = startRun(runFile)
+    logEvent('run', `Executed "${runFile}"`)
 
     // 1. Python Execution via Pyodide Web Worker (Offline)
     if (ext === 'py') {
@@ -1358,29 +1415,43 @@ export default function App() {
       const worker = new Worker('/python-worker.js', { type: 'module' })
       pythonWorkerRef.current = worker
 
+      const stdinLines = stdinText === ''
+        ? []
+        : (stdinText.endsWith('\n') ? stdinText.slice(0, -1) : stdinText)
+            .replace(/\r\n/g, '\n')
+            .split('\n')
+
       worker.onmessage = (e) => {
-        const { type, data, message, duration } = e.data
+        if (activeRunIdRef.current !== runId) return
+        const { type, data, message, duration, echo, lineOffset } = e.data
         if (type === 'stdout') {
-          addOutput('stdout', data)
+          appendRunItem(runId, { kind: 'stdout', text: data, echo })
         } else if (type === 'stderr') {
-          addOutput('stderr', data)
+          appendRunItem(runId, { kind: 'stderr', text: data })
         } else if (type === 'status') {
-          addOutput('status', data || message)
+          appendRunItem(runId, { kind: 'status', text: data || message })
         } else if (type === 'done') {
+          pythonWorkerRef.current = null
           setIsRunning(false)
-          addOutput('status', `Finished in ${duration}s`)
+          finishRun(runId, 'success', duration)
         } else if (type === 'error') {
+          pythonWorkerRef.current = null
           setIsRunning(false)
-          addOutput('stderr', `Error: ${data || message}`)
+          const parsedError = parsePythonTraceback(data || message, code, runFile, lineOffset || 0)
+          appendRunItem(runId, { kind: 'error', parsedError })
+          finishRun(runId, 'error', null)
         }
       }
 
       worker.onerror = (err) => {
+        if (activeRunIdRef.current !== runId) return
+        pythonWorkerRef.current = null
         setIsRunning(false)
-        addOutput('stderr', `Worker Error: ${err.message}`)
+        appendRunItem(runId, { kind: 'stderr', text: `Worker Error: ${err.message}` })
+        finishRun(runId, 'error', null)
       }
 
-      worker.postMessage({ type: 'run', code })
+      worker.postMessage({ type: 'run', code, stdinLines })
       return
     }
 
@@ -1396,33 +1467,49 @@ export default function App() {
       jsWorkerRef.current = worker
 
       jsTimeoutRef.current = setTimeout(() => {
+        if (activeRunIdRef.current !== runId) return
         worker.terminate()
+        jsWorkerRef.current = null
         setIsRunning(false)
-        addOutput('stderr', 'Error: Execution timed out (exceeded 10 seconds).')
+        appendRunItem(runId, { kind: 'stderr', text: 'Stopped after 10 seconds. Check for an infinite loop.' })
+        finishRun(runId, 'timed_out', '10.000')
       }, 10000)
 
       worker.onmessage = (e) => {
-        const { type, data, duration, isTs } = e.data
+        if (activeRunIdRef.current !== runId) return
+        const { type, data, duration } = e.data
         if (type === 'stdout') {
-          addOutput('stdout', data)
+          appendRunItem(runId, { kind: 'stdout', text: data })
         } else if (type === 'stderr') {
-          addOutput('stderr', data)
+          appendRunItem(runId, { kind: 'stderr', text: data })
         } else if (type === 'done') {
           clearTimeout(jsTimeoutRef.current)
+          jsWorkerRef.current = null
           setIsRunning(false)
-          const suffix = isTs ? ' (Types are not checked.)' : ''
-          addOutput('status', `Finished in ${duration}s${suffix}`)
+          finishRun(runId, 'success', duration)
         } else if (type === 'error') {
           clearTimeout(jsTimeoutRef.current)
+          jsWorkerRef.current = null
           setIsRunning(false)
-          addOutput('stderr', `Error: ${data}`)
+          const parsedError = parseJsError(e.data, code, runFile)
+          appendRunItem(runId, { kind: 'error', parsedError })
+          finishRun(runId, 'error', null)
         }
       }
 
       worker.onerror = (err) => {
+        if (activeRunIdRef.current !== runId) return
         clearTimeout(jsTimeoutRef.current)
+        jsWorkerRef.current = null
         setIsRunning(false)
-        addOutput('stderr', `Worker Error: ${err.message}`)
+        const parsedError = parseJsError({
+          errorName: 'Error',
+          errorMessage: err.message,
+          line: err.lineno || null,
+          col: err.colno || null
+        }, code, runFile)
+        appendRunItem(runId, { kind: 'error', parsedError })
+        finishRun(runId, 'error', null)
       }
 
       worker.postMessage({
@@ -1439,7 +1526,8 @@ export default function App() {
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) {
         setIsRunning(false)
-        addOutput('stderr', 'Running this language needs internet.')
+        appendRunItem(runId, { kind: 'stderr', text: 'Running this language needs internet.' })
+        finishRun(runId, 'error', null)
         return
       }
 
@@ -1468,15 +1556,17 @@ export default function App() {
           clearTimeout(timeoutId)
           remoteAbortControllerRef.current = null
           setIsRunning(false)
-          if (result.stdout) addOutput('stdout', result.stdout)
-          if (result.stderr) addOutput('stderr', result.stderr)
-          addOutput('status', `Finished in ${result.duration}s (Ran online)`)
+          if (result.stdout) appendRunItem(runId, { kind: 'stdout', text: result.stdout })
+          if (result.stderr) appendRunItem(runId, { kind: 'stderr', text: result.stderr })
+          const failed = Boolean(result.stderr) || (result.status !== undefined && Number(result.status) !== 0)
+          finishRun(runId, failed ? 'error' : 'success', result.duration)
         })
         .catch((err) => {
           clearTimeout(timeoutId)
           remoteAbortControllerRef.current = null
           setIsRunning(false)
-          addOutput('stderr', `Error: ${err.message}`)
+          appendRunItem(runId, { kind: 'stderr', text: `Error: ${err.message}` })
+          finishRun(runId, err.message === 'Execution was stopped.' ? 'stopped' : 'error', null)
         })
       return
     }
@@ -1489,24 +1579,27 @@ export default function App() {
         return text ? text.toString() : null
       }
 
-      const { html: resolvedHtml, missingFiles } = resolveHtmlAssets(code, activeFile, getFileContent)
+      const { html: resolvedHtml, missingFiles } = resolveHtmlAssets(code, runFile, getFileContent)
+      htmlRunContextRef.current = { rawHtml: code, resolvedHtml, fileName: runFile }
       setHtmlContent(resolvedHtml)
       setIsRunning(false)
 
       if (missingFiles.length > 0) {
         missingFiles.forEach((f) => {
-          addOutput('stderr', `${f.raw} not found in this room`)
+          appendRunItem(runId, { kind: 'stderr', text: `${f.raw} not found in this room` })
         })
       }
-      addOutput('status', `Live HTML preview loaded for ${activeFile}`)
-      logEvent('run', `Opened HTML live preview for "${activeFile}"`)
+      appendRunItem(runId, { kind: 'status', text: `Live HTML preview loaded for ${runFile}` })
+      finishRun(runId, missingFiles.length > 0 ? 'error' : 'success', null)
+      logEvent('run', `Opened HTML live preview for "${runFile}"`)
       return
     }
 
-    // 4. Other languages
+    // 5. Other languages
     setIsRunning(false)
-    addOutput('stderr', `Running ${ext.toUpperCase()} is not supported offline.`)
-  }, [activeFile, activeYText, addOutput, logEvent, workspace])
+    appendRunItem(runId, { kind: 'stderr', text: `Running ${ext.toUpperCase()} is not supported offline.` })
+    finishRun(runId, 'error', null)
+  }, [activeFile, activeYText, stdinText, startRun, appendRunItem, finishRun, logEvent, workspace])
 
   // Global Keyboard Shortcuts (Ctrl+S for Save, Ctrl+Enter for Run, Ctrl+` for Output toggle)
   useEffect(() => {
@@ -1755,9 +1848,12 @@ export default function App() {
             onCloseTab={handleCloseTab}
             onCreateFile={() => setIsNewFileModalOpen(true)}
             ytext={activeYText}
+            workspace={workspace}
             awareness={workspace.awareness}
             remoteUsersViewingThisFile={remoteUsersInSameFile}
             targetScrollLine={targetScrollLine}
+            errorHighlight={errorHighlight}
+            clearErrorHighlightSeq={clearErrorHighlightSeq}
             onUserInteraction={handleUserInteraction}
             onCursorChange={setCursorPos}
             readOnly={isMainReadOnly || isCurrentUserStopped}
@@ -1786,8 +1882,8 @@ export default function App() {
           <OutputPanel
             isOpen={isOutputOpen}
             onClose={() => setIsOutputOpen(false)}
-            outputs={outputs}
-            onClear={() => setOutputs([])}
+            runs={runs}
+            onClear={() => setRuns([])}
             isRunning={isRunning}
             onStop={handleStopCode}
             htmlContent={htmlContent}
@@ -1795,6 +1891,10 @@ export default function App() {
             showOnlineNotice={showOnlineNotice}
             onDismissOnlineNotice={handleDismissOnlineNotice}
             footerNote={outputFooterNote}
+            onJumpToLocation={handleJumpToError}
+            onHtmlError={handleHtmlError}
+            stdinText={stdinText}
+            onChangeStdinText={setStdinText}
           />
         </div>
 

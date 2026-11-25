@@ -47,7 +47,9 @@ export const DEFAULT_PREFS = {
 
   // Behavior
   tabSize: 4,
+  suggestions: true,
   autoCloseBrackets: true,
+  inlinePreview: true,
   bracketMatching: true,
   highlightActiveLine: true,
   focusMode: false,
@@ -866,12 +868,35 @@ export default function CustomizePopover({
 
             <div className="customize-toggle-group">
               <label className="customize-toggle-row">
+                <span className="toggle-label">Suggestions</span>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={prefs.suggestions !== false}
+                  onChange={(e) => update({ suggestions: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
                 <span className="toggle-label">Auto-close brackets</span>
                 <input
                   type="checkbox"
                   className="customize-checkbox"
                   checked={Boolean(prefs.autoCloseBrackets)}
                   onChange={(e) => update({ autoCloseBrackets: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <div className="toggle-text-wrap">
+                  <span className="toggle-label">Inline preview</span>
+                  <span className="toggle-hint">Show ghost text for the selected suggestion</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={prefs.inlinePreview !== false}
+                  onChange={(e) => update({ inlinePreview: e.target.checked })}
                 />
               </label>
 
