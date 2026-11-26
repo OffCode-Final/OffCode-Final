@@ -10,9 +10,14 @@ import {
   Upload,
   Info,
   ChevronLeft,
-  Files
+  Files,
+  FileUp,
+  Link2,
+  MoreHorizontal,
+  Unlink
 } from 'lucide-react'
 import { getFileExtension, validateFileName } from '../utils/helpers'
+import { UNSUPPORTED_FS_TOOLTIP } from '../utils/diskLink'
 
 function buildTree(fileList) {
   const root = { name: '', path: '', folders: {}, files: [] }
@@ -52,16 +57,28 @@ export default function Sidebar({
   isStopped = false,
   isHost = false,
   onImportFolder,
+  onOpenFromComputer,
+  onUnlinkFile,
+  linkedFiles = {},
+  fsAccessSupported = true,
   isCollapsed = false,
   onToggleCollapse
 }) {
   const [isCreating, setIsCreating] = useState(false)
   const [newFileName, setNewFileName] = useState('')
   const [fileToDelete, setFileToDelete] = useState(null)
+  const [openRowMenuFile, setOpenRowMenuFile] = useState(null)
   const [isConfirmRemoveAllOpen, setIsConfirmRemoveAllOpen] = useState(false)
   const [error, setError] = useState('')
   const [expandedFolders, setExpandedFolders] = useState(() => new Set())
   const folderInputRef = useRef(null)
+
+  useEffect(() => {
+    if (!openRowMenuFile) return
+    const handleOutside = () => setOpenRowMenuFile(null)
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [openRowMenuFile])
 
   // Expand newly discovered folders by default so all imported files are visible
   useEffect(() => {
@@ -177,6 +194,8 @@ export default function Sidebar({
   const renderFileRow = (filePath, depth = 0) => {
     const isActive = activeFile === filePath
     const displayName = filePath.split('/').pop()
+    const linkedInfo = linkedFiles[filePath] || null
+    const isMenuOpen = openRowMenuFile === filePath
 
     // Find remote users viewing this file
     const remoteViewers = users.filter((u) => !u.isYou && u.currentFile === filePath)
@@ -187,11 +206,20 @@ export default function Sidebar({
         className={`file-row ${isActive ? 'active' : ''}`}
         onClick={() => onSelectFile(filePath)}
         style={{ paddingLeft: `${14 + depth * 14}px` }}
-        title={filePath}
+        title={linkedInfo ? `${filePath} (Linked to ${linkedInfo.diskName})` : filePath}
       >
         <div className="file-row-main">
           {getLanguageDot(filePath)}
           <span className="file-row-name">{displayName}</span>
+          {linkedInfo && (
+            <span
+              className="file-link-badge"
+              title={`Linked to ${linkedInfo.diskName}`}
+              aria-label={`Linked to ${linkedInfo.diskName}`}
+            >
+              <Link2 size={11} strokeWidth={1.75} />
+            </span>
+          )}
 
           {/* Remote presence dots in user colors */}
           {remoteViewers.length > 0 && (
@@ -208,21 +236,58 @@ export default function Sidebar({
           )}
         </div>
 
-        <button
-          type="button"
-          className="btn-delete-row"
-          onClick={(e) => {
-            e.stopPropagation()
-            if (isStopped) return
-            setFileToDelete(filePath)
-          }}
-          disabled={isStopped}
-          style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
-          title={isStopped ? 'Editing stopped by host' : `Delete ${filePath}`}
-          aria-label={isStopped ? 'Editing stopped by host' : `Delete ${filePath}`}
-        >
-          <Trash2 size={13} strokeWidth={1.75} />
-        </button>
+        <div className="file-row-actions" onMouseDown={(e) => e.stopPropagation()}>
+          {linkedInfo && (
+            <div className="file-row-menu-wrap">
+              <button
+                type="button"
+                className="btn-file-row-menu"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setOpenRowMenuFile(isMenuOpen ? null : filePath)
+                }}
+                title={`Options for ${displayName}`}
+                aria-label={`File options for ${displayName}`}
+                aria-expanded={isMenuOpen}
+              >
+                <MoreHorizontal size={13} strokeWidth={1.75} />
+              </button>
+              {isMenuOpen && (
+                <div className="file-row-dropdown" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="file-row-dropdown-item"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setOpenRowMenuFile(null)
+                      if (onUnlinkFile) onUnlinkFile(filePath)
+                    }}
+                  >
+                    <Unlink size={12} strokeWidth={1.75} />
+                    <span>Unlink</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="btn-delete-row"
+            onClick={(e) => {
+              e.stopPropagation()
+              if (isStopped) return
+              setFileToDelete(filePath)
+            }}
+            disabled={isStopped}
+            style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+            title={isStopped ? 'Editing stopped by host' : `Delete ${filePath}`}
+            aria-label={isStopped ? 'Editing stopped by host' : `Delete ${filePath}`}
+          >
+            <Trash2 size={13} strokeWidth={1.75} />
+          </button>
+        </div>
       </div>
     )
   }
@@ -366,6 +431,27 @@ export default function Sidebar({
         <div className="sidebar-header-actions">
           <button
             type="button"
+            className="btn-icon-subtle btn-open-from-computer"
+            onClick={() => {
+              if (isStopped) return
+              if (onOpenFromComputer) onOpenFromComputer()
+            }}
+            disabled={isStopped}
+            style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
+            title={
+              isStopped
+                ? 'Editing stopped by host'
+                : !fsAccessSupported
+                ? UNSUPPORTED_FS_TOOLTIP
+                : 'Open from computer'
+            }
+            aria-label="Open from computer"
+          >
+            <FileUp size={14} strokeWidth={1.75} />
+          </button>
+
+          <button
+            type="button"
             className="btn-icon-subtle btn-open-folder"
             onClick={handleOpenFolderClick}
             disabled={isStopped}
@@ -486,6 +572,17 @@ export default function Sidebar({
                 disabled={isStopped}
               >
                 Open folder
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-secondary btn-sm"
+                onClick={() => {
+                  if (onOpenFromComputer) onOpenFromComputer()
+                }}
+                disabled={isStopped}
+                title={!fsAccessSupported ? UNSUPPORTED_FS_TOOLTIP : 'Open a local file and link it for direct saving'}
+              >
+                Open from computer
               </button>
             </div>
           </div>

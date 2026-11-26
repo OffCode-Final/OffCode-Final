@@ -39,6 +39,18 @@ import AiReviewModal from './components/AiReviewModal'
 import { DEFAULT_PREFS } from './components/CustomizePopover'
 import { runRemoteCode, isOnlineLanguage } from './run/remote.js'
 import { parsePythonTraceback, parseJsError, parseHtmlError } from './utils/errorParser'
+import {
+  isFileSystemAccessSupported,
+  UNSUPPORTED_FS_TOOLTIP,
+  saveLinkedHandle,
+  removeLinkedHandle,
+  clearRoomLinkedHandles,
+  loadRoomLinkedHandles,
+  queryReadWritePermission,
+  ensureReadWritePermission,
+  isDiskFileNonEmpty,
+  writeTextToHandle
+} from './utils/diskLink'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -66,6 +78,15 @@ export default function App() {
   const activeRunIdRef = useRef(null)
   const interactivePyRef = useRef(null)
   const htmlRunContextRef = useRef({ rawHtml: '', resolvedHtml: '', fileName: '' })
+
+  // Local-only Disk File Links & Auto-Save State
+  const [linkedFiles, setLinkedFiles] = useState({})
+  const [pendingLinkConflict, setPendingLinkConflict] = useState(null)
+  const [pendingEmptyOverwrite, setPendingEmptyOverwrite] = useState(null)
+  const [relinkPrompt, setRelinkPrompt] = useState(null)
+  const lastWrittenRef = useRef({})
+  const autoSaveTimersRef = useRef({})
+  const failedAutoSaveRef = useRef(new Set())
 
   // Live Cursors & Follow State
   const [followingUserId, setFollowingUserId] = useState(null)
@@ -428,6 +449,12 @@ export default function App() {
     if (jsTimeoutRef.current) {
       clearTimeout(jsTimeoutRef.current)
     }
+    Object.values(autoSaveTimersRef.current).forEach((t) => clearTimeout(t))
+    autoSaveTimersRef.current = {}
+    lastWrittenRef.current = {}
+    failedAutoSaveRef.current.clear()
+    setLinkedFiles({})
+    setRelinkPrompt(null)
 
     setWorkspace(null)
     setSession(null)
@@ -471,6 +498,7 @@ export default function App() {
       try {
         window.indexedDB.deleteDatabase(`offcode-${currentRoom.trim().toLowerCase()}`)
       } catch (_) {}
+      clearRoomLinkedHandles(currentRoom)
     }
 
     // Wipe all room-specific localStorage keys (chat history timestamps, user data)
@@ -1213,6 +1241,14 @@ export default function App() {
     if (!workspace || isCurrentUserStopped) return
     workspace.deleteFile(fileName)
     removeUndoManager(fileName)
+    if (linkedFiles[fileName]) {
+      setLinkedFiles((prev) => {
+        const next = { ...prev }
+        delete next[fileName]
+        return next
+      })
+      if (session?.roomId) removeLinkedHandle(session.roomId, fileName)
+    }
     const remaining = workspace.listFiles()
     setFiles(remaining)
     setOpenFiles((prev) => prev.filter((f) => f !== fileName))
@@ -1232,12 +1268,14 @@ export default function App() {
       workspace.deleteFile(f)
       removeUndoManager(f)
     }
+    setLinkedFiles({})
+    if (session?.roomId) clearRoomLinkedHandles(session.roomId)
     setFiles([])
     setOpenFiles([])
     setActiveFile(null)
     logEvent('file', 'Removed all files from workspace')
     showToast('Removed all files from workspace.', 'info')
-  }, [workspace, isCurrentUserStopped, removeUndoManager, logEvent, showToast])
+  }, [workspace, session?.roomId, isCurrentUserStopped, removeUndoManager, logEvent, showToast])
 
   // Import folder of files into workspace (one-time copy)
   const handleImportFolder = useCallback(
@@ -1344,12 +1382,259 @@ export default function App() {
     [workspace, isCurrentUserStopped, showToast, logEvent]
   )
 
-  // Save current file to disk
-  const handleSaveCurrentFile = useCallback(() => {
+  // Load persisted local disk file handles for this room
+  useEffect(() => {
+    if (!workspace || !session?.roomId) {
+      setLinkedFiles({})
+      lastWrittenRef.current = {}
+      failedAutoSaveRef.current.clear()
+      return
+    }
+    let cancelled = false
+    loadRoomLinkedHandles(session.roomId).then((loaded) => {
+      if (!cancelled) {
+        setLinkedFiles(loaded || {})
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [workspace, session?.roomId])
+
+  const linkFileToHandle = useCallback(async (fileName, handle, writtenText = undefined) => {
+    if (!fileName || !handle) return
+    const diskName = handle.name || fileName
+    failedAutoSaveRef.current.delete(fileName)
+    setLinkedFiles((prev) => ({
+      ...prev,
+      [fileName]: { handle, diskName }
+    }))
+    if (writtenText !== undefined) {
+      lastWrittenRef.current[fileName] = writtenText
+    }
+    setRelinkPrompt((prev) => (prev && prev.fileName === fileName ? null : prev))
+    if (session?.roomId) {
+      await saveLinkedHandle(session.roomId, fileName, handle)
+    }
+  }, [session?.roomId])
+
+  const handleUnlinkFile = useCallback(async (fileName) => {
+    if (!fileName) return
+    if (autoSaveTimersRef.current[fileName]) {
+      clearTimeout(autoSaveTimersRef.current[fileName])
+      delete autoSaveTimersRef.current[fileName]
+    }
+    delete lastWrittenRef.current[fileName]
+    failedAutoSaveRef.current.delete(fileName)
+    setLinkedFiles((prev) => {
+      const next = { ...prev }
+      delete next[fileName]
+      return next
+    })
+    setRelinkPrompt((prev) => (prev && prev.fileName === fileName ? null : prev))
+    if (session?.roomId) {
+      await removeLinkedHandle(session.roomId, fileName)
+    }
+    showToast(`Unlinked ${fileName}`, 'info')
+  }, [session?.roomId, showToast])
+
+  const writeLinkedFile = useCallback(async (fileName, handle, text) => {
+    try {
+      await writeTextToHandle(handle, text)
+      lastWrittenRef.current[fileName] = text
+      failedAutoSaveRef.current.delete(fileName)
+      setRelinkPrompt((prev) => (prev && prev.fileName === fileName ? null : prev))
+      return true
+    } catch (err) {
+      failedAutoSaveRef.current.add(fileName)
+      setRelinkPrompt({ fileName, diskName: handle?.name || fileName })
+      return false
+    }
+  }, [])
+
+  // Open a single file from local computer and link its handle
+  const handleOpenFromComputer = useCallback(async () => {
+    if (!workspace || isCurrentUserStopped) return
+    if (!isFileSystemAccessSupported()) {
+      showToast(UNSUPPORTED_FS_TOOLTIP, 'info')
+      return
+    }
+    try {
+      const [handle] = await window.showOpenFilePicker({ multiple: false })
+      if (!handle) return
+      const file = await handle.getFile()
+      const val = validateFileName(file.name, [], false)
+      if (!val.valid) {
+        showToast(val.error, 'danger')
+        return
+      }
+      const existingName = workspace
+        .listFiles()
+        .find((f) => f.toLowerCase() === file.name.toLowerCase())
+      if (existingName) {
+        setPendingLinkConflict({
+          fileName: existingName,
+          handle,
+          diskName: handle.name || file.name
+        })
+        return
+      }
+      const text = await file.text()
+      const created = workspace.createFile(file.name, text)
+      if (created) {
+        setFiles(workspace.listFiles())
+        setActiveFile(file.name)
+        setOpenFiles((prev) => (prev.includes(file.name) ? prev : [...prev, file.name]))
+        await linkFileToHandle(file.name, handle, text)
+        logEvent('file', `Opened "${file.name}" from computer`)
+        showToast(`Linked to ${handle.name || file.name}`, 'success')
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return
+      showToast('Could not open file from computer.', 'danger')
+    }
+  }, [workspace, isCurrentUserStopped, linkFileToHandle, logEvent, showToast])
+
+  // Save current file to disk (reusing linked handle, or Save As picker on first Save, or download fallback)
+  const handleSaveCurrentFile = useCallback(async () => {
     if (!activeFile || !activeYText) return
-    downloadFile(activeFile, activeYText.toString())
-    logEvent('save', `Downloaded "${activeFile}" to computer`)
-  }, [activeFile, activeYText, logEvent])
+    const currentText = activeYText.toString()
+
+    if (!isFileSystemAccessSupported()) {
+      downloadFile(activeFile, currentText)
+      logEvent('save', `Downloaded "${activeFile}" to computer`)
+      return
+    }
+
+    const linked = linkedFiles[activeFile]
+    if (linked?.handle) {
+      const granted = await ensureReadWritePermission(linked.handle)
+      if (!granted) {
+        failedAutoSaveRef.current.add(activeFile)
+        setRelinkPrompt({ fileName: activeFile, diskName: linked.diskName || activeFile })
+        return
+      }
+      if (currentText.length === 0 && (await isDiskFileNonEmpty(linked.handle))) {
+        setPendingEmptyOverwrite({
+          fileName: activeFile,
+          handle: linked.handle,
+          diskName: linked.diskName || activeFile
+        })
+        return
+      }
+      const ok = await writeLinkedFile(activeFile, linked.handle, currentText)
+      if (ok) {
+        const diskName = linked.diskName || linked.handle.name || activeFile
+        showToast(`Saved to ${diskName}`, 'success')
+        logEvent('save', `Saved "${activeFile}" to ${diskName}`)
+      }
+      return
+    }
+
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: activeFile })
+      if (!handle) return
+      await linkFileToHandle(activeFile, handle)
+      const ok = await writeLinkedFile(activeFile, handle, currentText)
+      if (ok) {
+        const diskName = handle.name || activeFile
+        showToast(`Saved to ${diskName}`, 'success')
+        logEvent('save', `Saved "${activeFile}" to ${diskName}`)
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return
+      showToast('Could not save file to computer.', 'danger')
+    }
+  }, [activeFile, activeYText, linkedFiles, linkFileToHandle, writeLinkedFile, logEvent, showToast])
+
+  const handleRelinkFile = useCallback(async (fileName) => {
+    if (!workspace || !fileName || !isFileSystemAccessSupported()) return
+    try {
+      const handle = await window.showSaveFilePicker({ suggestedName: fileName })
+      if (!handle) return
+      await linkFileToHandle(fileName, handle)
+      const ytext = workspace.getText(fileName)
+      const currentText = ytext ? ytext.toString() : ''
+      if (currentText.length === 0 && (await isDiskFileNonEmpty(handle))) {
+        setPendingEmptyOverwrite({ fileName, handle, diskName: handle.name || fileName })
+        return
+      }
+      const ok = await writeLinkedFile(fileName, handle, currentText)
+      if (ok) {
+        showToast(`Saved to ${handle.name || fileName}`, 'success')
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return
+      showToast('Could not relink file.', 'danger')
+    }
+  }, [workspace, linkFileToHandle, writeLinkedFile, showToast])
+
+  // Auto-save linked files 1.5s after local or remote text stops changing
+  useEffect(() => {
+    Object.values(autoSaveTimersRef.current).forEach((t) => clearTimeout(t))
+    autoSaveTimersRef.current = {}
+
+    if (!workspace || !editorPrefs.autoSaveToDisk || !isFileSystemAccessSupported()) {
+      return
+    }
+
+    const cleanups = []
+    for (const [fileName, info] of Object.entries(linkedFiles)) {
+      if (!info?.handle) continue
+      const ytext = workspace.getText(fileName)
+      if (!ytext) continue
+
+      const scheduleAutoSave = () => {
+        if (failedAutoSaveRef.current.has(fileName)) return
+        if (autoSaveTimersRef.current[fileName]) {
+          clearTimeout(autoSaveTimersRef.current[fileName])
+        }
+        autoSaveTimersRef.current[fileName] = setTimeout(async () => {
+          delete autoSaveTimersRef.current[fileName]
+          if (failedAutoSaveRef.current.has(fileName)) return
+          const text = ytext.toString()
+          if (text === lastWrittenRef.current[fileName]) return
+
+          const perm = await queryReadWritePermission(info.handle)
+          if (perm !== 'granted') {
+            failedAutoSaveRef.current.add(fileName)
+            setRelinkPrompt({ fileName, diskName: info.diskName || fileName })
+            return
+          }
+          if (text.length === 0 && (await isDiskFileNonEmpty(info.handle))) {
+            failedAutoSaveRef.current.add(fileName)
+            setPendingEmptyOverwrite({
+              fileName,
+              handle: info.handle,
+              diskName: info.diskName || fileName
+            })
+            return
+          }
+          await writeLinkedFile(fileName, info.handle, text)
+        }, 1500)
+      }
+
+      ytext.observe(scheduleAutoSave)
+      cleanups.push(() => {
+        try {
+          ytext.unobserve(scheduleAutoSave)
+        } catch (_) {}
+      })
+
+      if (
+        lastWrittenRef.current[fileName] !== undefined &&
+        ytext.toString() !== lastWrittenRef.current[fileName]
+      ) {
+        scheduleAutoSave()
+      }
+    }
+
+    return () => {
+      cleanups.forEach((fn) => fn())
+      Object.values(autoSaveTimersRef.current).forEach((t) => clearTimeout(t))
+      autoSaveTimersRef.current = {}
+    }
+  }, [workspace, linkedFiles, files, editorPrefs.autoSaveToDisk, writeLinkedFile])
 
   // Download all files as a .zip
   const handleDownloadAllZip = useCallback(() => {
@@ -1751,6 +2036,9 @@ export default function App() {
     runTooltipText = isOnline ? 'Run code (Ctrl+Enter) (online)' : 'Needs internet'
   }
 
+  const fsAccessSupported = isFileSystemAccessSupported()
+  const activeLinkedInfo = activeFile ? linkedFiles[activeFile] || null : null
+
   // Show Join screen if not connected
   if (!session || !workspace) {
     return <JoinScreen onJoin={handleJoin} theme={theme} onToggleTheme={handleToggleTheme} />
@@ -1775,6 +2063,9 @@ export default function App() {
         onToggleDebug={() => setShowDebug(!showDebug)}
         onLeaveRoom={handleRequestLeaveRoom}
         onSaveCurrentFile={handleSaveCurrentFile}
+        onOpenFromComputer={handleOpenFromComputer}
+        fsAccessSupported={fsAccessSupported}
+        linkedDiskName={activeLinkedInfo?.diskName || null}
         onDownloadAllZip={handleDownloadAllZip}
         activeFile={activeFile}
         onRunCode={handleRunCode}
@@ -1870,6 +2161,10 @@ export default function App() {
               isStopped={isCurrentUserStopped}
               isHost={isHost}
               onImportFolder={handleImportFolder}
+              onOpenFromComputer={handleOpenFromComputer}
+              onUnlinkFile={handleUnlinkFile}
+              linkedFiles={linkedFiles}
+              fsAccessSupported={fsAccessSupported}
               isCollapsed={layout.sidebarCollapsed}
               onToggleCollapse={() => updateLayout((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
             />
@@ -1901,6 +2196,7 @@ export default function App() {
           <Editor
             activeFile={activeFile}
             openFiles={openFiles.length > 0 ? openFiles : (activeFile ? [activeFile] : [])}
+            linkedFiles={linkedFiles}
             onSelectTab={handleSelectTab}
             onCloseTab={handleCloseTab}
             onCreateFile={() => setIsNewFileModalOpen(true)}
@@ -2057,14 +2353,105 @@ export default function App() {
         onOpenKeyModal={() => setIsAiKeyModalOpen(true)}
       />
 
-      {/* Live Toast Notifications */}
-      {toasts.length > 0 && (
+      {/* Live Toast Notifications & Relink Prompt */}
+      {(toasts.length > 0 || relinkPrompt) && (
         <div className="toast-container" aria-live="polite" aria-atomic="true">
+          {relinkPrompt && (
+            <div className="toast-message toast-danger toast-with-action" role="alert">
+              <span>Cannot write to the linked file. Choose it again.</span>
+              <div className="toast-actions">
+                <button
+                  type="button"
+                  className="btn-flat btn-primary btn-xs"
+                  onClick={() => handleRelinkFile(relinkPrompt.fileName)}
+                >
+                  Relink
+                </button>
+                <button
+                  type="button"
+                  className="btn-flat btn-secondary btn-xs"
+                  onClick={() => setRelinkPrompt(null)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
           {toasts.map((t) => (
             <div key={t.id} className={`toast-message toast-${t.type}`}>
               {t.text}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Existing Room File Conflict Modal for Open from Computer */}
+      {pendingLinkConflict && (
+        <div className="modal-backdrop" onClick={() => setPendingLinkConflict(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+            <h4 className="modal-title">Link to the existing room file instead?</h4>
+            <p className="modal-desc" style={{ marginBottom: '14px' }}>
+              <code>{pendingLinkConflict.fileName}</code> already exists in this room. Linking will not overwrite the shared text until you save.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-flat btn-secondary"
+                onClick={() => setPendingLinkConflict(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-primary"
+                onClick={async () => {
+                  const target = pendingLinkConflict
+                  setPendingLinkConflict(null)
+                  await linkFileToHandle(target.fileName, target.handle)
+                  setActiveFile(target.fileName)
+                  setOpenFiles((prev) => (prev.includes(target.fileName) ? prev : [...prev, target.fileName]))
+                  showToast(`Linked to ${target.diskName}`, 'success')
+                }}
+              >
+                Link file
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Empty Room Text Overwrite Confirmation Modal */}
+      {pendingEmptyOverwrite && (
+        <div className="modal-backdrop" onClick={() => setPendingEmptyOverwrite(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '420px' }}>
+            <h4 className="modal-title">Overwrite non-empty file on disk?</h4>
+            <p className="modal-desc" style={{ marginBottom: '14px' }}>
+              <code>{pendingEmptyOverwrite.fileName}</code> is empty in the room, but <code>{pendingEmptyOverwrite.diskName}</code> on your computer has content. Write the empty file anyway?
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn-flat btn-secondary"
+                onClick={() => setPendingEmptyOverwrite(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-flat btn-danger"
+                onClick={async () => {
+                  const target = pendingEmptyOverwrite
+                  setPendingEmptyOverwrite(null)
+                  const ok = await writeLinkedFile(target.fileName, target.handle, '')
+                  if (ok) {
+                    showToast(`Saved to ${target.diskName}`, 'success')
+                  }
+                }}
+              >
+                Overwrite
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

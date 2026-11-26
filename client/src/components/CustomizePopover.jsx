@@ -50,6 +50,7 @@ export const DEFAULT_PREFS = {
   suggestions: true,
   autoCloseBrackets: true,
   inlinePreview: true,
+  autoSaveToDisk: false,
   bracketMatching: true,
   highlightActiveLine: true,
   focusMode: false,
@@ -943,6 +944,19 @@ export default function CustomizePopover({
                   className="customize-checkbox"
                   checked={Boolean(prefs.typingSparks)}
                   onChange={(e) => update({ typingSparks: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <div className="toggle-text-wrap">
+                  <span className="toggle-label">Save to disk automatically</span>
+                  <span className="toggle-hint">Writes linked files 1.5s after edits stop</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.autoSaveToDisk)}
+                  onChange={(e) => update({ autoSaveToDisk: e.target.checked })}
                 />
               </label>
             </div>
