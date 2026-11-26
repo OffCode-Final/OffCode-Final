@@ -11,10 +11,38 @@
 
 export const UPDATE_LOGS = [
   {
+    version: 'v1.3',
+    title: 'Clean Errors, Live Disk Save, Private AI Chat & Inline AI',
+    releaseDate: 'November 2026',
+    isCurrent: true,
+    logs: [
+      {
+        item: 'Clean Error Cards & Interactive Python Input',
+        detail: 'Readable error blocks with clickable source jumps, filtered tracebacks, and IDLE-style inline input() prompts.'
+      },
+      {
+        item: 'Universal Autocomplete & Offline Ghost Preview',
+        detail: 'Keyword snippets across 19+ file types, room-wide identifiers, and dimmed Tab/Enter inline preview.'
+      },
+      {
+        item: 'Live Disk Linking & File Row Actions',
+        detail: 'Open files/folders with direct in-place Ctrl+S and optional 1.5s auto-save on HTTPS, plus Rename, Duplicate, and Download.'
+      },
+      {
+        item: 'Private AI Chat with Quoting & Token Usage',
+        detail: 'Streaming Gemini sidebar with safe markdown, code/error quoting, Insert/Replace actions, and local token tracking.'
+      },
+      {
+        item: 'Opt-In AI Inline Suggestions',
+        detail: 'Optional multi-line ghost completions triggered after typing pauses, with rate limiting and isolated local undo.'
+      }
+    ]
+  },
+  {
     version: 'v1.2',
     title: 'Multi-Language Runners, Autocomplete & Draft Proposals',
     releaseDate: 'November 2026',
-    isCurrent: true,
+    isCurrent: false,
     logs: [
       {
         item: 'Multi-Language Cloud Runners',

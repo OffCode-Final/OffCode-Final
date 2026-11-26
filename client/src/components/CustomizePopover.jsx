@@ -50,6 +50,7 @@ export const DEFAULT_PREFS = {
   suggestions: true,
   autoCloseBrackets: true,
   inlinePreview: true,
+  aiInlineSuggestions: false,
   autoSaveToDisk: false,
   bracketMatching: true,
   highlightActiveLine: true,
@@ -944,6 +945,19 @@ export default function CustomizePopover({
                   className="customize-checkbox"
                   checked={Boolean(prefs.typingSparks)}
                   onChange={(e) => update({ typingSparks: e.target.checked })}
+                />
+              </label>
+
+              <label className="customize-toggle-row">
+                <div className="toggle-text-wrap">
+                  <span className="toggle-label">AI inline suggestions (uses your Gemini key)</span>
+                  <span className="toggle-hint">Sends nearby code to Google while you type.</span>
+                </div>
+                <input
+                  type="checkbox"
+                  className="customize-checkbox"
+                  checked={Boolean(prefs.aiInlineSuggestions)}
+                  onChange={(e) => update({ aiInlineSuggestions: e.target.checked })}
                 />
               </label>
 

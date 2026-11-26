@@ -9,7 +9,8 @@ export default function StatusBar({
   isHost,
   mode,
   theme,
-  onToggleTheme
+  onToggleTheme,
+  aiInlineStatus = null
 }) {
   const getStatusColor = () => {
     switch (status) {
@@ -69,6 +70,17 @@ export default function StatusBar({
       </div>
 
       <div className="status-bar-right">
+        {aiInlineStatus === 'suggesting' && (
+          <span className="status-bar-item status-ai-chip" title="Fetching AI inline suggestion">
+            <span>AI suggesting...</span>
+          </span>
+        )}
+        {aiInlineStatus === 'paused' && (
+          <span className="status-bar-item status-ai-chip status-ai-paused" title="Rate limited (429) — paused for 30s">
+            <span>AI paused</span>
+          </span>
+        )}
+
         {cursorPos && (
           <span className="status-bar-item" title="Cursor position">
             <span>Ln {cursorPos.line}, Col {cursorPos.col}</span>
