@@ -21,6 +21,10 @@ export function isFileSystemAccessSupported() {
   return isSaveFilePickerSupported() && isOpenFilePickerSupported()
 }
 
+export function isBraveBrowser() {
+  return Boolean(typeof navigator !== 'undefined' && navigator.brave)
+}
+
 export const UNSUPPORTED_FS_TOOLTIP =
   'Downloads a copy in this browser. Live overwriting of the same file on disk is supported in Chrome or Edge on HTTPS/localhost.'
 

@@ -159,7 +159,13 @@ export default function Sidebar({
     if (isStopped) return
     if (typeof window !== 'undefined' && window.showDirectoryPicker) {
       try {
-        const dirHandle = await window.showDirectoryPicker()
+        let dirHandle = null
+        try {
+          dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' })
+        } catch (modeErr) {
+          if (modeErr?.name === 'AbortError') return
+          dirHandle = await window.showDirectoryPicker()
+        }
         const filesList = []
         let skippedCount = 0
 
@@ -180,7 +186,7 @@ export default function Sidebar({
               }
               try {
                 const text = normalizeLineEndings(await file.text())
-                filesList.push({ file, relPath, text })
+                filesList.push({ file, relPath, text, handle: entry })
               } catch (_) {
                 skippedCount++
               }
@@ -210,11 +216,13 @@ export default function Sidebar({
     }
   }
 
-  const fileValidation = newFileName ? validateFileName(newFileName, files, false) : { valid: false, error: '' }
+  const liveFileValidation = newFileName
+    ? validateFileName(newFileName, files, false, { allowNoExtension: true, checkExtension: false })
+    : { valid: false, error: '' }
 
   const handleCreateSubmit = (e) => {
     e.preventDefault()
-    const val = validateFileName(newFileName, files, false)
+    const val = validateFileName(newFileName, files, false, { allowNoExtension: true })
     if (!val.valid) {
       setError(val.error)
       return
@@ -595,14 +603,14 @@ export default function Sidebar({
             autoComplete="off"
             autoFocus
           />
-          {(error || (newFileName && !fileValidation.valid)) && (
-            <span className="new-file-error">{error || fileValidation.error}</span>
+          {(error || (newFileName && !liveFileValidation.valid)) && (
+            <span className="new-file-error">{error || liveFileValidation.error}</span>
           )}
           <div className="new-file-actions">
             <button
               type="submit"
               className="btn-flat btn-primary btn-xs"
-              disabled={!newFileName || !fileValidation.valid || isStopped}
+              disabled={!newFileName || !liveFileValidation.valid || isStopped}
             >
               Create
             </button>
