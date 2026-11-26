@@ -20,6 +20,7 @@ import {
   SUPPORTED_EXTENSIONS,
   validateFileName,
   pickUniqueColor,
+  copyToClipboard,
   COLLABORATOR_PALETTE
 } from './utils/helpers'
 
@@ -45,6 +46,7 @@ import {
   isSaveFilePickerSupported,
   isOpenFilePickerSupported,
   isBraveBrowser,
+  getSavePickerOptions,
   UNSUPPORTED_FS_TOOLTIP,
   saveLinkedHandle,
   removeLinkedHandle,
@@ -121,6 +123,8 @@ export default function App() {
   const [pendingLinkConflict, setPendingLinkConflict] = useState(null)
   const [pendingEmptyOverwrite, setPendingEmptyOverwrite] = useState(null)
   const [relinkPrompt, setRelinkPrompt] = useState(null)
+  const [showLiveSaveGuideToast, setShowLiveSaveGuideToast] = useState(false)
+  const [isLiveSaveGuideOpen, setIsLiveSaveGuideOpen] = useState(false)
   const lastWrittenRef = useRef({})
   const autoSaveTimersRef = useRef({})
   const failedAutoSaveRef = useRef(new Set())
@@ -1314,6 +1318,109 @@ export default function App() {
     logEvent('file', `Deleted file "${fileName}"`)
   }
 
+  const handleRenameFile = useCallback(async (oldPath, newInputName) => {
+    if (!workspace || isCurrentUserStopped || !oldPath || !newInputName) return
+    const trimmed = newInputName.trim()
+    if (!trimmed) return
+
+    const hasSlash = trimmed.includes('/')
+    const parentPrefix = !hasSlash && oldPath.includes('/') ? oldPath.slice(0, oldPath.lastIndexOf('/') + 1) : ''
+    const nextPath = `${parentPrefix}${trimmed}`
+    if (nextPath.toLowerCase() === oldPath.toLowerCase() && nextPath === oldPath) return
+
+    const segmentToCheck = nextPath.split('/').pop()
+    const val = validateFileName(segmentToCheck, [], false, { allowNoExtension: true })
+    if (!val.valid) {
+      showToast(val.error, 'error')
+      return
+    }
+    if (files.some((f) => f !== oldPath && f.toLowerCase() === nextPath.toLowerCase())) {
+      showToast('A file with this name already exists', 'error')
+      return
+    }
+
+    const oldTextObj = workspace.getText(oldPath)
+    const content = normalizeLineEndings(oldTextObj ? oldTextObj.toString() : '')
+    const created = workspace.createFile(nextPath, content)
+    if (!created) return
+
+    if (linkedFiles[oldPath]?.handle) {
+      const oldLinked = linkedFiles[oldPath]
+      setLinkedFiles((prev) => {
+        const next = { ...prev }
+        delete next[oldPath]
+        next[nextPath] = oldLinked
+        return next
+      })
+      if (lastWrittenRef.current[oldPath] !== undefined) {
+        lastWrittenRef.current[nextPath] = lastWrittenRef.current[oldPath]
+        delete lastWrittenRef.current[oldPath]
+      }
+      if (session?.roomId) {
+        await removeLinkedHandle(session.roomId, oldPath)
+        await saveLinkedHandle(session.roomId, nextPath, oldLinked.handle)
+      }
+    }
+
+    workspace.deleteFile(oldPath)
+    removeUndoManager(oldPath)
+
+    const updatedFiles = workspace.listFiles()
+    setFiles(updatedFiles)
+    setOpenFiles((prev) => prev.map((f) => (f === oldPath ? nextPath : f)))
+    if (activeFile === oldPath) {
+      setActiveFile(nextPath)
+    }
+    logEvent('file', `Renamed "${oldPath}" to "${nextPath}"`)
+    showToast(`Renamed to ${nextPath}`, 'success')
+  }, [workspace, isCurrentUserStopped, files, linkedFiles, activeFile, session?.roomId, logEvent, showToast])
+
+  const handleDuplicateFile = useCallback((filePath) => {
+    if (!workspace || isCurrentUserStopped || !filePath) return
+    const existing = workspace.listFiles()
+    const lastSlash = filePath.lastIndexOf('/')
+    const dirPrefix = lastSlash >= 0 ? filePath.slice(0, lastSlash + 1) : ''
+    const baseName = lastSlash >= 0 ? filePath.slice(lastSlash + 1) : filePath
+    const dotIdx = baseName.lastIndexOf('.')
+    const stem = dotIdx > 0 ? baseName.slice(0, dotIdx) : baseName
+    const ext = dotIdx > 0 ? baseName.slice(dotIdx) : ''
+
+    let candidate = `${dirPrefix}${stem}_copy${ext}`
+    let counter = 2
+    while (existing.some((f) => f.toLowerCase() === candidate.toLowerCase())) {
+      candidate = `${dirPrefix}${stem}_copy_${counter}${ext}`
+      counter++
+    }
+
+    const src = workspace.getText(filePath)
+    const content = normalizeLineEndings(src ? src.toString() : '')
+    const created = workspace.createFile(candidate, content)
+    if (created) {
+      setFiles(workspace.listFiles())
+      setActiveFile(candidate)
+      setOpenFiles((prev) => (prev.includes(candidate) ? prev : [...prev, candidate]))
+      logEvent('file', `Duplicated "${filePath}" as "${candidate}"`)
+      showToast(`Created ${candidate}`, 'success')
+    }
+  }, [workspace, isCurrentUserStopped, logEvent, showToast])
+
+  const handleDownloadSingleFile = useCallback((filePath) => {
+    if (!workspace || !filePath) return
+    const t = workspace.getText(filePath)
+    const content = normalizeLineEndings(t ? t.toString() : '')
+    downloadFile(filePath, content)
+    showToast(`Downloaded ${filePath.split('/').pop()}`, 'success')
+    logEvent('save', `Downloaded "${filePath}" to computer`)
+  }, [workspace, logEvent, showToast])
+
+  const handleCopyFileName = useCallback(async (filePath) => {
+    if (!filePath) return
+    const ok = await copyToClipboard(filePath)
+    if (ok) {
+      showToast(`Copied "${filePath}"`, 'info')
+    }
+  }, [showToast])
+
   // Remove all files / close folder from workspace
   const handleClearAllFiles = useCallback(() => {
     if (!workspace || isCurrentUserStopped) return
@@ -1605,18 +1712,12 @@ export default function App() {
   const handleSaveCurrentFile = useCallback(async () => {
     if (!activeFile || !activeYText) return
     const currentText = normalizeLineEndings(activeYText.toString())
-    const suggestedBase = (activeFile.split('/').pop() || activeFile).replace(/[<>:"/\\|?*]/g, '_') || 'untitled.txt'
+    const pickerOpts = getSavePickerOptions(activeFile)
+    const suggestedBase = pickerOpts.suggestedName
 
     if (!isSaveFilePickerSupported()) {
       downloadFile(activeFile, currentText)
-      if (isBraveBrowser()) {
-        showToast(
-          `Downloaded ${suggestedBase} — in Brave, enable brave://flags/#file-system-access-api to live save directly to disk.`,
-          'info'
-        )
-      } else {
-        showToast(`Downloaded ${suggestedBase}`, 'success')
-      }
+      setShowLiveSaveGuideToast(true)
       logEvent('save', `Downloaded "${activeFile}" to computer`)
       return
     }
@@ -1647,7 +1748,7 @@ export default function App() {
     }
 
     try {
-      const handle = await window.showSaveFilePicker({ suggestedName: suggestedBase })
+      const handle = await window.showSaveFilePicker(pickerOpts)
       if (!handle) return
       await linkFileToHandle(activeFile, handle)
       const ok = await writeLinkedFile(activeFile, handle, currentText)
@@ -1660,11 +1761,7 @@ export default function App() {
       if (err?.name === 'AbortError') return
       console.warn('[Save] showSaveFilePicker fallback:', err)
       downloadFile(activeFile, currentText)
-      if (err?.name === 'SecurityError' || err?.name === 'NotAllowedError') {
-        showToast(`Downloaded ${suggestedBase} — click the Save button in the top bar to link and live save.`, 'info')
-      } else {
-        showToast(`Downloaded ${suggestedBase}`, 'info')
-      }
+      setShowLiveSaveGuideToast(true)
       logEvent('save', `Downloaded "${activeFile}" to computer`)
     }
   }, [activeFile, activeYText, linkedFiles, linkFileToHandle, writeLinkedFile, logEvent, showToast])
@@ -1672,8 +1769,8 @@ export default function App() {
   const handleRelinkFile = useCallback(async (fileName) => {
     if (!workspace || !fileName || !isSaveFilePickerSupported()) return
     try {
-      const suggestedBase = (fileName.split('/').pop() || fileName).replace(/[<>:"/\\|?*]/g, '_') || 'untitled.txt'
-      const handle = await window.showSaveFilePicker({ suggestedName: suggestedBase })
+      const pickerOpts = getSavePickerOptions(fileName)
+      const handle = await window.showSaveFilePicker(pickerOpts)
       if (!handle) return
       await linkFileToHandle(fileName, handle)
       const ytext = workspace.getText(fileName)
@@ -2282,6 +2379,10 @@ export default function App() {
               onSelectFile={handleSelectFile}
               onCreateFile={handleCreateFile}
               onDeleteFile={handleDeleteFile}
+              onRenameFile={handleRenameFile}
+              onDuplicateFile={handleDuplicateFile}
+              onDownloadFile={handleDownloadSingleFile}
+              onCopyFileName={handleCopyFileName}
               onClearAllFiles={handleClearAllFiles}
               users={users}
               isStopped={isCurrentUserStopped}
@@ -2479,9 +2580,33 @@ export default function App() {
         onOpenKeyModal={() => setIsAiKeyModalOpen(true)}
       />
 
-      {/* Live Toast Notifications & Relink Prompt */}
-      {(toasts.length > 0 || relinkPrompt) && (
+      {/* Live Toast Notifications, Relink Prompt & Live Save Guide */}
+      {(toasts.length > 0 || relinkPrompt || showLiveSaveGuideToast) && (
         <div className="toast-container" aria-live="polite" aria-atomic="true">
+          {showLiveSaveGuideToast && (
+            <div className="toast-message toast-info toast-with-action" role="status">
+              <span>Downloaded a copy — live disk overwriting is disabled in this browser.</span>
+              <div className="toast-actions">
+                <button
+                  type="button"
+                  className="btn-flat btn-primary btn-xs"
+                  onClick={() => {
+                    setShowLiveSaveGuideToast(false)
+                    setIsLiveSaveGuideOpen(true)
+                  }}
+                >
+                  How to enable live save
+                </button>
+                <button
+                  type="button"
+                  className="btn-flat btn-secondary btn-xs"
+                  onClick={() => setShowLiveSaveGuideToast(false)}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
           {relinkPrompt && (
             <div className="toast-message toast-danger toast-with-action" role="alert">
               <span>Cannot write to the linked file. Choose it again.</span>
@@ -2508,6 +2633,66 @@ export default function App() {
               {t.text}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Browser Live Save Guide Modal */}
+      {isLiveSaveGuideOpen && (
+        <div className="modal-backdrop" onClick={() => setIsLiveSaveGuideOpen(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '470px' }}>
+            <h4 className="modal-title">Enable Live Disk Saving on HTTPS</h4>
+            {isBraveBrowser() ? (
+              <>
+                <p className="modal-desc" style={{ marginBottom: '10px' }}>
+                  Brave disables the File System Access API by default. Enable it once to overwrite files directly on disk:
+                </p>
+                <ol className="guide-steps-list">
+                  <li>Copy and open this flags URL in a new tab:</li>
+                </ol>
+                <div className="guide-flag-row">
+                  <code className="guide-flag-code">brave://flags/#file-system-access-api</code>
+                  <button
+                    type="button"
+                    className="btn-flat btn-secondary btn-xs"
+                    onClick={async () => {
+                      await copyToClipboard('brave://flags/#file-system-access-api')
+                      showToast('Copied flag URL — paste it into Brave address bar', 'info')
+                    }}
+                  >
+                    Copy
+                  </button>
+                </div>
+                <ol className="guide-steps-list" start={2} style={{ marginTop: '10px' }}>
+                  <li>Set <strong>File System Access API</strong> to <strong>Enabled</strong>.</li>
+                  <li>Click <strong>Relaunch</strong> at the bottom right.</li>
+                </ol>
+              </>
+            ) : typeof window !== 'undefined' && !window.isSecureContext ? (
+              <p className="modal-desc" style={{ marginBottom: '10px' }}>
+                Browsers block live disk saving on non-HTTPS links. Open OffCode using the <strong>HTTPS</strong> link (or <code>http://localhost</code>) in Chrome, Edge, or Brave.
+              </p>
+            ) : (
+              <>
+                <p className="modal-desc" style={{ marginBottom: '10px' }}>
+                  Your current browser does not allow websites to overwrite files directly on disk:
+                </p>
+                <ul className="guide-steps-list">
+                  <li><strong>Chrome / Edge</strong>: Works automatically on HTTPS links. If prompted, allow <strong>File editing</strong> permission in the address bar lock icon.</li>
+                  <li><strong>Brave</strong>: Open <code>brave://flags/#file-system-access-api</code>, set to <strong>Enabled</strong>, and relaunch.</li>
+                  <li><strong>Firefox / Safari</strong>: These browsers do not support direct disk overwriting from web apps, so Save downloads a copy.</li>
+                </ul>
+              </>
+            )}
+            <div className="modal-actions" style={{ marginTop: '16px' }}>
+              <button
+                type="button"
+                className="btn-flat btn-primary"
+                onClick={() => setIsLiveSaveGuideOpen(false)}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

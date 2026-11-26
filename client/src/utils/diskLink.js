@@ -25,6 +25,39 @@ export function isBraveBrowser() {
   return Boolean(typeof navigator !== 'undefined' && navigator.brave)
 }
 
+const SAVE_FILE_TYPE_MAP = {
+  py: { description: 'Python file', accept: { 'text/x-python': ['.py'] } },
+  js: { description: 'JavaScript file', accept: { 'text/javascript': ['.js'] } },
+  mjs: { description: 'JavaScript module', accept: { 'text/javascript': ['.mjs'] } },
+  jsx: { description: 'JSX file', accept: { 'text/javascript': ['.jsx'] } },
+  ts: { description: 'TypeScript file', accept: { 'text/typescript': ['.ts'] } },
+  tsx: { description: 'TSX file', accept: { 'text/typescript': ['.tsx'] } },
+  html: { description: 'HTML file', accept: { 'text/html': ['.html'] } },
+  htm: { description: 'HTML file', accept: { 'text/html': ['.htm'] } },
+  css: { description: 'CSS file', accept: { 'text/css': ['.css'] } },
+  json: { description: 'JSON file', accept: { 'application/json': ['.json'] } },
+  md: { description: 'Markdown file', accept: { 'text/markdown': ['.md'] } },
+  txt: { description: 'Text file', accept: { 'text/plain': ['.txt'] } },
+  c: { description: 'C source file', accept: { 'text/x-c': ['.c'] } },
+  h: { description: 'C header file', accept: { 'text/x-c': ['.h'] } },
+  cpp: { description: 'C++ source file', accept: { 'text/x-c++src': ['.cpp'] } },
+  hpp: { description: 'C++ header file', accept: { 'text/x-c++hdr': ['.hpp'] } },
+  java: { description: 'Java file', accept: { 'text/x-java-source': ['.java'] } },
+  php: { description: 'PHP file', accept: { 'application/x-httpd-php': ['.php'] } },
+  rs: { description: 'Rust file', accept: { 'text/rust': ['.rs'] } },
+  go: { description: 'Go file', accept: { 'text/x-go': ['.go'] } },
+  rb: { description: 'Ruby file', accept: { 'text/x-ruby': ['.rb'] } }
+}
+
+export function getSavePickerOptions(fileName) {
+  const suggestedName = (String(fileName || 'untitled.txt').split('/').pop() || 'untitled.txt')
+    .replace(/[<>:"/\\|?*]/g, '_') || 'untitled.txt'
+  const lastDot = suggestedName.lastIndexOf('.')
+  const ext = lastDot > 0 ? suggestedName.slice(lastDot + 1).toLowerCase() : ''
+  const typeEntry = SAVE_FILE_TYPE_MAP[ext]
+  return typeEntry ? { suggestedName, types: [typeEntry] } : { suggestedName }
+}
+
 export const UNSUPPORTED_FS_TOOLTIP =
   'Downloads a copy in this browser. Live overwriting of the same file on disk is supported in Chrome or Edge on HTTPS/localhost.'
 
