@@ -36,7 +36,7 @@ import {
   completionStatus,
   selectedCompletion
 } from '@codemirror/autocomplete'
-import { yCollab, yUndoManagerKeymap, ySyncAnnotation } from 'y-codemirror.next'
+import { yCollab, yUndoManagerKeymap, ySyncAnnotation, ySyncFacet } from 'y-codemirror.next'
 import { X, Send, FileCode, Plus, Sliders, Link2 } from 'lucide-react'
 
 import { python } from '@codemirror/lang-python'
@@ -53,7 +53,7 @@ import { go } from '@codemirror/lang-go'
 import { ruby } from '@codemirror/legacy-modes/mode/ruby'
 
 import { getUndoManager } from '../utils/undoCache'
-import { getFileExtension } from '../utils/helpers'
+import { getFileExtension, normalizeLineEndings } from '../utils/helpers'
 import { collectRoomIdentifiers, createLanguageCompletionSources } from '../utils/completions'
 import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
 import CustomizePopover, { DEFAULT_PREFS, saveEditorPrefs, ensureGoogleFontLoaded } from './CustomizePopover'
@@ -925,6 +925,25 @@ function getEditorTheme(theme, prefs = DEFAULT_PREFS, currentUserColor = '#2563e
   return EditorView.theme(baseTheme, { dark: customColors ? true : isDark })
 }
 
+function normalizeYTextLineEndings(ytext) {
+  if (!ytext || !ytext.doc) return false
+  const raw = ytext.toString()
+  if (!raw.includes('\r')) return false
+  ytext.doc.transact(() => {
+    for (let i = raw.length - 1; i >= 0; i--) {
+      if (raw.charCodeAt(i) === 13) {
+        if (raw.charCodeAt(i + 1) === 10) {
+          ytext.delete(i, 1)
+        } else {
+          ytext.delete(i, 1)
+          ytext.insert(i, '\n')
+        }
+      }
+    }
+  }, 'crlf-normalize')
+  return true
+}
+
 function getSyntaxTheme(theme, syntaxPreset = 'OffCode') {
   return syntaxHighlighting(createHighlightStyle(syntaxPreset, theme !== 'light'))
 }
@@ -1103,6 +1122,9 @@ export default function Editor({
 
     const activeExt = getFileExtension(activeFile)
     const isEditable = !readOnly && !isStopped
+    if (isEditable) {
+      normalizeYTextLineEndings(ytext)
+    }
     const completionSources = createLanguageCompletionSources(activeExt, getRoomCompletions)
 
     // Extensions list
@@ -1244,7 +1266,7 @@ export default function Editor({
     ]
 
     const state = EditorState.create({
-      doc: ytext.toString(),
+      doc: normalizeLineEndings(ytext.toString()),
       extensions
     })
 
@@ -1255,6 +1277,34 @@ export default function Editor({
 
     viewRef.current = view
     view.focus()
+
+    const handleCrlfGuard = (event) => {
+      if (!isEditable || view.isDestroyed || !ytext.doc) return
+      const hasCr = event?.delta?.some((d) => typeof d.insert === 'string' && d.insert.includes('\r'))
+      if (!hasCr) return
+      queueMicrotask(() => {
+        if (view.isDestroyed || !ytext.doc) return
+        if (!normalizeYTextLineEndings(ytext)) return
+        const targetText = ytext.toString()
+        const curDoc = view.state.doc.toString()
+        if (curDoc !== targetText) {
+          let conf = null
+          try {
+            conf = view.state.facet(ySyncFacet)
+          } catch (_) {}
+          const sel = view.state.selection.main
+          view.dispatch({
+            changes: { from: 0, to: curDoc.length, insert: targetText },
+            selection: {
+              anchor: Math.min(sel.anchor, targetText.length),
+              head: Math.min(sel.head, targetText.length)
+            },
+            annotations: conf ? [ySyncAnnotation.of(conf)] : []
+          })
+        }
+      })
+    }
+    ytext.observe(handleCrlfGuard)
 
     if (editorRef.current) {
       const vars = getCursorCssVars(editorPrefs, currentUserColor, view.defaultCharacterWidth)
@@ -1359,6 +1409,9 @@ export default function Editor({
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
+      try {
+        ytext.unobserve(handleCrlfGuard)
+      } catch (_) {}
       clearPointer()
       scroller.removeEventListener('mousemove', handleMouseMove)
       scroller.removeEventListener('mouseleave', clearPointer)

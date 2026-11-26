@@ -252,6 +252,11 @@ export function updateUrlRoom(room) {
   window.history.replaceState({}, '', url.toString())
 }
 
+export function normalizeLineEndings(text) {
+  if (text === null || text === undefined) return ''
+  return String(text).replace(/\r\n?/g, '\n')
+}
+
 /**
  * Downloads a single file with exact filename and text content
  */
@@ -265,7 +270,7 @@ export function downloadFile(filename, content) {
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 

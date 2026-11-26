@@ -5383,6 +5383,112 @@ button:disabled {
   gap: 6px;
 }
 
+/* Single "Open.." hover/click dropdown in Sidebar */
+.open-menu-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.open-menu-wrapper.open-menu-empty {
+  width: 100%;
+  display: flex;
+}
+
+.btn-header-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.btn-header-open:hover:not(:disabled),
+.open-menu-wrapper.is-open .btn-header-open:not(:disabled) {
+  background-color: var(--bg-tab-hover);
+  color: var(--text-bright);
+  border-color: var(--border-subtle);
+}
+
+.btn-header-open:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-empty-open {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.open-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  padding-top: 4px;
+  z-index: 600;
+  min-width: 132px;
+}
+
+.open-dropdown-menu.open-dropdown-empty {
+  left: 0;
+  right: 0;
+  min-width: 100%;
+}
+
+.open-dropdown-surface {
+  background-color: var(--bg-dropdown, var(--bg-elevated));
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.open-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 9px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+
+.open-dropdown-item:hover:not(:disabled),
+.open-dropdown-item:focus-visible:not(:disabled) {
+  background-color: var(--bg-hover-row);
+  color: var(--text-bright);
+  outline: none;
+}
+
+.open-dropdown-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+
 
 
 

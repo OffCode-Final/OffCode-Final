@@ -16,6 +16,7 @@ import {
   getLanguageName,
   getDefaultServerUrl,
   resolveHtmlAssets,
+  normalizeLineEndings,
   SUPPORTED_EXTENSIONS,
   validateFileName,
   pickUniqueColor,
@@ -41,6 +42,8 @@ import { runRemoteCode, isOnlineLanguage } from './run/remote.js'
 import { parsePythonTraceback, parseJsError, parseHtmlError } from './utils/errorParser'
 import {
   isFileSystemAccessSupported,
+  isSaveFilePickerSupported,
+  isOpenFilePickerSupported,
   UNSUPPORTED_FS_TOOLTIP,
   saveLinkedHandle,
   removeLinkedHandle,
@@ -51,6 +54,39 @@ import {
   isDiskFileNonEmpty,
   writeTextToHandle
 } from './utils/diskLink'
+
+function getServerHttpBase() {
+  if (typeof window !== 'undefined' && window.location && window.location.port === '5173') {
+    return `http://${window.location.hostname || 'localhost'}:1234`
+  }
+  return ''
+}
+
+function cleanupLocalRoomPersistence(roomId) {
+  if (typeof window === 'undefined' || !roomId) return
+  const cleanRoom = roomId.trim().toLowerCase()
+  if (!cleanRoom) return
+
+  if (window.indexedDB) {
+    try {
+      window.indexedDB.deleteDatabase(`offcode-${cleanRoom}`)
+    } catch (_) {}
+    clearRoomLinkedHandles(cleanRoom)
+  }
+
+  if (window.localStorage) {
+    try {
+      const keysToRemove = []
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i)
+        if (k && (k.includes(cleanRoom) || k.startsWith(`chatJoinedAt:${cleanRoom}`))) {
+          keysToRemove.push(k)
+        }
+      }
+      keysToRemove.forEach((k) => window.localStorage.removeItem(k))
+    } catch (_) {}
+  }
+}
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -87,6 +123,7 @@ export default function App() {
   const lastWrittenRef = useRef({})
   const autoSaveTimersRef = useRef({})
   const failedAutoSaveRef = useRef(new Set())
+  const fallbackFileInputRef = useRef(null)
 
   // Live Cursors & Follow State
   const [followingUserId, setFollowingUserId] = useState(null)
@@ -477,15 +514,16 @@ export default function App() {
     const currentRoom = session?.roomId
     const isLastUser = users.length <= 1
 
+    if (workspaceRef.current) {
+      try {
+        workspaceRef.current.destroy()
+      } catch (_) {}
+      workspaceRef.current = null
+    }
+
     if (currentRoom && isLastUser) {
       try {
-        let httpBase = ''
-        if (typeof window !== 'undefined' && window.location) {
-          if (window.location.port === '5173') {
-            httpBase = `http://${window.location.hostname || 'localhost'}:1234`
-          }
-        }
-        await fetch(`${httpBase}/api/rooms/shutdown/${encodeURIComponent(currentRoom)}`, {
+        await fetch(`${getServerHttpBase()}/api/rooms/shutdown/${encodeURIComponent(currentRoom)}`, {
           method: 'POST'
         })
       } catch (err) {
@@ -493,29 +531,7 @@ export default function App() {
       }
     }
 
-    // Wipe IndexedDB cached files for this room
-    if (typeof window !== 'undefined' && window.indexedDB && currentRoom) {
-      try {
-        window.indexedDB.deleteDatabase(`offcode-${currentRoom.trim().toLowerCase()}`)
-      } catch (_) {}
-      clearRoomLinkedHandles(currentRoom)
-    }
-
-    // Wipe all room-specific localStorage keys (chat history timestamps, user data)
-    if (typeof window !== 'undefined' && window.localStorage && currentRoom) {
-      try {
-        const cleanRoom = currentRoom.trim().toLowerCase()
-        const keysToRemove = []
-        for (let i = 0; i < window.localStorage.length; i++) {
-          const k = window.localStorage.key(i)
-          if (k && (k.includes(cleanRoom) || k.startsWith(`chatJoinedAt:${cleanRoom}`))) {
-            keysToRemove.push(k)
-          }
-        }
-        keysToRemove.forEach((k) => window.localStorage.removeItem(k))
-      } catch (_) {}
-    }
-
+    cleanupLocalRoomPersistence(currentRoom)
     handleLeaveRoom()
   }
 
@@ -792,19 +808,57 @@ export default function App() {
       setUndoDepths({ ...depths })
     })
 
-    const handleBeforeUnload = () => {
+    let didUnloadCleanup = false
+    const handlePageUnload = () => {
+      if (didUnloadCleanup) return
+      didUnloadCleanup = true
+
+      let otherActivePeers = 0
+      try {
+        const states = ws.awareness.getStates()
+        const myCid = ws.ydoc.clientID
+        states.forEach((st, cid) => {
+          if (cid !== myCid && st && st.user) {
+            otherActivePeers++
+          }
+        })
+      } catch (_) {}
+
       try {
         ws.awareness.setLocalState(null)
       } catch (_) {}
+
+      const cleanRoom = roomId ? roomId.trim().toLowerCase() : ''
+      if (cleanRoom && otherActivePeers === 0) {
+        const shutdownUrl = `${getServerHttpBase()}/api/rooms/shutdown/${encodeURIComponent(cleanRoom)}`
+        try {
+          if (typeof navigator !== 'undefined' && typeof navigator.sendBeacon === 'function') {
+            navigator.sendBeacon(shutdownUrl, '')
+          } else if (typeof fetch === 'function') {
+            fetch(shutdownUrl, { method: 'POST', keepalive: true }).catch(() => {})
+          }
+        } catch (_) {}
+      }
+
+      if (workspaceRef.current === ws) {
+        workspaceRef.current = null
+      }
+      try {
+        ws.destroy()
+      } catch (_) {}
+      cleanupLocalRoomPersistence(cleanRoom)
     }
-    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    window.addEventListener('pagehide', handlePageUnload)
+    window.addEventListener('beforeunload', handlePageUnload)
 
     return () => {
       if (colorConflictTimerRef.current) {
         clearTimeout(colorConflictTimerRef.current)
         colorConflictTimerRef.current = null
       }
-      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('pagehide', handlePageUnload)
+      window.removeEventListener('beforeunload', handlePageUnload)
       frozenMap.unobserve(updateFrozen)
       unsubStatus()
       unsubFiles()
@@ -1083,13 +1137,14 @@ export default function App() {
         return
       }
 
+      const cleanImproved = normalizeLineEndings(aiResult.improved)
       view.dispatch({
         changes: {
           from,
           to,
-          insert: aiResult.improved
+          insert: cleanImproved
         },
-        selection: { anchor: from + aiResult.improved.length }
+        selection: { anchor: from + cleanImproved.length }
       })
       showToast('AI improvements applied', 'success')
       logEvent('editor', 'Applied AI improvement to selected code')
@@ -1227,7 +1282,7 @@ export default function App() {
       return
     }
     const cleanName = fileName.trim()
-    const initialContent = getInitialTemplate(cleanName)
+    const initialContent = normalizeLineEndings(getInitialTemplate(cleanName))
     const text = workspace.createFile(cleanName, initialContent)
     if (text) {
       setFiles(workspace.listFiles())
@@ -1355,6 +1410,7 @@ export default function App() {
           if (content === undefined || content === null) {
             content = await fileObj.text()
           }
+          content = normalizeLineEndings(content)
           workspace.createFile(relPath, content)
           importedCount++
         } catch (err) {
@@ -1452,11 +1508,50 @@ export default function App() {
     }
   }, [])
 
-  // Open a single file from local computer and link its handle
+  const openPickedFallbackFile = useCallback(async (file) => {
+    if (!workspace || !file || isCurrentUserStopped) return
+    const val = validateFileName(file.name, [], false)
+    if (!val.valid) {
+      showToast(val.error, 'danger')
+      return
+    }
+    const existingName = workspace
+      .listFiles()
+      .find((f) => f.toLowerCase() === file.name.toLowerCase())
+    if (existingName) {
+      setActiveFile(existingName)
+      setOpenFiles((prev) => (prev.includes(existingName) ? prev : [...prev, existingName]))
+      showToast(`"${existingName}" is already open in this room.`, 'info')
+      return
+    }
+    try {
+      const text = normalizeLineEndings(await file.text())
+      const created = workspace.createFile(file.name, text)
+      if (created) {
+        setFiles(workspace.listFiles())
+        setActiveFile(file.name)
+        setOpenFiles((prev) => (prev.includes(file.name) ? prev : [...prev, file.name]))
+        logEvent('file', `Opened "${file.name}" from computer`)
+        showToast(`Opened "${file.name}" (Save downloads a copy in this browser)`, 'success')
+      }
+    } catch (_) {
+      showToast('Could not read selected file.', 'danger')
+    }
+  }, [workspace, isCurrentUserStopped, logEvent, showToast])
+
+  const handleFallbackFileChange = useCallback(async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (file) {
+      await openPickedFallbackFile(file)
+    }
+  }, [openPickedFallbackFile])
+
+  // Open a single file from local computer and link its handle (with universal <input type="file"> fallback)
   const handleOpenFromComputer = useCallback(async () => {
     if (!workspace || isCurrentUserStopped) return
-    if (!isFileSystemAccessSupported()) {
-      showToast(UNSUPPORTED_FS_TOOLTIP, 'info')
+    if (!isOpenFilePickerSupported()) {
+      fallbackFileInputRef.current?.click()
       return
     }
     try {
@@ -1479,7 +1574,7 @@ export default function App() {
         })
         return
       }
-      const text = await file.text()
+      const text = normalizeLineEndings(await file.text())
       const created = workspace.createFile(file.name, text)
       if (created) {
         setFiles(workspace.listFiles())
@@ -1491,6 +1586,10 @@ export default function App() {
       }
     } catch (err) {
       if (err?.name === 'AbortError') return
+      if (err?.name === 'SecurityError' || err?.name === 'NotAllowedError') {
+        fallbackFileInputRef.current?.click()
+        return
+      }
       showToast('Could not open file from computer.', 'danger')
     }
   }, [workspace, isCurrentUserStopped, linkFileToHandle, logEvent, showToast])
@@ -1498,10 +1597,11 @@ export default function App() {
   // Save current file to disk (reusing linked handle, or Save As picker on first Save, or download fallback)
   const handleSaveCurrentFile = useCallback(async () => {
     if (!activeFile || !activeYText) return
-    const currentText = activeYText.toString()
+    const currentText = normalizeLineEndings(activeYText.toString())
 
-    if (!isFileSystemAccessSupported()) {
+    if (!isSaveFilePickerSupported()) {
       downloadFile(activeFile, currentText)
+      showToast(`Downloaded ${activeFile}`, 'success')
       logEvent('save', `Downloaded "${activeFile}" to computer`)
       return
     }
@@ -1543,7 +1643,9 @@ export default function App() {
       }
     } catch (err) {
       if (err?.name === 'AbortError') return
-      showToast('Could not save file to computer.', 'danger')
+      downloadFile(activeFile, currentText)
+      showToast(`Downloaded ${activeFile}`, 'info')
+      logEvent('save', `Downloaded "${activeFile}" to computer`)
     }
   }, [activeFile, activeYText, linkedFiles, linkFileToHandle, writeLinkedFile, logEvent, showToast])
 
@@ -1574,7 +1676,7 @@ export default function App() {
     Object.values(autoSaveTimersRef.current).forEach((t) => clearTimeout(t))
     autoSaveTimersRef.current = {}
 
-    if (!workspace || !editorPrefs.autoSaveToDisk || !isFileSystemAccessSupported()) {
+    if (!workspace || !editorPrefs.autoSaveToDisk || !isSaveFilePickerSupported()) {
       return
     }
 
@@ -2548,6 +2650,13 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <input
+        type="file"
+        ref={fallbackFileInputRef}
+        style={{ display: 'none' }}
+        onChange={handleFallbackFileChange}
+      />
 
       {/* Leave Room & Shutdown Warning Modal */}
       {isLeaveModalOpen && (

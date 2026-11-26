@@ -16,8 +16,7 @@ import {
   MoreHorizontal,
   Unlink
 } from 'lucide-react'
-import { getFileExtension, validateFileName } from '../utils/helpers'
-import { UNSUPPORTED_FS_TOOLTIP } from '../utils/diskLink'
+import { getFileExtension, validateFileName, normalizeLineEndings } from '../utils/helpers'
 
 function buildTree(fileList) {
   const root = { name: '', path: '', folders: {}, files: [] }
@@ -68,10 +67,60 @@ export default function Sidebar({
   const [newFileName, setNewFileName] = useState('')
   const [fileToDelete, setFileToDelete] = useState(null)
   const [openRowMenuFile, setOpenRowMenuFile] = useState(null)
+  const [openMenuLocation, setOpenMenuLocation] = useState(null)
   const [isConfirmRemoveAllOpen, setIsConfirmRemoveAllOpen] = useState(false)
   const [error, setError] = useState('')
   const [expandedFolders, setExpandedFolders] = useState(() => new Set())
   const folderInputRef = useRef(null)
+  const openMenuTimerRef = useRef(null)
+  const headerOpenMenuRef = useRef(null)
+  const emptyOpenMenuRef = useRef(null)
+
+  const showOpenMenu = (location) => {
+    if (isStopped) return
+    if (openMenuTimerRef.current) {
+      clearTimeout(openMenuTimerRef.current)
+      openMenuTimerRef.current = null
+    }
+    setOpenMenuLocation(location)
+  }
+
+  const scheduleHideOpenMenu = (location) => {
+    if (openMenuTimerRef.current) {
+      clearTimeout(openMenuTimerRef.current)
+    }
+    openMenuTimerRef.current = setTimeout(() => {
+      openMenuTimerRef.current = null
+      setOpenMenuLocation((prev) => (prev === location ? null : prev))
+    }, 140)
+  }
+
+  useEffect(() => {
+    if (!openMenuLocation) return
+    const handleOutside = (e) => {
+      const container = openMenuLocation === 'header' ? headerOpenMenuRef.current : emptyOpenMenuRef.current
+      if (container && !container.contains(e.target)) {
+        setOpenMenuLocation(null)
+      }
+    }
+    const handleKey = (e) => {
+      if (e.key === 'Escape') setOpenMenuLocation(null)
+    }
+    document.addEventListener('mousedown', handleOutside)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleOutside)
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [openMenuLocation])
+
+  useEffect(() => {
+    return () => {
+      if (openMenuTimerRef.current) {
+        clearTimeout(openMenuTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (!openRowMenuFile) return
@@ -130,7 +179,7 @@ export default function Sidebar({
                 continue
               }
               try {
-                const text = await file.text()
+                const text = normalizeLineEndings(await file.text())
                 filesList.push({ file, relPath, text })
               } catch (_) {
                 skippedCount++
@@ -429,38 +478,60 @@ export default function Sidebar({
         </div>
 
         <div className="sidebar-header-actions">
-          <button
-            type="button"
-            className="btn-icon-subtle btn-open-from-computer"
-            onClick={() => {
-              if (isStopped) return
-              if (onOpenFromComputer) onOpenFromComputer()
-            }}
-            disabled={isStopped}
-            style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
-            title={
-              isStopped
-                ? 'Editing stopped by host'
-                : !fsAccessSupported
-                ? UNSUPPORTED_FS_TOOLTIP
-                : 'Open from computer'
-            }
-            aria-label="Open from computer"
+          <div
+            ref={headerOpenMenuRef}
+            className={`open-menu-wrapper ${openMenuLocation === 'header' ? 'is-open' : ''}`}
+            onMouseEnter={() => showOpenMenu('header')}
+            onMouseLeave={() => scheduleHideOpenMenu('header')}
           >
-            <FileUp size={14} strokeWidth={1.75} />
-          </button>
+            <button
+              type="button"
+              className="btn-header-open"
+              onClick={() => {
+                if (isStopped) return
+                setOpenMenuLocation((prev) => (prev === 'header' ? null : 'header'))
+              }}
+              disabled={isStopped}
+              title={isStopped ? 'Editing stopped by host' : 'Open folder or file from computer'}
+              aria-haspopup="menu"
+              aria-expanded={openMenuLocation === 'header'}
+              aria-label="Open.."
+            >
+              <span>Open..</span>
+              <ChevronDown size={11} strokeWidth={1.75} />
+            </button>
 
-          <button
-            type="button"
-            className="btn-icon-subtle btn-open-folder"
-            onClick={handleOpenFolderClick}
-            disabled={isStopped}
-            style={isStopped ? { opacity: 0.4, cursor: 'not-allowed' } : {}}
-            title={isStopped ? 'Editing stopped by host' : 'Open folder (imports files)'}
-            aria-label="Open folder"
-          >
-            <FolderOpen size={14} strokeWidth={1.75} />
-          </button>
+            {openMenuLocation === 'header' && !isStopped && (
+              <div className="open-dropdown-menu" role="menu">
+                <div className="open-dropdown-surface">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="open-dropdown-item"
+                    onClick={() => {
+                      setOpenMenuLocation(null)
+                      handleOpenFolderClick()
+                    }}
+                  >
+                    <FolderOpen size={14} strokeWidth={1.75} />
+                    <span>Folder</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="open-dropdown-item"
+                    onClick={() => {
+                      setOpenMenuLocation(null)
+                      if (onOpenFromComputer) onOpenFromComputer()
+                    }}
+                  >
+                    <FileUp size={14} strokeWidth={1.75} />
+                    <span>File</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {files.length > 0 && (
             <button
@@ -565,25 +636,58 @@ export default function Sidebar({
               >
                 Create a file
               </button>
-              <button
-                type="button"
-                className="btn-flat btn-secondary btn-sm"
-                onClick={handleOpenFolderClick}
-                disabled={isStopped}
+              <div
+                ref={emptyOpenMenuRef}
+                className={`open-menu-wrapper open-menu-empty ${openMenuLocation === 'empty' ? 'is-open' : ''}`}
+                onMouseEnter={() => showOpenMenu('empty')}
+                onMouseLeave={() => scheduleHideOpenMenu('empty')}
               >
-                Open folder
-              </button>
-              <button
-                type="button"
-                className="btn-flat btn-secondary btn-sm"
-                onClick={() => {
-                  if (onOpenFromComputer) onOpenFromComputer()
-                }}
-                disabled={isStopped}
-                title={!fsAccessSupported ? UNSUPPORTED_FS_TOOLTIP : 'Open a local file and link it for direct saving'}
-              >
-                Open from computer
-              </button>
+                <button
+                  type="button"
+                  className="btn-flat btn-secondary btn-sm btn-empty-open"
+                  onClick={() => {
+                    if (isStopped) return
+                    setOpenMenuLocation((prev) => (prev === 'empty' ? null : 'empty'))
+                  }}
+                  disabled={isStopped}
+                  aria-haspopup="menu"
+                  aria-expanded={openMenuLocation === 'empty'}
+                >
+                  <span>Open..</span>
+                  <ChevronDown size={13} strokeWidth={1.75} />
+                </button>
+
+                {openMenuLocation === 'empty' && !isStopped && (
+                  <div className="open-dropdown-menu open-dropdown-empty" role="menu">
+                    <div className="open-dropdown-surface">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="open-dropdown-item"
+                        onClick={() => {
+                          setOpenMenuLocation(null)
+                          handleOpenFolderClick()
+                        }}
+                      >
+                        <FolderOpen size={14} strokeWidth={1.75} />
+                        <span>Folder</span>
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="open-dropdown-item"
+                        onClick={() => {
+                          setOpenMenuLocation(null)
+                          if (onOpenFromComputer) onOpenFromComputer()
+                        }}
+                      >
+                        <FileUp size={14} strokeWidth={1.75} />
+                        <span>File</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ) : (

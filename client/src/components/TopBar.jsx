@@ -325,7 +325,7 @@ export default function TopBar({
             disabled={!activeFile}
             title={
               !fsAccessSupported
-                ? UNSUPPORTED_FS_TOOLTIP
+                ? `Save "${activeFile || 'current file'}" (downloads a copy — Ctrl+S). ${UNSUPPORTED_FS_TOOLTIP}`
                 : linkedDiskName
                 ? `Save to ${linkedDiskName} (Ctrl+S)`
                 : `Save "${activeFile || 'current file'}" to computer (Ctrl+S)`
@@ -537,7 +537,7 @@ export default function TopBar({
                     if (onOpenFromComputer) onOpenFromComputer()
                   }}
                   disabled={isStopped}
-                  title={!fsAccessSupported ? UNSUPPORTED_FS_TOOLTIP : 'Open a file from your computer'}
+                  title="Open a file from your computer"
                 >
                   <FileUp size={14} strokeWidth={1.75} />
                   <span>Open from computer</span>
