@@ -14,7 +14,11 @@ import {
   FileUp,
   Link2,
   MoreHorizontal,
-  Unlink
+  Unlink,
+  Pencil,
+  CopyPlus,
+  Copy,
+  Download
 } from 'lucide-react'
 import { getFileExtension, validateFileName, normalizeLineEndings } from '../utils/helpers'
 
@@ -51,6 +55,10 @@ export default function Sidebar({
   onSelectFile,
   onCreateFile,
   onDeleteFile,
+  onRenameFile,
+  onDuplicateFile,
+  onDownloadFile,
+  onCopyFileName,
   onClearAllFiles,
   users = [],
   isStopped = false,
@@ -67,6 +75,8 @@ export default function Sidebar({
   const [newFileName, setNewFileName] = useState('')
   const [fileToDelete, setFileToDelete] = useState(null)
   const [openRowMenuFile, setOpenRowMenuFile] = useState(null)
+  const [renamingFile, setRenamingFile] = useState(null)
+  const [renameValue, setRenameValue] = useState('')
   const [openMenuLocation, setOpenMenuLocation] = useState(null)
   const [isConfirmRemoveAllOpen, setIsConfirmRemoveAllOpen] = useState(false)
   const [error, setError] = useState('')
@@ -253,22 +263,61 @@ export default function Sidebar({
     const displayName = filePath.split('/').pop()
     const linkedInfo = linkedFiles[filePath] || null
     const isMenuOpen = openRowMenuFile === filePath
+    const isRenaming = renamingFile === filePath
 
     // Find remote users viewing this file
     const remoteViewers = users.filter((u) => !u.isYou && u.currentFile === filePath)
+
+    const commitRename = () => {
+      const next = renameValue.trim()
+      setRenamingFile(null)
+      if (!next || next === displayName) return
+      if (onRenameFile) onRenameFile(filePath, next)
+    }
 
     return (
       <div
         key={filePath}
         className={`file-row ${isActive ? 'active' : ''}`}
-        onClick={() => onSelectFile(filePath)}
+        onClick={() => {
+          if (!isRenaming) onSelectFile(filePath)
+        }}
+        onContextMenu={(e) => {
+          if (isStopped || isRenaming) return
+          e.preventDefault()
+          e.stopPropagation()
+          setOpenRowMenuFile(filePath)
+        }}
         style={{ paddingLeft: `${14 + depth * 14}px` }}
         title={linkedInfo ? `${filePath} (Linked to ${linkedInfo.diskName})` : filePath}
       >
         <div className="file-row-main">
           {getLanguageDot(filePath)}
-          <span className="file-row-name">{displayName}</span>
-          {linkedInfo && (
+          {isRenaming ? (
+            <input
+              type="text"
+              className="file-rename-input"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  commitRename()
+                } else if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setRenamingFile(null)
+                }
+              }}
+              autoFocus
+              spellCheck={false}
+            />
+          ) : (
+            <span className="file-row-name">{displayName}</span>
+          )}
+          {linkedInfo && !isRenaming && (
             <span
               className="file-link-badge"
               title={`Linked to ${linkedInfo.diskName}`}
@@ -279,7 +328,7 @@ export default function Sidebar({
           )}
 
           {/* Remote presence dots in user colors */}
-          {remoteViewers.length > 0 && (
+          {remoteViewers.length > 0 && !isRenaming && (
             <div className="file-presence-dots">
               {remoteViewers.map((viewer) => (
                 <span
@@ -294,23 +343,80 @@ export default function Sidebar({
         </div>
 
         <div className="file-row-actions" onMouseDown={(e) => e.stopPropagation()}>
-          {linkedInfo && (
-            <div className="file-row-menu-wrap">
-              <button
-                type="button"
-                className="btn-file-row-menu"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setOpenRowMenuFile(isMenuOpen ? null : filePath)
-                }}
-                title={`Options for ${displayName}`}
-                aria-label={`File options for ${displayName}`}
-                aria-expanded={isMenuOpen}
-              >
-                <MoreHorizontal size={13} strokeWidth={1.75} />
-              </button>
-              {isMenuOpen && (
-                <div className="file-row-dropdown" role="menu">
+          <div className="file-row-menu-wrap">
+            <button
+              type="button"
+              className="btn-file-row-menu"
+              onClick={(e) => {
+                e.stopPropagation()
+                setOpenRowMenuFile(isMenuOpen ? null : filePath)
+              }}
+              title={`Actions for ${displayName}`}
+              aria-label={`File options for ${displayName}`}
+              aria-expanded={isMenuOpen}
+            >
+              <MoreHorizontal size={13} strokeWidth={1.75} />
+            </button>
+            {isMenuOpen && (
+              <div className="file-row-dropdown" role="menu">
+                {!isStopped && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="file-row-dropdown-item"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setOpenRowMenuFile(null)
+                      setRenamingFile(filePath)
+                      setRenameValue(displayName)
+                    }}
+                  >
+                    <Pencil size={12} strokeWidth={1.75} />
+                    <span>Rename</span>
+                  </button>
+                )}
+                {!isStopped && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="file-row-dropdown-item"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setOpenRowMenuFile(null)
+                      if (onDuplicateFile) onDuplicateFile(filePath)
+                    }}
+                  >
+                    <CopyPlus size={12} strokeWidth={1.75} />
+                    <span>Duplicate</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="file-row-dropdown-item"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setOpenRowMenuFile(null)
+                    if (onCopyFileName) onCopyFileName(filePath)
+                  }}
+                >
+                  <Copy size={12} strokeWidth={1.75} />
+                  <span>Copy name</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="file-row-dropdown-item"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setOpenRowMenuFile(null)
+                    if (onDownloadFile) onDownloadFile(filePath)
+                  }}
+                >
+                  <Download size={12} strokeWidth={1.75} />
+                  <span>Download</span>
+                </button>
+                {linkedInfo && (
                   <button
                     type="button"
                     role="menuitem"
@@ -324,10 +430,25 @@ export default function Sidebar({
                     <Unlink size={12} strokeWidth={1.75} />
                     <span>Unlink</span>
                   </button>
-                </div>
-              )}
-            </div>
-          )}
+                )}
+                {!isStopped && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="file-row-dropdown-item text-danger"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setOpenRowMenuFile(null)
+                      setFileToDelete(filePath)
+                    }}
+                  >
+                    <Trash2 size={12} strokeWidth={1.75} />
+                    <span>Delete</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
           <button
             type="button"
