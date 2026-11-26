@@ -90,7 +90,8 @@ export const SUPPORTED_EXTENSIONS = ALLOWED_EXTENSIONS
  * @param {boolean} allowSlashes - Whether forward slashes are allowed (for folder paths)
  * @returns {{ valid: boolean, error: string }}
  */
-export function validateFileName(rawName, existingFiles = [], allowSlashes = false) {
+export function validateFileName(rawName, existingFiles = [], allowSlashes = false, options = {}) {
+  const { allowNoExtension = false, checkExtension = true } = options
   if (rawName === undefined || rawName === null || rawName === '') {
     return { valid: false, error: 'File name cannot be empty' }
   }
@@ -125,25 +126,30 @@ export function validateFileName(rawName, existingFiles = [], allowSlashes = fal
     return { valid: false, error: 'File name cannot contain slashes' }
   }
 
-  // Reject trailing dot
-  if (name.endsWith('.')) {
-    return { valid: false, error: 'File name cannot end with a dot' }
-  }
-
-  // Check extension
+  // Reject leading/trailing dot on live check only when validating extension
   const lastDot = name.lastIndexOf('.')
-  if (lastDot === -1 || lastDot === 0) {
-    return {
-      valid: false,
-      error: 'Use a supported extension: .py .js .ts .html .css ...'
+  if (checkExtension) {
+    if (name.endsWith('.')) {
+      return { valid: false, error: 'File name cannot end with a dot' }
     }
-  }
-
-  const ext = name.slice(lastDot + 1).toLowerCase()
-  if (!ALLOWED_EXTENSIONS.includes(ext)) {
-    return {
-      valid: false,
-      error: 'Use a supported extension: .py .js .ts .html .css ...'
+    if (lastDot === 0) {
+      return { valid: false, error: 'Add a file name before the dot' }
+    }
+    if (lastDot === -1) {
+      if (!allowNoExtension) {
+        return {
+          valid: false,
+          error: 'Use a supported extension: .py .js .ts .html .css ...'
+        }
+      }
+    } else {
+      const ext = name.slice(lastDot + 1).toLowerCase()
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        return {
+          valid: false,
+          error: 'Use a supported extension: .py .js .ts .html .css ...'
+        }
+      }
     }
   }
 

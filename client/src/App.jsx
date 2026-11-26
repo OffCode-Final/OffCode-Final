@@ -44,6 +44,7 @@ import {
   isFileSystemAccessSupported,
   isSaveFilePickerSupported,
   isOpenFilePickerSupported,
+  isBraveBrowser,
   UNSUPPORTED_FS_TOOLTIP,
   saveLinkedHandle,
   removeLinkedHandle,
@@ -1276,7 +1277,7 @@ export default function App() {
 
   const handleCreateFile = (fileName) => {
     if (!workspace || isCurrentUserStopped) return
-    const val = validateFileName(fileName, files, false)
+    const val = validateFileName(fileName, files, false, { allowNoExtension: true })
     if (!val.valid) {
       showToast(val.error, 'error')
       return
@@ -1332,7 +1333,24 @@ export default function App() {
     showToast('Removed all files from workspace.', 'info')
   }, [workspace, session?.roomId, isCurrentUserStopped, removeUndoManager, logEvent, showToast])
 
-  // Import folder of files into workspace (one-time copy)
+  const linkFileToHandle = useCallback(async (fileName, handle, writtenText = undefined) => {
+    if (!fileName || !handle) return
+    const diskName = handle.name || fileName
+    failedAutoSaveRef.current.delete(fileName)
+    setLinkedFiles((prev) => ({
+      ...prev,
+      [fileName]: { handle, diskName }
+    }))
+    if (writtenText !== undefined) {
+      lastWrittenRef.current[fileName] = writtenText
+    }
+    setRelinkPrompt((prev) => (prev && prev.fileName === fileName ? null : prev))
+    if (session?.roomId) {
+      await saveLinkedHandle(session.roomId, fileName, handle)
+    }
+  }, [session?.roomId])
+
+  // Import folder of files into workspace (and auto-link writable handles if available)
   const handleImportFolder = useCallback(
     async (fileInput, initialSkipped = 0) => {
       if (!workspace || isCurrentUserStopped) return
@@ -1350,11 +1368,13 @@ export default function App() {
         let relPath = ''
         let fileObj = null
         let textContent = null
+        let handle = null
 
         if (item.relPath) {
           relPath = item.relPath
           fileObj = item.file
           textContent = item.text
+          handle = item.handle || null
         } else {
           fileObj = item
           relPath = item.webkitRelativePath
@@ -1388,7 +1408,7 @@ export default function App() {
           continue
         }
 
-        candidates.push({ relPath, fileObj, textContent })
+        candidates.push({ relPath, fileObj, textContent, handle })
       }
 
       if (candidates.length === 0) {
@@ -1404,14 +1424,17 @@ export default function App() {
 
       let importedCount = 0
       for (const item of toImport) {
-        const { relPath, fileObj, textContent } = item
+        const { relPath, fileObj, textContent, handle } = item
         try {
           let content = textContent
           if (content === undefined || content === null) {
             content = await fileObj.text()
           }
           content = normalizeLineEndings(content)
-          workspace.createFile(relPath, content)
+          const created = workspace.createFile(relPath, content)
+          if (created && handle) {
+            await linkFileToHandle(relPath, handle, content)
+          }
           importedCount++
         } catch (err) {
           console.warn(`Failed reading file "${relPath}":`, err)
@@ -1435,7 +1458,7 @@ export default function App() {
         showToast(`Imported ${importedCount} file${importedCount === 1 ? '' : 's'}, skipped ${skippedCount}.`, 'success')
       }
     },
-    [workspace, isCurrentUserStopped, showToast, logEvent]
+    [workspace, isCurrentUserStopped, linkFileToHandle, showToast, logEvent]
   )
 
   // Load persisted local disk file handles for this room
@@ -1456,23 +1479,6 @@ export default function App() {
       cancelled = true
     }
   }, [workspace, session?.roomId])
-
-  const linkFileToHandle = useCallback(async (fileName, handle, writtenText = undefined) => {
-    if (!fileName || !handle) return
-    const diskName = handle.name || fileName
-    failedAutoSaveRef.current.delete(fileName)
-    setLinkedFiles((prev) => ({
-      ...prev,
-      [fileName]: { handle, diskName }
-    }))
-    if (writtenText !== undefined) {
-      lastWrittenRef.current[fileName] = writtenText
-    }
-    setRelinkPrompt((prev) => (prev && prev.fileName === fileName ? null : prev))
-    if (session?.roomId) {
-      await saveLinkedHandle(session.roomId, fileName, handle)
-    }
-  }, [session?.roomId])
 
   const handleUnlinkFile = useCallback(async (fileName) => {
     if (!fileName) return
@@ -1580,6 +1586,7 @@ export default function App() {
         setFiles(workspace.listFiles())
         setActiveFile(file.name)
         setOpenFiles((prev) => (prev.includes(file.name) ? prev : [...prev, file.name]))
+        await ensureReadWritePermission(handle)
         await linkFileToHandle(file.name, handle, text)
         logEvent('file', `Opened "${file.name}" from computer`)
         showToast(`Linked to ${handle.name || file.name}`, 'success')
@@ -1598,10 +1605,18 @@ export default function App() {
   const handleSaveCurrentFile = useCallback(async () => {
     if (!activeFile || !activeYText) return
     const currentText = normalizeLineEndings(activeYText.toString())
+    const suggestedBase = (activeFile.split('/').pop() || activeFile).replace(/[<>:"/\\|?*]/g, '_') || 'untitled.txt'
 
     if (!isSaveFilePickerSupported()) {
       downloadFile(activeFile, currentText)
-      showToast(`Downloaded ${activeFile}`, 'success')
+      if (isBraveBrowser()) {
+        showToast(
+          `Downloaded ${suggestedBase} — in Brave, enable brave://flags/#file-system-access-api to live save directly to disk.`,
+          'info'
+        )
+      } else {
+        showToast(`Downloaded ${suggestedBase}`, 'success')
+      }
       logEvent('save', `Downloaded "${activeFile}" to computer`)
       return
     }
@@ -1632,7 +1647,7 @@ export default function App() {
     }
 
     try {
-      const handle = await window.showSaveFilePicker({ suggestedName: activeFile })
+      const handle = await window.showSaveFilePicker({ suggestedName: suggestedBase })
       if (!handle) return
       await linkFileToHandle(activeFile, handle)
       const ok = await writeLinkedFile(activeFile, handle, currentText)
@@ -1643,16 +1658,22 @@ export default function App() {
       }
     } catch (err) {
       if (err?.name === 'AbortError') return
+      console.warn('[Save] showSaveFilePicker fallback:', err)
       downloadFile(activeFile, currentText)
-      showToast(`Downloaded ${activeFile}`, 'info')
+      if (err?.name === 'SecurityError' || err?.name === 'NotAllowedError') {
+        showToast(`Downloaded ${suggestedBase} — click the Save button in the top bar to link and live save.`, 'info')
+      } else {
+        showToast(`Downloaded ${suggestedBase}`, 'info')
+      }
       logEvent('save', `Downloaded "${activeFile}" to computer`)
     }
   }, [activeFile, activeYText, linkedFiles, linkFileToHandle, writeLinkedFile, logEvent, showToast])
 
   const handleRelinkFile = useCallback(async (fileName) => {
-    if (!workspace || !fileName || !isFileSystemAccessSupported()) return
+    if (!workspace || !fileName || !isSaveFilePickerSupported()) return
     try {
-      const handle = await window.showSaveFilePicker({ suggestedName: fileName })
+      const suggestedBase = (fileName.split('/').pop() || fileName).replace(/[<>:"/\\|?*]/g, '_') || 'untitled.txt'
+      const handle = await window.showSaveFilePicker({ suggestedName: suggestedBase })
       if (!handle) return
       await linkFileToHandle(fileName, handle)
       const ytext = workspace.getText(fileName)
@@ -2041,7 +2062,10 @@ export default function App() {
 
     // 5. Other languages
     setIsRunning(false)
-    appendRunItem(runId, { kind: 'stderr', text: `Running ${ext.toUpperCase()} is not supported offline.` })
+    appendRunItem(runId, {
+      kind: 'stderr',
+      text: `Running ${ext ? ext.toUpperCase() : 'plain text'} is not supported offline.`
+    })
     finishRun(runId, 'error', null)
   }, [activeFile, activeYText, startRun, appendRunItem, finishRun, logEvent, workspace])
 
@@ -2061,8 +2085,8 @@ export default function App() {
         setIsOutputOpen((prev) => !prev)
       }
     }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
   }, [handleSaveCurrentFile, handleRunCode])
 
   // Offline / Online toggle
@@ -2603,11 +2627,13 @@ export default function App() {
               spellCheck={false}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  const val = validateFileName(modalFileName, files, false)
+                  const val = validateFileName(modalFileName, files, false, { allowNoExtension: true })
                   if (val.valid) {
                     handleCreateFile(modalFileName)
                     setIsNewFileModalOpen(false)
                     setModalFileName('')
+                  } else {
+                    showToast(val.error, 'error')
                   }
                 } else if (e.key === 'Escape') {
                   setIsNewFileModalOpen(false)
@@ -2615,9 +2641,9 @@ export default function App() {
                 }
               }}
             />
-            {modalFileName && !validateFileName(modalFileName, files, false).valid && (
+            {modalFileName && !validateFileName(modalFileName, files, false, { allowNoExtension: true, checkExtension: false }).valid && (
               <span className="new-file-error" style={{ display: 'block', marginBottom: '10px' }}>
-                {validateFileName(modalFileName, files, false).error}
+                {validateFileName(modalFileName, files, false, { allowNoExtension: true, checkExtension: false }).error}
               </span>
             )}
             <div className="modal-actions">
@@ -2634,13 +2660,15 @@ export default function App() {
               <button
                 type="button"
                 className="btn-flat btn-primary"
-                disabled={!modalFileName || !validateFileName(modalFileName, files, false).valid}
+                disabled={!modalFileName || !validateFileName(modalFileName, files, false, { allowNoExtension: true, checkExtension: false }).valid}
                 onClick={() => {
-                  const val = validateFileName(modalFileName, files, false)
+                  const val = validateFileName(modalFileName, files, false, { allowNoExtension: true })
                   if (val.valid) {
                     handleCreateFile(modalFileName)
                     setIsNewFileModalOpen(false)
                     setModalFileName('')
+                  } else {
+                    showToast(val.error, 'error')
                   }
                 }}
               >
