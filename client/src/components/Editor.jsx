@@ -717,6 +717,9 @@ function createInlinePreviewExtension() {
 
 function createAiTooltipExtension({
   onImproveWithAi,
+  onAskAiRef,
+  activeFileRef,
+  lastQuotedRangeRef,
   isStopped = false,
   readOnly = false,
   isOffline = false
@@ -725,10 +728,12 @@ function createAiTooltipExtension({
     const { from, to } = state.selection.main
     if (to - from < 3) return null
 
-    let disabledReason = null
-    if (isStopped) disabledReason = 'Editing stopped by host'
-    else if (readOnly) disabledReason = 'File is read-only'
-    else if (isOffline) disabledReason = 'AI needs internet'
+    let improveDisabledReason = null
+    if (isStopped) improveDisabledReason = 'Editing stopped by host'
+    else if (readOnly) improveDisabledReason = 'File is read-only'
+    else if (isOffline) improveDisabledReason = 'AI needs internet'
+
+    const askDisabledReason = isOffline ? 'AI needs internet' : null
 
     return {
       pos: Math.max(from, to),
@@ -737,41 +742,32 @@ function createAiTooltipExtension({
         const dom = document.createElement('div')
         dom.className = 'cm-ai-tooltip-content'
 
-        const button = document.createElement('button')
-        button.type = 'button'
-        button.className = 'cm-ai-sparkle-btn'
-        button.title = disabledReason || 'Improve with AI'
-        button.setAttribute('aria-label', disabledReason || 'Improve with AI')
-
-        if (disabledReason) {
-          button.disabled = true
+        const improveBtn = document.createElement('button')
+        improveBtn.type = 'button'
+        improveBtn.className = 'cm-ai-sparkle-btn cm-ai-pill-btn'
+        improveBtn.title = improveDisabledReason || 'Improve with AI'
+        improveBtn.setAttribute('aria-label', improveDisabledReason || 'Improve')
+        if (improveDisabledReason) {
+          improveBtn.disabled = true
         }
-
-        button.innerHTML = `
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        improveBtn.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-            <path d="M5 3v4"/>
-            <path d="M19 17v4"/>
-            <path d="M3 5h4"/>
-            <path d="M17 19h4"/>
           </svg>
+          <span>Improve</span>
         `
-
-        button.addEventListener('mousedown', (e) => {
+        improveBtn.addEventListener('mousedown', (e) => {
           e.preventDefault()
           e.stopPropagation()
         })
-
-        button.addEventListener('click', (e) => {
+        improveBtn.addEventListener('click', (e) => {
           e.preventDefault()
           e.stopPropagation()
-          if (disabledReason) return
-
+          if (improveDisabledReason) return
           const sel = view.state.selection.main
           if (sel.to - sel.from < 3) return
           const selectedText = view.state.sliceDoc(sel.from, sel.to)
           const fullText = view.state.doc.toString()
-
           if (onImproveWithAi) {
             onImproveWithAi({
               selectedText,
@@ -783,7 +779,56 @@ function createAiTooltipExtension({
           }
         })
 
-        dom.appendChild(button)
+        const askBtn = document.createElement('button')
+        askBtn.type = 'button'
+        askBtn.className = 'cm-ai-ask-btn cm-ai-pill-btn'
+        askBtn.title = askDisabledReason || 'Quote selection in AI assistant'
+        askBtn.setAttribute('aria-label', askDisabledReason || 'Ask AI')
+        if (askDisabledReason) {
+          askBtn.disabled = true
+        }
+        askBtn.innerHTML = `
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          <span>Ask AI</span>
+        `
+        askBtn.addEventListener('mousedown', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+        })
+        askBtn.addEventListener('click', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          if (askDisabledReason) return
+          const sel = view.state.selection.main
+          if (sel.to - sel.from < 3) return
+          const selectedText = view.state.sliceDoc(sel.from, sel.to)
+          const startLine = view.state.doc.lineAt(sel.from).number
+          const endLine = view.state.doc.lineAt(sel.to).number
+          const curFile = activeFileRef?.current || 'file'
+          if (lastQuotedRangeRef) {
+            lastQuotedRangeRef.current = {
+              file: curFile,
+              from: sel.from,
+              to: sel.to,
+              text: selectedText
+            }
+          }
+          if (onAskAiRef?.current) {
+            onAskAiRef.current({
+              fileName: curFile,
+              startLine,
+              endLine,
+              text: selectedText,
+              from: sel.from,
+              to: sel.to
+            })
+          }
+        })
+
+        dom.appendChild(improveBtn)
+        dom.appendChild(askBtn)
         return { dom }
       }
     }
@@ -979,6 +1024,8 @@ export default function Editor({
   theme = 'dark',
   onCreateFile,
   onImproveWithAi = null,
+  onAskAiWithQuote = null,
+  editorActionsRef = null,
   isOffline = false,
   editorPrefs = DEFAULT_PREFS,
   onChangeEditorPrefs,
@@ -993,6 +1040,72 @@ export default function Editor({
   const typingTimerRef = useRef(null)
   const errorHighlightTimerRef = useRef(null)
   const roomWordsCacheRef = useRef({ key: '', time: 0, words: [] })
+  const onAskAiRef = useRef(onAskAiWithQuote)
+  const activeFileRef = useRef(activeFile)
+  const lastQuotedRangeRef = useRef(null)
+
+  useEffect(() => {
+    onAskAiRef.current = onAskAiWithQuote
+  }, [onAskAiWithQuote])
+
+  useEffect(() => {
+    activeFileRef.current = activeFile
+  }, [activeFile])
+
+  useEffect(() => {
+    if (!editorActionsRef) return
+    editorActionsRef.current = {
+      getCursorLine: () => {
+        const view = viewRef.current
+        if (!view || view.isDestroyed) return 1
+        return view.state.doc.lineAt(view.state.selection.main.head).number
+      },
+      insertAtCursor: (text) => {
+        const view = viewRef.current
+        if (!view || view.isDestroyed || readOnly || isStopped) return false
+        const clean = normalizeLineEndings(text)
+        const head = view.state.selection.main.head
+        view.dispatch({
+          changes: { from: head, to: head, insert: clean },
+          selection: { anchor: head + clean.length },
+          scrollIntoView: true
+        })
+        view.focus()
+        return true
+      },
+      replaceSelection: (text) => {
+        const view = viewRef.current
+        if (!view || view.isDestroyed || readOnly || isStopped) return false
+        const clean = normalizeLineEndings(text)
+        const sel = view.state.selection.main
+        if (sel.to > sel.from) {
+          view.dispatch({
+            changes: { from: sel.from, to: sel.to, insert: clean },
+            selection: { anchor: sel.from + clean.length },
+            scrollIntoView: true
+          })
+          lastQuotedRangeRef.current = null
+          view.focus()
+          return true
+        }
+        const q = lastQuotedRangeRef.current
+        if (q && q.file === activeFile && q.to <= view.state.doc.length) {
+          const slice = view.state.sliceDoc(q.from, q.to)
+          if (slice === q.text) {
+            view.dispatch({
+              changes: { from: q.from, to: q.to, insert: clean },
+              selection: { anchor: q.from + clean.length },
+              scrollIntoView: true
+            })
+            lastQuotedRangeRef.current = null
+            view.focus()
+            return true
+          }
+        }
+        return false
+      }
+    }
+  }, [editorActionsRef, activeFile, readOnly, isStopped])
 
   const getRoomCompletions = useCallback(() => {
     if (!workspace) return []
@@ -1194,6 +1307,9 @@ export default function Editor({
       aiTooltipCompartment.of(
         createAiTooltipExtension({
           onImproveWithAi,
+          onAskAiRef,
+          activeFileRef,
+          lastQuotedRangeRef,
           isStopped,
           readOnly,
           isOffline

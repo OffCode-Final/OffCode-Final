@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, Square, Trash2, Maximize2, Minimize2, AlertCircle, Copy, Check } from 'lucide-react'
+import { X, Square, Trash2, Maximize2, Minimize2, AlertCircle, Copy, Check, Sparkles } from 'lucide-react'
 import { copyToClipboard } from '../utils/helpers'
 
 const STATUS_LABELS = {
@@ -11,7 +11,7 @@ const STATUS_LABELS = {
   timed_out: 'Timed out'
 }
 
-function ErrorBlock({ error, onJumpToLocation }) {
+function ErrorBlock({ error, onJumpToLocation, onAskAiExplain }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
@@ -43,15 +43,28 @@ function ErrorBlock({ error, onJumpToLocation }) {
             )
           )}
         </div>
-        <button
-          type="button"
-          className="error-copy-btn"
-          onClick={handleCopy}
-          title="Copy error"
-        >
-          {copied ? <Check size={11} strokeWidth={2} /> : <Copy size={11} strokeWidth={1.75} />}
-          <span>{copied ? 'Copied' : 'Copy error'}</span>
-        </button>
+        <div className="error-card-actions">
+          {onAskAiExplain && (
+            <button
+              type="button"
+              className="error-explain-btn"
+              onClick={() => onAskAiExplain(error)}
+              title="Ask AI to explain this error"
+            >
+              <Sparkles size={11} strokeWidth={1.75} />
+              <span>Ask AI to explain</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="error-copy-btn"
+            onClick={handleCopy}
+            title="Copy error"
+          >
+            {copied ? <Check size={11} strokeWidth={2} /> : <Copy size={11} strokeWidth={1.75} />}
+            <span>{copied ? 'Copied' : 'Copy error'}</span>
+          </button>
+        </div>
       </div>
 
       {Array.isArray(error.stack) && error.stack.length > 1 && (
@@ -117,7 +130,8 @@ export default function OutputPanel({
   onHtmlError,
   pendingInputPrompt = null,
   onSubmitInteractiveInput,
-  onSendInteractiveEof
+  onSendInteractiveEof,
+  onAskAiExplainError = null
 }) {
   const [activeTab, setActiveTab] = useState('console') // 'console' | 'preview'
   const [panelHeight, setPanelHeight] = useState(280)
@@ -389,6 +403,7 @@ export default function OutputPanel({
                             key={item.id}
                             error={item.parsedError}
                             onJumpToLocation={onJumpToLocation}
+                            onAskAiExplain={onAskAiExplainError}
                           />
                         )
                       }

@@ -23,7 +23,8 @@ import {
   Sliders,
   WifiOff,
   Terminal,
-  FileUp
+  FileUp,
+  Sparkles
 } from 'lucide-react'
 import { getFileExtension, copyToClipboard } from '../utils/helpers'
 import { UNSUPPORTED_FS_TOOLTIP } from '../utils/diskLink'
@@ -99,6 +100,8 @@ export default function TopBar({
   isChatOpen = false,
   onToggleChat,
   unreadChatCount = 0,
+  isAiChatOpen = false,
+  onToggleAiChat,
   isStopped = false,
   showUserChanges = false,
   onToggleShowUserChanges,
@@ -353,6 +356,17 @@ export default function TopBar({
             {unreadChatCount > 0 && !isChatOpen && (
               <span className="badge-unread-count">{unreadChatCount}</span>
             )}
+          </button>
+
+          <button
+            type="button"
+            className={`btn-toolbar btn-ghost btn-ai-toggle ${isAiChatOpen ? 'active' : ''}`}
+            onClick={onToggleAiChat}
+            title={isAiChatOpen ? 'Close private AI assistant' : 'Open private AI assistant'}
+            aria-label="Toggle AI"
+          >
+            <Sparkles size={16} strokeWidth={1.75} />
+            <span>AI</span>
           </button>
 
           <button
