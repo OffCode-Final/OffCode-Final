@@ -191,7 +191,7 @@ export function createLocalAttributionListener(ytext, currentUserId, currentUser
       ytext.doc.transact(() => {
         update.changes.iterChanges((fromA, toA, fromB, toB) => {
           const len = toB - fromB
-          if (len > 0) {
+          if (len > 0 && currentUserId && fromB >= 0 && fromB + len <= ytext.length) {
             ytext.format(fromB, len, {
               author: currentUserId,
               name: currentUserName || 'Collaborator',

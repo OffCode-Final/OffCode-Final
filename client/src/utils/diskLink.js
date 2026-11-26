@@ -7,17 +7,22 @@ const DB_NAME = 'offcode-disk-links'
 const STORE_NAME = 'handles'
 const DB_VERSION = 1
 
-export function isFileSystemAccessSupported() {
+export function isSaveFilePickerSupported() {
   if (typeof window === 'undefined') return false
-  return Boolean(
-    window.isSecureContext &&
-    typeof window.showOpenFilePicker === 'function' &&
-    typeof window.showSaveFilePicker === 'function'
-  )
+  return Boolean(window.isSecureContext && typeof window.showSaveFilePicker === 'function')
+}
+
+export function isOpenFilePickerSupported() {
+  if (typeof window === 'undefined') return false
+  return Boolean(window.isSecureContext && typeof window.showOpenFilePicker === 'function')
+}
+
+export function isFileSystemAccessSupported() {
+  return isSaveFilePickerSupported() && isOpenFilePickerSupported()
 }
 
 export const UNSUPPORTED_FS_TOOLTIP =
-  'Your browser cannot save to the same file. Use Chrome or Edge on the https link.'
+  'Downloads a copy in this browser. Live overwriting of the same file on disk is supported in Chrome or Edge on HTTPS/localhost.'
 
 function makeKey(roomId, fileName) {
   const cleanRoom = String(roomId || 'default').trim().toLowerCase()
