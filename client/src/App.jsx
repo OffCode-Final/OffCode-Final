@@ -38,6 +38,8 @@ import ChatPanel, { getChatJoinedAt, getMessageTime } from './components/ChatPan
 import { improveCodeWithGemini } from './ai/gemini'
 import AiKeyModal from './components/AiKeyModal'
 import AiReviewModal from './components/AiReviewModal'
+import AiChatPanel from './components/AiChatPanel'
+import { loadAiUsage, addUsageSample, resetAiUsage } from './utils/aiStorage'
 import { DEFAULT_PREFS } from './components/CustomizePopover'
 import { runRemoteCode, isOnlineLanguage } from './run/remote.js'
 import { parsePythonTraceback, parseJsError, parseHtmlError } from './utils/errorParser'
@@ -125,6 +127,10 @@ export default function App() {
   const [relinkPrompt, setRelinkPrompt] = useState(null)
   const [showLiveSaveGuideToast, setShowLiveSaveGuideToast] = useState(false)
   const [isLiveSaveGuideOpen, setIsLiveSaveGuideOpen] = useState(false)
+  const [isAiChatOpen, setIsAiChatOpen] = useState(false)
+  const [pendingAiQuote, setPendingAiQuote] = useState(null)
+  const [aiUsageState, setAiUsageState] = useState(() => loadAiUsage())
+  const editorActionsRef = useRef(null)
   const lastWrittenRef = useRef({})
   const autoSaveTimersRef = useRef({})
   const failedAutoSaveRef = useRef(new Set())
@@ -1067,6 +1073,9 @@ export default function App() {
         signal: controller.signal
       })
       setAiResult(res)
+      if (res?.usage) {
+        setAiUsageState((prev) => addUsageSample(prev, { category: 'improve', usage: res.usage }))
+      }
       setIsAiLoading(false)
     } catch (err) {
       if (controller.signal.aborted) {
@@ -1078,6 +1087,55 @@ export default function App() {
       setIsAiLoading(false)
     }
   }, [])
+
+  const handleRecordAiUsage = useCallback((payload) => {
+    setAiUsageState((prev) => addUsageSample(prev, payload))
+  }, [])
+
+  const handleResetAiUsage = useCallback(() => {
+    setAiUsageState(resetAiUsage())
+    showToast('AI token usage reset', 'info')
+  }, [showToast])
+
+  const handleAskAiWithQuote = useCallback(({ fileName, startLine, endLine, text, from, to }) => {
+    if (!text) return
+    const previewLines = String(text).split('\n').slice(0, 3).join('\n')
+    setPendingAiQuote({
+      kind: 'code',
+      label: `${fileName} ${startLine}-${endLine}`,
+      fileName,
+      startLine,
+      endLine,
+      text,
+      preview: previewLines,
+      from,
+      to
+    })
+    setIsAiChatOpen(true)
+  }, [])
+
+  const handleAskAiExplainError = useCallback((errObj) => {
+    if (!errObj) return
+    const targetFile = errObj.fileName || activeFile || 'code'
+    const locSuffix = errObj.line ? `:${errObj.line}` : ''
+    const summaryLines = [
+      errObj.title,
+      errObj.sourceLine,
+      errObj.caretLine,
+      `${errObj.errorType || 'Error'}: ${errObj.message || ''}`
+    ].filter((x) => x !== null && x !== undefined && x !== '')
+    const text = summaryLines.join('\n')
+    setPendingAiQuote({
+      kind: 'error',
+      label: `${targetFile}${locSuffix} · ${errObj.errorType || 'Error'}`,
+      fileName: targetFile,
+      startLine: errObj.line || null,
+      endLine: errObj.line || null,
+      text,
+      preview: summaryLines.slice(0, 3).join('\n')
+    })
+    setIsAiChatOpen(true)
+  }, [activeFile])
 
   const handleSaveAiKey = useCallback((newKey) => {
     try {
@@ -2303,6 +2361,8 @@ export default function App() {
         isChatOpen={isChatOpen}
         onToggleChat={handleToggleChat}
         unreadChatCount={unreadChatCount}
+        isAiChatOpen={isAiChatOpen}
+        onToggleAiChat={() => setIsAiChatOpen((prev) => !prev)}
         isStopped={isCurrentUserStopped}
         showUserChanges={showUserChanges}
         onToggleShowUserChanges={handleToggleShowUserChanges}
@@ -2451,6 +2511,8 @@ export default function App() {
             users={users}
             theme={theme}
             onImproveWithAi={handleTriggerAi}
+            onAskAiWithQuote={handleAskAiWithQuote}
+            editorActionsRef={editorActionsRef}
             isOffline={status === 'offline'}
             editorPrefs={editorPrefs}
             onChangeEditorPrefs={handleUpdateEditorPrefs}
@@ -2476,6 +2538,7 @@ export default function App() {
             pendingInputPrompt={pendingInputPrompt}
             onSubmitInteractiveInput={submitInteractiveInput}
             onSendInteractiveEof={sendInteractiveEof}
+            onAskAiExplainError={handleAskAiExplainError}
           />
         </div>
 
@@ -2520,6 +2583,28 @@ export default function App() {
           workspace={workspace}
           session={session}
           isHost={isHost}
+        />
+
+        {/* Private Local-Only AI Assistant Sidebar */}
+        <AiChatPanel
+          isOpen={isAiChatOpen}
+          onClose={() => setIsAiChatOpen(false)}
+          apiKey={aiKey}
+          onOpenKeyModal={() => setIsAiKeyModalOpen(true)}
+          isOffline={status === 'offline'}
+          isStopped={isCurrentUserStopped}
+          readOnly={isMainReadOnly}
+          activeFile={activeFile}
+          activeCode={activeYText ? normalizeLineEndings(activeYText.toString()) : ''}
+          activeLanguage={getLanguageName(activeFile)}
+          files={files}
+          editorActionsRef={editorActionsRef}
+          pendingQuote={pendingAiQuote}
+          onClearPendingQuote={() => setPendingAiQuote(null)}
+          usageState={aiUsageState}
+          onRecordUsage={handleRecordAiUsage}
+          onResetUsage={handleResetAiUsage}
+          onNotify={showToast}
         />
       </div>
 
