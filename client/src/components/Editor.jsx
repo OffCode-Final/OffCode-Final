@@ -37,7 +37,7 @@ import {
   selectedCompletion
 } from '@codemirror/autocomplete'
 import { yCollab, yUndoManagerKeymap, ySyncAnnotation } from 'y-codemirror.next'
-import { X, Send, FileCode, Plus, Sliders } from 'lucide-react'
+import { X, Send, FileCode, Plus, Sliders, Link2 } from 'lucide-react'
 
 import { python } from '@codemirror/lang-python'
 import { javascript, autoCloseTags as jsAutoCloseTags } from '@codemirror/lang-javascript'
@@ -932,6 +932,7 @@ function getSyntaxTheme(theme, syntaxPreset = 'OffCode') {
 export default function Editor({
   activeFile,
   openFiles = [],
+  linkedFiles = {},
   onSelectTab,
   onCloseTab,
   ytext,
@@ -1587,6 +1588,7 @@ export default function Editor({
         <div className="tab-scroll-container">
           {openFiles.map((fileName) => {
             const isActive = fileName === activeFile
+            const linkedInfo = linkedFiles[fileName] || null
             return (
               <div
                 key={fileName}
@@ -1600,10 +1602,19 @@ export default function Editor({
                     if (onCloseTab) onCloseTab(fileName)
                   }
                 }}
-                title={fileName}
+                title={linkedInfo ? `${fileName} — Linked to ${linkedInfo.diskName}` : fileName}
               >
                 {getTabLanguageDot(fileName)}
                 <span className="editor-tab-name">{fileName}</span>
+                {linkedInfo && (
+                  <span
+                    className="editor-tab-link-icon"
+                    title={`Linked to ${linkedInfo.diskName}`}
+                    aria-label={`Linked to ${linkedInfo.diskName}`}
+                  >
+                    <Link2 size={11} strokeWidth={1.75} />
+                  </span>
+                )}
                 <button
                   type="button"
                   className="btn-tab-close"

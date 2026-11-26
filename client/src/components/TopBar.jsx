@@ -22,9 +22,11 @@ import {
   History,
   Sliders,
   WifiOff,
-  Terminal
+  Terminal,
+  FileUp
 } from 'lucide-react'
 import { getFileExtension, copyToClipboard } from '../utils/helpers'
+import { UNSUPPORTED_FS_TOOLTIP } from '../utils/diskLink'
 import UpdateLogsModal from './UpdateLogsModal'
 import { UPDATE_LOGS } from '../data/updateLogs'
 
@@ -80,6 +82,9 @@ export default function TopBar({
   onToggleDebug,
   onLeaveRoom,
   onSaveCurrentFile,
+  onOpenFromComputer,
+  fsAccessSupported = true,
+  linkedDiskName = null,
   onDownloadAllZip,
   activeFile,
   onRunCode,
@@ -318,7 +323,13 @@ export default function TopBar({
             className="btn-toolbar btn-ghost"
             onClick={onSaveCurrentFile}
             disabled={!activeFile}
-            title={`Save "${activeFile || 'current file'}" to computer (Ctrl+S)`}
+            title={
+              !fsAccessSupported
+                ? UNSUPPORTED_FS_TOOLTIP
+                : linkedDiskName
+                ? `Save to ${linkedDiskName} (Ctrl+S)`
+                : `Save "${activeFile || 'current file'}" to computer (Ctrl+S)`
+            }
             aria-label="Save file"
           >
             <Save size={16} strokeWidth={1.75} />
@@ -516,6 +527,21 @@ export default function TopBar({
                 </button>
 
                 <div className="dropdown-divider" />
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="dropdown-item"
+                  onClick={() => {
+                    setIsMoreOpen(false)
+                    if (onOpenFromComputer) onOpenFromComputer()
+                  }}
+                  disabled={isStopped}
+                  title={!fsAccessSupported ? UNSUPPORTED_FS_TOOLTIP : 'Open a file from your computer'}
+                >
+                  <FileUp size={14} strokeWidth={1.75} />
+                  <span>Open from computer</span>
+                </button>
 
                 <button
                   type="button"

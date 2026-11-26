@@ -5294,6 +5294,95 @@ button:disabled {
   white-space: pre;
 }
 
+/* ==========================================================================
+   BATCH 2: DISK FILE LINKING, FILE ROW MENU, ACTIONABLE TOAST
+   ========================================================================== */
+
+.file-link-badge,
+.editor-tab-link-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.file-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.file-row-menu-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-file-row-menu {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 2px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.btn-file-row-menu:hover {
+  color: var(--text-bright);
+  background-color: var(--bg-tab-hover);
+}
+
+.file-row-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
+  min-width: 110px;
+  background-color: var(--bg-dropdown);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  z-index: 500;
+}
+
+.file-row-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-main);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.file-row-dropdown-item:hover {
+  background-color: var(--bg-hover-row);
+}
+
+.toast-message {
+  pointer-events: auto;
+}
+
+.toast-with-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.toast-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 
 
 
