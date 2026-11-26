@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { EditorState, Compartment, StateField, StateEffect, RangeSet } from '@codemirror/state'
+import { EditorState, Compartment, StateField, StateEffect, RangeSet, Prec } from '@codemirror/state'
 import {
   EditorView,
   Decoration,
@@ -53,9 +53,10 @@ import { go } from '@codemirror/lang-go'
 import { ruby } from '@codemirror/legacy-modes/mode/ruby'
 
 import { getUndoManager } from '../utils/undoCache'
-import { getFileExtension, normalizeLineEndings } from '../utils/helpers'
+import { getFileExtension, getLanguageName, normalizeLineEndings } from '../utils/helpers'
 import { collectRoomIdentifiers, createLanguageCompletionSources } from '../utils/completions'
 import { createUserChangesExtension, userChangesCompartment } from '../utils/userChanges'
+import { fetchInlineCompletionWithGemini } from '../ai/gemini'
 import CustomizePopover, { DEFAULT_PREFS, saveEditorPrefs, ensureGoogleFontLoaded } from './CustomizePopover'
 
 // Calibrate user colors for light vs dark theme (lighten in dark, deepen in light)
@@ -570,6 +571,108 @@ const whitespaceCompartment = new Compartment()
 const aiTooltipCompartment = new Compartment()
 
 const setErrorHighlightEffect = StateEffect.define()
+const setAiGhostEffect = StateEffect.define()
+
+class AiInlineGhostWidget extends WidgetType {
+  constructor(text) {
+    super()
+    this.text = text
+  }
+  eq(other) {
+    return other.text === this.text
+  }
+  toDOM() {
+    const span = document.createElement('span')
+    span.className = 'cm-inline-ghost cm-ai-inline-ghost'
+    span.setAttribute('aria-hidden', 'true')
+    span.textContent = this.text
+    return span
+  }
+  ignoreEvent() {
+    return true
+  }
+}
+
+const aiGhostField = StateField.define({
+  create() {
+    return null
+  },
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setAiGhostEffect)) {
+        const next = effect.value
+        if (!next || !next.text || next.pos < 0 || next.pos > tr.state.doc.length) {
+          return null
+        }
+        return { pos: next.pos, text: next.text }
+      }
+    }
+
+    if (!value) return null
+
+    if (tr.docChanged) {
+      if (tr.annotation(ySyncAnnotation)) {
+        return null
+      }
+      let canShrink = false
+      let insertedText = ''
+      let changeCount = 0
+      tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+        changeCount++
+        if (changeCount === 1 && fromA === value.pos && toA === value.pos) {
+          insertedText = inserted.sliceString(0, inserted.length, '\n')
+          canShrink = true
+        } else {
+          canShrink = false
+        }
+      })
+      if (canShrink && insertedText && value.text.startsWith(insertedText)) {
+        const remaining = value.text.slice(insertedText.length)
+        return remaining ? { pos: value.pos + insertedText.length, text: remaining } : null
+      }
+      return null
+    }
+
+    if (tr.selection) {
+      const sel = tr.selection.main
+      if (!sel.empty || sel.head !== value.pos) {
+        return null
+      }
+    }
+
+    return value
+  },
+  provide: (f) =>
+    EditorView.decorations.from(f, (v) => {
+      if (!v || !v.text) return Decoration.none
+      return Decoration.set([
+        Decoration.widget({
+          widget: new AiInlineGhostWidget(v.text),
+          side: 1
+        }).range(v.pos)
+      ])
+    })
+})
+
+function acceptAiInlineGhost(view) {
+  if (completionStatus(view.state) === 'active') return false
+  if (view.state.readOnly) return false
+  const ghost = view.state.field(aiGhostField, false)
+  if (!ghost || !ghost.text) return false
+  view.dispatch({
+    changes: { from: ghost.pos, to: ghost.pos, insert: ghost.text },
+    selection: { anchor: ghost.pos + ghost.text.length },
+    effects: setAiGhostEffect.of(null)
+  })
+  return true
+}
+
+function dismissAiInlineGhost(view) {
+  const ghost = view.state.field(aiGhostField, false)
+  if (!ghost) return false
+  view.dispatch({ effects: setAiGhostEffect.of(null) })
+  return completionStatus(view.state) !== 'active'
+}
 
 class ErrorLineGutterMarker extends GutterMarker {
   toDOM() {
@@ -1026,6 +1129,9 @@ export default function Editor({
   onImproveWithAi = null,
   onAskAiWithQuote = null,
   editorActionsRef = null,
+  aiKey = '',
+  onRecordAiInlineUsage = null,
+  onAiInlineStatusChange = null,
   isOffline = false,
   editorPrefs = DEFAULT_PREFS,
   onChangeEditorPrefs,
@@ -1043,6 +1149,46 @@ export default function Editor({
   const onAskAiRef = useRef(onAskAiWithQuote)
   const activeFileRef = useRef(activeFile)
   const lastQuotedRangeRef = useRef(null)
+  const aiInlineEnabledRef = useRef(false)
+  const aiKeyRef = useRef(aiKey)
+  const isOfflineRef = useRef(isOffline)
+  const onAiInlineUsageRef = useRef(onRecordAiInlineUsage)
+  const onAiInlineStatusRef = useRef(onAiInlineStatusChange)
+  const aiInlineTimerRef = useRef(null)
+  const aiInlineAbortRef = useRef(null)
+  const aiRateWindowRef = useRef([])
+  const aiPausedUntilRef = useRef(0)
+  const aiPauseClearTimerRef = useRef(null)
+  const aiInlineCacheRef = useRef(new Map())
+
+  useEffect(() => {
+    aiInlineEnabledRef.current = Boolean(editorPrefs.aiInlineSuggestions && !readOnly && !isStopped)
+    aiKeyRef.current = aiKey
+    isOfflineRef.current = Boolean(isOffline)
+    onAiInlineUsageRef.current = onRecordAiInlineUsage
+    onAiInlineStatusRef.current = onAiInlineStatusChange
+    if (!aiInlineEnabledRef.current || isOffline) {
+      if (aiInlineTimerRef.current) {
+        clearTimeout(aiInlineTimerRef.current)
+        aiInlineTimerRef.current = null
+      }
+      if (aiInlineAbortRef.current) {
+        aiInlineAbortRef.current.abort()
+        aiInlineAbortRef.current = null
+      }
+      if (viewRef.current && !viewRef.current.isDestroyed && viewRef.current.state.field(aiGhostField, false)) {
+        viewRef.current.dispatch({ effects: setAiGhostEffect.of(null) })
+      }
+    }
+  }, [editorPrefs.aiInlineSuggestions, readOnly, isStopped, aiKey, isOffline, onRecordAiInlineUsage, onAiInlineStatusChange])
+
+  useEffect(() => {
+    return () => {
+      if (aiInlineTimerRef.current) clearTimeout(aiInlineTimerRef.current)
+      if (aiInlineAbortRef.current) aiInlineAbortRef.current.abort()
+      if (aiPauseClearTimerRef.current) clearTimeout(aiPauseClearTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     onAskAiRef.current = onAskAiWithQuote
@@ -1278,6 +1424,8 @@ export default function Editor({
       EditorState.readOnly.of(!isEditable),
       EditorView.editable.of(isEditable),
       EditorView.contentAttributes.of({ tabindex: '0' }),
+      aiGhostField,
+      Prec.highest(keymap.of([{ key: 'Escape', run: dismissAiInlineGhost }])),
       suggestionsCompartment.of(
         isEditable && editorPrefs.suggestions !== false
           ? autocompletion({ activateOnTyping: true })
@@ -1291,7 +1439,14 @@ export default function Editor({
       keymap.of(
         !isEditable
           ? defaultKeymap
-          : [{ key: 'Tab', run: acceptCompletion }, indentWithTab, ...closeBracketsKeymap, ...yUndoManagerKeymap, ...defaultKeymap]
+          : [
+              { key: 'Tab', run: acceptCompletion },
+              { key: 'Tab', run: acceptAiInlineGhost },
+              indentWithTab,
+              ...closeBracketsKeymap,
+              ...yUndoManagerKeymap,
+              ...defaultKeymap
+            ]
       ),
       yCollab(ytext, awareness, { undoManager: !isEditable ? false : fileUndoManager }),
       userChangesCompartment.of(
@@ -1320,8 +1475,11 @@ export default function Editor({
           if (onUserInteraction) onUserInteraction()
           return false
         },
-        keydown(e) {
+        keydown(e, view) {
           if (onUserInteraction) onUserInteraction()
+          if (e.key === 'Escape' && view?.state?.field(aiGhostField, false)) {
+            view.dispatch({ effects: setAiGhostEffect.of(null) })
+          }
           // Zoom shortcuts: Ctrl+Plus, Ctrl+Minus, Ctrl+0
           if (e.ctrlKey || e.metaKey) {
             if (e.key === '=' || e.key === '+') {
@@ -1376,6 +1534,173 @@ export default function Editor({
 
           if (awareness) {
             awareness.setLocalStateField('currentLine', line.number)
+          }
+        }
+
+        // Batch 4: Opt-in AI inline ghost suggestions after 600ms idle typing
+        const isOnlyAiGhostUpdate =
+          !update.docChanged &&
+          !update.selectionSet &&
+          update.transactions.some((tr) => tr.effects.some((ef) => ef.is(setAiGhostEffect)))
+        if (isOnlyAiGhostUpdate) return
+
+        const isRemoteTx = update.transactions.some((tr) => tr.annotation(ySyncAnnotation))
+        if (update.docChanged || update.selectionSet) {
+          if (aiInlineTimerRef.current) {
+            clearTimeout(aiInlineTimerRef.current)
+            aiInlineTimerRef.current = null
+          }
+          if (aiInlineAbortRef.current) {
+            aiInlineAbortRef.current.abort()
+            aiInlineAbortRef.current = null
+            if (onAiInlineStatusRef.current && Date.now() >= aiPausedUntilRef.current) {
+              onAiInlineStatusRef.current(null)
+            }
+          }
+
+          if (
+            update.docChanged &&
+            !isRemoteTx &&
+            aiInlineEnabledRef.current &&
+            !isOfflineRef.current &&
+            !update.view.composing &&
+            !update.state.field(aiGhostField, false)
+          ) {
+            const scheduleView = update.view
+            aiInlineTimerRef.current = setTimeout(async () => {
+              aiInlineTimerRef.current = null
+              if (scheduleView.isDestroyed || !aiInlineEnabledRef.current || isOfflineRef.current) return
+              if (typeof navigator !== 'undefined' && !navigator.onLine) return
+              if (scheduleView.composing) return
+
+              const state = scheduleView.state
+              const sel = state.selection.main
+              if (!sel.empty) return
+              if (completionStatus(state) === 'active') return
+
+              const lineInfo = state.doc.lineAt(sel.head)
+              const atEndOfLine = sel.head === lineInfo.to
+              const onBlankLine = lineInfo.text.trim() === ''
+              if (!atEndOfLine && !onBlankLine) return
+              if (state.field(aiGhostField, false)) return
+
+              let resolvedKey = (aiKeyRef.current || '').trim()
+              if (!resolvedKey) {
+                try {
+                  resolvedKey = (window.localStorage.getItem('offcode-gemini-key') || '').trim()
+                } catch (_) {}
+              }
+              if (!resolvedKey) return
+
+              const now = Date.now()
+              if (now < aiPausedUntilRef.current) {
+                if (onAiInlineStatusRef.current) onAiInlineStatusRef.current('paused')
+                return
+              }
+
+              const beforeText = state.sliceDoc(0, sel.head)
+              const afterText = state.sliceDoc(sel.head, Math.min(state.doc.length, sel.head + 2000))
+              if (!beforeText.trim()) return
+
+              const fileName = activeFileRef.current || 'untitled'
+              const cacheKey = `${fileName}\n${beforeText.slice(-1500)}`
+              const cache = aiInlineCacheRef.current
+              let cachedCompletion = cache.get(cacheKey)
+              if (cachedCompletion === undefined) {
+                for (const [k, v] of cache.entries()) {
+                  if (!v) continue
+                  const sep = k.indexOf('\n')
+                  if (sep < 0) continue
+                  const cFile = k.slice(0, sep)
+                  const cBefore = k.slice(sep + 1)
+                  const curTail = beforeText.slice(-1500)
+                  if (cFile === fileName && curTail.startsWith(cBefore)) {
+                    const typed = curTail.slice(cBefore.length)
+                    if (typed && v.startsWith(typed) && v.slice(typed.length)) {
+                      cachedCompletion = v.slice(typed.length)
+                      break
+                    }
+                  }
+                }
+              }
+
+              if (cachedCompletion !== undefined) {
+                if (cachedCompletion) {
+                  scheduleView.dispatch({
+                    effects: setAiGhostEffect.of({ pos: sel.head, text: cachedCompletion })
+                  })
+                }
+                return
+              }
+
+              // Enforce 20 requests/minute client cap
+              aiRateWindowRef.current = aiRateWindowRef.current.filter((t) => t > now - 60000)
+              if (aiRateWindowRef.current.length >= 20) return
+              aiRateWindowRef.current.push(now)
+
+              const controller = new AbortController()
+              aiInlineAbortRef.current = controller
+              const requestPos = sel.head
+              if (onAiInlineStatusRef.current) onAiInlineStatusRef.current('suggesting')
+
+              try {
+                const res = await fetchInlineCompletionWithGemini({
+                  apiKey: resolvedKey,
+                  fileName,
+                  language: getLanguageName(fileName),
+                  beforeText,
+                  afterText,
+                  signal: controller.signal
+                })
+
+                if (res?.usage && onAiInlineUsageRef.current) {
+                  onAiInlineUsageRef.current(res.usage)
+                }
+
+                if (aiInlineAbortRef.current === controller) {
+                  aiInlineAbortRef.current = null
+                }
+                if (onAiInlineStatusRef.current && Date.now() >= aiPausedUntilRef.current) {
+                  onAiInlineStatusRef.current(null)
+                }
+
+                if (controller.signal.aborted || scheduleView.isDestroyed) return
+                const curSel = scheduleView.state.selection.main
+                if (!curSel.empty || curSel.head !== requestPos) return
+                if (completionStatus(scheduleView.state) === 'active') return
+                if (!aiInlineEnabledRef.current || isOfflineRef.current) return
+
+                const completion = res?.completion || ''
+                if (cache.size >= 60) {
+                  const firstKey = cache.keys().next().value
+                  cache.delete(firstKey)
+                }
+                cache.set(cacheKey, completion)
+
+                if (completion) {
+                  scheduleView.dispatch({
+                    effects: setAiGhostEffect.of({ pos: requestPos, text: completion })
+                  })
+                }
+              } catch (err) {
+                if (aiInlineAbortRef.current === controller) {
+                  aiInlineAbortRef.current = null
+                }
+                if (err?.isRateLimit) {
+                  aiPausedUntilRef.current = Date.now() + 30000
+                  if (onAiInlineStatusRef.current) onAiInlineStatusRef.current('paused')
+                  if (aiPauseClearTimerRef.current) clearTimeout(aiPauseClearTimerRef.current)
+                  aiPauseClearTimerRef.current = setTimeout(() => {
+                    aiPauseClearTimerRef.current = null
+                    if (onAiInlineStatusRef.current && Date.now() >= aiPausedUntilRef.current) {
+                      onAiInlineStatusRef.current(null)
+                    }
+                  }, 30100)
+                } else if (onAiInlineStatusRef.current && Date.now() >= aiPausedUntilRef.current) {
+                  onAiInlineStatusRef.current(null)
+                }
+              }
+            }, 600)
           }
         }
       })

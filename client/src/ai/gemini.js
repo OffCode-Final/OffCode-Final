@@ -528,3 +528,122 @@ export async function streamChatWithGemini({
     idle.cleanup()
   }
 }
+
+/**
+ * Requests a short inline completion around the caret for Batch 4 AI ghost text.
+ * Returns { completion: string, usage } or throws (with err.isRateLimit = true on 429).
+ */
+export async function fetchInlineCompletionWithGemini({
+  apiKey,
+  fileName,
+  language,
+  beforeText,
+  afterText,
+  signal
+}) {
+  const trimmedKey = (apiKey || '').trim()
+  if (!trimmedKey) return { completion: '', usage: null }
+
+  const beforeLines = String(beforeText || '').split('\n').slice(-80).join('\n')
+  const afterLines = String(afterText || '').split('\n').slice(0, 20).join('\n')
+  const langLabel = language || 'Plain Text'
+
+  const prompt = `File: ${fileName || 'untitled'}\nLanguage: ${langLabel}\nReturn ONLY the code text to insert at <CURSOR> (at most 8 lines), with no markdown fences and no explanation. If nothing helpful, return an empty string.\n\n${beforeLines}<CURSOR>${afterLines}`
+
+  const isGroq = trimmedKey.startsWith('gsk_')
+  const timeoutController = new AbortController()
+  const timer = setTimeout(() => timeoutController.abort(), 10000)
+  const onAbort = () => timeoutController.abort()
+  if (signal) {
+    if (signal.aborted) timeoutController.abort()
+    else signal.addEventListener('abort', onAbort, { once: true })
+  }
+
+  const cleanCompletionText = (raw) => {
+    let text = String(raw || '').replace(/\r\n?/g, '\n')
+    text = text.replace(/^```[A-Za-z0-9_+-]*\n?/, '').replace(/\n?```\s*$/, '')
+    const lines = text.split('\n')
+    if (lines.length > 8) {
+      text = lines.slice(0, 8).join('\n')
+    }
+    return text.trim() ? text : ''
+  }
+
+  try {
+    if (isGroq) {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${trimmedKey}`
+        },
+        body: JSON.stringify({
+          model: GROQ_MODEL,
+          temperature: 0.2,
+          max_tokens: 128,
+          messages: [
+            { role: 'system', content: 'You are an inline code autocomplete engine. Output only exact completion text, no markdown.' },
+            { role: 'user', content: prompt }
+          ]
+        }),
+        signal: timeoutController.signal
+      })
+      if (res.status === 429) {
+        const err = new Error('Rate limited (429)')
+        err.isRateLimit = true
+        throw err
+      }
+      if (!res.ok) return { completion: '', usage: null }
+      const data = await res.json()
+      const rawText = data?.choices?.[0]?.message?.content || ''
+      return {
+        completion: cleanCompletionText(rawText),
+        usage: extractUsageMetadata(data, true, prompt, rawText)
+      }
+    }
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`
+    const callGemini = async (includeThinking) => {
+      const generationConfig = {
+        temperature: 0.2,
+        maxOutputTokens: 128
+      }
+      if (includeThinking) {
+        generationConfig.thinkingConfig = { thinkingBudget: 0 }
+      }
+      return fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': trimmedKey
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig
+        }),
+        signal: timeoutController.signal
+      })
+    }
+
+    let res = await callGemini(true)
+    if (res.status === 400) {
+      // Retry without thinkingConfig if model/API rejects the field
+      res = await callGemini(false)
+    }
+    if (res.status === 429) {
+      const err = new Error('Rate limited (429)')
+      err.isRateLimit = true
+      throw err
+    }
+    if (!res.ok) return { completion: '', usage: null }
+    const data = await res.json()
+    const rawText = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || ''
+    return {
+      completion: cleanCompletionText(rawText),
+      usage: extractUsageMetadata(data, false, prompt, rawText)
+    }
+  } finally {
+    clearTimeout(timer)
+    if (signal) signal.removeEventListener('abort', onAbort)
+  }
+}

@@ -130,6 +130,7 @@ export default function App() {
   const [isAiChatOpen, setIsAiChatOpen] = useState(false)
   const [pendingAiQuote, setPendingAiQuote] = useState(null)
   const [aiUsageState, setAiUsageState] = useState(() => loadAiUsage())
+  const [aiInlineStatus, setAiInlineStatus] = useState(null)
   const editorActionsRef = useRef(null)
   const lastWrittenRef = useRef({})
   const autoSaveTimersRef = useRef({})
@@ -1090,6 +1091,10 @@ export default function App() {
 
   const handleRecordAiUsage = useCallback((payload) => {
     setAiUsageState((prev) => addUsageSample(prev, payload))
+  }, [])
+
+  const handleRecordAiInlineUsage = useCallback((usage) => {
+    setAiUsageState((prev) => addUsageSample(prev, { category: 'inline', usage }))
   }, [])
 
   const handleResetAiUsage = useCallback(() => {
@@ -2513,6 +2518,9 @@ export default function App() {
             onImproveWithAi={handleTriggerAi}
             onAskAiWithQuote={handleAskAiWithQuote}
             editorActionsRef={editorActionsRef}
+            aiKey={aiKey}
+            onRecordAiInlineUsage={handleRecordAiInlineUsage}
+            onAiInlineStatusChange={setAiInlineStatus}
             isOffline={status === 'offline'}
             editorPrefs={editorPrefs}
             onChangeEditorPrefs={handleUpdateEditorPrefs}
@@ -2620,6 +2628,7 @@ export default function App() {
           mode={mode}
           theme={theme}
           onToggleTheme={handleToggleTheme}
+          aiInlineStatus={aiInlineStatus}
         />
       )}
 
